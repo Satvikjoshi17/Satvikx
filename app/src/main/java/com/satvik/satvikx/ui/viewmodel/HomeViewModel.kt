@@ -19,15 +19,20 @@ data class HomeUiState(
     val greeting: String = "Welcome, Tony",
     val telemetryStatus: String = "J.A.R.V.I.S. // AFFINITY MATRIX ONLINE",
     val isLoading: Boolean = false,
+    val isAutopilotEngaging: Boolean = false,
     val quickPicks: List<TrackEntity> = emptyList(),
     val becauseYouLikedTitle: String = "BECAUSE YOU LIKED",
     val becauseYouLikedTracks: List<TrackEntity> = emptyList(),
     val heavyRotationTracks: List<TrackEntity> = emptyList(),
     val discoveryRadarTracks: List<TrackEntity> = emptyList(),
+    val categoryRadarTitle: String = "CATEGORY RADAR",
+    val categoryRadarTracks: List<TrackEntity> = emptyList(),
     val vaultFavoritesTracks: List<TrackEntity> = emptyList(),
     val trendingTracks: List<TrackEntity> = emptyList(),
     val moodTracks: List<TrackEntity> = emptyList(),
     val selectedMood: String = "Chill",
+    val autopilotTargetSinger: String = "GLOBAL ICONS",
+    val autopilotTargetGenre: String = "ALL CATEGORIES",
     val error: String? = null
 )
 
@@ -62,9 +67,13 @@ class HomeViewModel @Inject constructor(
                         becauseYouLikedTracks = data.becauseYouLikedTracks,
                         heavyRotationTracks = data.heavyRotationTracks,
                         discoveryRadarTracks = data.discoveryRadarTracks,
+                        categoryRadarTitle = data.categoryRadarTitle,
+                        categoryRadarTracks = data.categoryRadarTracks,
                         vaultFavoritesTracks = data.vaultFavoritesTracks,
                         trendingTracks = data.trendingTracks,
-                        moodTracks = data.moodTracks
+                        moodTracks = data.moodTracks,
+                        autopilotTargetSinger = data.autopilotTargetSinger,
+                        autopilotTargetGenre = data.autopilotTargetGenre
                     )
                 }
             } catch (e: Exception) {
@@ -124,14 +133,25 @@ class HomeViewModel @Inject constructor(
      * and discovery recommendations, then immediately begins playback from the first track.
      */
     fun playAutopilotMix() {
-        val state = _uiState.value
-        val combined = (state.becauseYouLikedTracks + state.heavyRotationTracks + state.discoveryRadarTracks + state.vaultFavoritesTracks + state.trendingTracks)
-            .distinctBy { it.id }
-            .shuffled()
-
-        if (combined.isNotEmpty()) {
-            val first = combined.first()
-            playbackConnectionManager.playTrack(first, combined)
+        viewModelScope.launch {
+            _uiState.update { it.copy(isAutopilotEngaging = true) }
+            try {
+                val queue = recommendationRepository.generateAutopilotQueue(35)
+                if (queue.isNotEmpty()) {
+                    val first = queue.first()
+                    playbackConnectionManager.playTrack(first, queue)
+                }
+            } catch (e: Exception) {
+                val state = _uiState.value
+                val fallback = (state.becauseYouLikedTracks + state.heavyRotationTracks + state.discoveryRadarTracks + state.categoryRadarTracks + state.vaultFavoritesTracks + state.trendingTracks)
+                    .distinctBy { it.id }
+                    .shuffled()
+                if (fallback.isNotEmpty()) {
+                    playbackConnectionManager.playTrack(fallback.first(), fallback)
+                }
+            } finally {
+                _uiState.update { it.copy(isAutopilotEngaging = false) }
+            }
         }
     }
 

@@ -20,7 +20,9 @@ data class UserAffinities(
     val overallTopArtists: List<String> = emptyList(),
     val topGenres: List<String> = emptyList(),
     val heavyRotationTracks: List<TrackEntity> = emptyList(),
-    val vaultTracks: List<TrackEntity> = emptyList()
+    val vaultTracks: List<TrackEntity> = emptyList(),
+    val primaryArtist: String? = null,
+    val primaryGenre: String? = null
 )
 
 data class HomeRecommendationCategories(
@@ -32,8 +34,12 @@ data class HomeRecommendationCategories(
     val moodTracks: List<TrackEntity> = emptyList(),
     val trendingTracks: List<TrackEntity> = emptyList(),
     val quickPicks: List<TrackEntity> = emptyList(),
+    val categoryRadarTitle: String = "CATEGORY RADAR",
+    val categoryRadarTracks: List<TrackEntity> = emptyList(),
     val timeOfDayTitle: String = "TIME-SHIFTED PROTOCOL",
-    val timeOfDaySubtitle: String = "ACOUSTIC FOCUS MATRIX"
+    val timeOfDaySubtitle: String = "ACOUSTIC FOCUS MATRIX",
+    val autopilotTargetSinger: String = "GLOBAL ICONS",
+    val autopilotTargetGenre: String = "ALL CATEGORIES"
 )
 
 @Singleton
@@ -47,7 +53,9 @@ class RecommendationRepository @Inject constructor(
     private val genreKeywords = listOf(
         "lofi", "chill", "acoustic", "rock", "pop", "hip hop", "rap",
         "edm", "synthwave", "ambient", "romantic", "bollywood",
-        "punjabi", "classical", "jazz", "metal", "indie", "workout", "retro"
+        "punjabi", "classical", "jazz", "metal", "indie", "workout",
+        "retro", "trap", "r&b", "soul", "electronic", "dance",
+        "ghazal", "sufi", "devotional", "bhajan", "instrumental"
     )
 
     /**
@@ -121,6 +129,9 @@ class RecommendationRepository @Inject constructor(
 
         val vaultCombined = (likedTracks + downloadedTracks).distinctBy { it.id }
 
+        val primaryArtist = rankedArtists.firstOrNull() ?: likedArtists.firstOrNull()
+        val primaryGenre = rankedGenres.firstOrNull()
+
         UserAffinities(
             topLikedArtists = likedArtists,
             topRecentArtists = recentArtists,
@@ -128,7 +139,9 @@ class RecommendationRepository @Inject constructor(
             overallTopArtists = rankedArtists,
             topGenres = rankedGenres,
             heavyRotationTracks = heavyRotation,
-            vaultTracks = vaultCombined
+            vaultTracks = vaultCombined,
+            primaryArtist = primaryArtist,
+            primaryGenre = primaryGenre
         )
     }
 
@@ -149,6 +162,8 @@ class RecommendationRepository @Inject constructor(
         val discoveryGenre = affinities.topGenres.getOrNull(1) ?: affinities.topGenres.firstOrNull() ?: "chill acoustic"
         val discoveryQuery = "$discoveryGenre mix radio essentials"
 
+        val primaryGenre = affinities.primaryGenre ?: "synthwave"
+        val categoryQuery = "$primaryGenre top hits mix radio"
         val moodQuery = getQueryForMood(selectedMood)
 
         // Query recommendation feeds in parallel on IO dispatcher
@@ -157,6 +172,9 @@ class RecommendationRepository @Inject constructor(
         }
         val discoveryDeferred = async(Dispatchers.IO) {
             streamRepository.searchTracks(discoveryQuery).firstOrNull()?.getOrNull().orEmpty()
+        }
+        val categoryDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks(categoryQuery).firstOrNull()?.getOrNull().orEmpty()
         }
         val moodDeferred = async(Dispatchers.IO) {
             streamRepository.searchTracks(moodQuery).firstOrNull()?.getOrNull().orEmpty()
@@ -167,6 +185,7 @@ class RecommendationRepository @Inject constructor(
 
         val becauseLikedTracks = becauseLikedDeferred.await()
         val discoveryTracks = discoveryDeferred.await()
+        val categoryTracks = categoryDeferred.await()
         val moodTracks = moodDeferred.await()
         val trendingTracks = trendingDeferred.await()
 
@@ -184,13 +203,81 @@ class RecommendationRepository @Inject constructor(
             becauseYouLikedTracks = becauseLikedTracks,
             heavyRotationTracks = affinities.heavyRotationTracks,
             discoveryRadarTracks = discoveryTracks,
+            categoryRadarTitle = "CATEGORY RADAR // ${primaryGenre.uppercase()}",
+            categoryRadarTracks = categoryTracks,
             vaultFavoritesTracks = affinities.vaultTracks,
             moodTracks = moodTracks,
             trendingTracks = trendingTracks,
             quickPicks = quickPicks,
             timeOfDayTitle = timeTitle,
-            timeOfDaySubtitle = timeSubtitle
+            timeOfDaySubtitle = timeSubtitle,
+            autopilotTargetSinger = topLiked?.uppercase() ?: "GLOBAL ICONS",
+            autopilotTargetGenre = primaryGenre.uppercase()
         )
+    }
+
+    /**
+     * J.A.R.V.I.S. Smart Autopilot Algorithm.
+     * Uses history tracks, top singers, category classification, and time-of-day affinity
+     * to sequence a continuous 35+ track intelligent playback queue.
+     */
+    suspend fun generateAutopilotQueue(limit: Int = 35): List<TrackEntity> = coroutineScope {
+        val affinities = analyzeUserAffinities()
+        val topSingers = affinities.overallTopArtists.take(4)
+        val primaryGenre = affinities.primaryGenre ?: "synthwave"
+
+        // 1. Anchor tracks from user's heavy rotation and vault
+        val userVault = (affinities.heavyRotationTracks + affinities.vaultTracks)
+            .distinctBy { it.id }
+            .shuffled()
+
+        // 2. Fetch radio mixes for top singers
+        val singerRadiosDeferred = topSingers.take(2).map { singer ->
+            async(Dispatchers.IO) {
+                streamRepository.searchTracks("$singer best hits radio mix").firstOrNull()?.getOrNull().orEmpty()
+            }
+        }
+
+        // 3. Fetch category discovery tracks
+        val genreRadioDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks("$primaryGenre essentials mix radio").firstOrNull()?.getOrNull().orEmpty()
+        }
+
+        val trendingDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks("Global Trending Viral Hits").firstOrNull()?.getOrNull().orEmpty()
+        }
+
+        val singerTracks = singerRadiosDeferred.flatMap { it.await() }
+        val genreTracks = genreRadioDeferred.await()
+        val trendingTracks = trendingDeferred.await()
+
+        val recommendations = (singerTracks + genreTracks + trendingTracks)
+            .distinctBy { it.id }
+            .shuffled()
+
+        // 4. Interleaving Algorithm: Anchor favorite -> Recommended discoveries -> High affinity gems
+        val autopilotQueue = mutableListOf<TrackEntity>()
+        val famIter = userVault.iterator()
+        val recIter = recommendations.iterator()
+
+        // Start with familiar anchor
+        if (famIter.hasNext()) {
+            autopilotQueue.add(famIter.next())
+        } else if (recIter.hasNext()) {
+            autopilotQueue.add(recIter.next())
+        }
+
+        while (autopilotQueue.size < limit && (famIter.hasNext() || recIter.hasNext())) {
+            if (recIter.hasNext()) autopilotQueue.add(recIter.next())
+            if (recIter.hasNext() && autopilotQueue.size < limit) autopilotQueue.add(recIter.next())
+            if (famIter.hasNext() && autopilotQueue.size < limit) autopilotQueue.add(famIter.next())
+        }
+
+        if (autopilotQueue.isEmpty()) {
+            trendingTracks.take(limit)
+        } else {
+            autopilotQueue.distinctBy { it.id }.take(limit)
+        }
     }
 
     /**

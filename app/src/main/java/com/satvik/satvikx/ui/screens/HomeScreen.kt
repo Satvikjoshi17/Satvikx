@@ -222,34 +222,55 @@ fun HomeScreen(
                                     modifier = Modifier.padding(top = 2.dp)
                                 )
                                 Text(
-                                    text = "Seamless continuous playback calibrated to your taste",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = TextSecondary
+                                    text = "TARGET: ${uiState.autopilotTargetSinger} • ${uiState.autopilotTargetGenre}",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold
+                                    ),
+                                    color = ArcCyanBright,
+                                    modifier = Modifier.padding(top = 2.dp)
                                 )
                             }
 
                             Button(
                                 onClick = { homeViewModel.playAutopilotMix() },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = ArcCyan,
+                                    containerColor = if (uiState.isAutopilotEngaging) StarkGold else ArcCyan,
                                     contentColor = StarkCarbon
                                 ),
                                 shape = CircleShape,
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                enabled = !uiState.isAutopilotEngaging
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text(
-                                    text = "ENGAGE",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
+                                if (uiState.isAutopilotEngaging) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        color = StarkCarbon,
+                                        strokeWidth = 2.dp
                                     )
-                                )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "ENGAGING...",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.PlayArrow,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = "ENGAGE",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontFamily = FontFamily.Monospace
+                                        )
+                                    )
+                                }
                             }
                         }
                     }
@@ -391,6 +412,36 @@ fun HomeScreen(
                                 homeViewModel.playTrackWithSuggestionQueue(
                                     track,
                                     uiState.discoveryRadarTracks
+                                )
+                            },
+                            onOptionsClick = { selectedTrackForOptions = track }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 6. Category Radar (Deep Genre / Category Classification)
+        if (uiState.categoryRadarTracks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                SectionHeader(
+                    title = uiState.categoryRadarTitle,
+                    tag = "CATEGORY RADAR",
+                    tagColor = ArcCyanBright
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    items(uiState.categoryRadarTracks, key = { "cat_${it.id}" }) { track ->
+                        RecommendationCard(
+                            track = track,
+                            onClick = {
+                                homeViewModel.playTrackWithSuggestionQueue(
+                                    track,
+                                    uiState.categoryRadarTracks
                                 )
                             },
                             onOptionsClick = { selectedTrackForOptions = track }

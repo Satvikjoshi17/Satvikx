@@ -25,6 +25,14 @@ interface RecentPlaybackDao {
     """)
     fun getRecentTracks(limit: Int = 50): Flow<List<TrackEntity>>
 
+    @Query("""
+        SELECT tracks.* FROM tracks 
+        INNER JOIN recent_playback ON tracks.id = recent_playback.trackId 
+        ORDER BY recent_playback.playedAtTimestamp DESC 
+        LIMIT :limit
+    """)
+    suspend fun getRecentTracksSync(limit: Int = 60): List<TrackEntity>
+
     @Query("DELETE FROM recent_playback WHERE trackId = :trackId")
     suspend fun deleteRecentById(trackId: String)
 
