@@ -21,5 +21,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SoundWave Native"
+rootProject.name = "SatvikX"
 include(":app")
