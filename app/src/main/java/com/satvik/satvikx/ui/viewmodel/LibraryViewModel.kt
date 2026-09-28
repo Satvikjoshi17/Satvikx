@@ -1,0 +1,163 @@
+package com.satvik.satvikx.ui.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.satvik.satvikx.data.download.DownloadRepository
+import com.satvik.satvikx.data.local.dao.PlaylistDao
+import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
+import com.satvik.satvikx.data.local.dao.TrackDao
+import com.satvik.satvikx.data.local.entity.PlaylistEntity
+import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
+import com.satvik.satvikx.data.local.entity.PlaylistWithTracks
+import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.storage.StorageManager
+import com.satvik.satvikx.playback.PlaybackConnectionManager
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+
+data class StorageInfo(
+    val usedStorageFormatted: String = "0 B",
+    val availableStorageFormatted: String = "0 B"
+)
+
+@HiltViewModel
+class LibraryViewModel @Inject constructor(
+    private val trackDao: TrackDao,
+    private val playlistDao: PlaylistDao,
+    private val recentPlaybackDao: RecentPlaybackDao,
+    private val storageManager: StorageManager,
+    private val downloadRepository: DownloadRepository,
+    private val playbackConnectionManager: PlaybackConnectionManager
+) : ViewModel() {
+
+    val downloadedTracks: StateFlow<List<TrackEntity>> = trackDao.getDownloadedTracks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentTracks: StateFlow<List<TrackEntity>> = recentPlaybackDao.getRecentTracks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val playlists: StateFlow<List<PlaylistWithTracks>> = playlistDao.getAllPlaylistsWithTracks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _storageInfo = MutableStateFlow(StorageInfo())
+    val storageInfo: StateFlow<StorageInfo> = _storageInfo.asStateFlow()
+
+    init {
+        refreshStorageInfo()
+    }
+
+    fun refreshStorageInfo() {
+        val used = storageManager.getUsedStorageBytes()
+        val avail = storageManager.getAvailableDiskSpaceBytes()
+        _storageInfo.value = StorageInfo(
+            usedStorageFormatted = storageManager.formatFileSize(used),
+            availableStorageFormatted = storageManager.formatFileSize(avail)
+        )
+    }
+
+    fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {
+        playbackConnectionManager.playTrack(track, playlist)
+    }
+
+    fun downloadTrack(track: TrackEntity) {
+        downloadRepository.enqueueDownload(track)
+    }
+
+    fun playPlaylist(playlistWithTracks: PlaylistWithTracks) {
+        if (playlistWithTracks.tracks.isNotEmpty()) {
+            playbackConnectionManager.playTrack(
+                playlistWithTracks.tracks.first(),
+                playlistWithTracks.tracks
+            )
+        }
+    }
+
+    fun deleteDownload(trackId: String) {
+        viewModelScope.launch {
+            downloadRepository.deleteDownload(trackId)
+            refreshStorageInfo()
+        }
+    }
+
+    fun clearRecentHistory() {
+        viewModelScope.launch {
+            recentPlaybackDao.clearHistory()
+        }
+    }
+
+    fun createPlaylist(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch {
+            playlistDao.insertPlaylist(
+                PlaylistEntity(name = name.trim())
+            )
+        }
+    }
+
+    fun deletePlaylist(playlistId: Long) {
+        viewModelScope.launch {
+            playlistDao.deletePlaylistById(playlistId)
+        }
+    }
+
+    fun renamePlaylist(playlistId: Long, newName: String) {
+        if (newName.isBlank()) return
+        viewModelScope.launch {
+            playlistDao.updatePlaylistName(playlistId, newName.trim())
+        }
+    }
+
+    fun clearPlaylist(playlistId: Long) {
+        viewModelScope.launch {
+            playlistDao.clearPlaylistTracks(playlistId)
+        }
+    }
+
+    fun addTrackToPlaylist(playlistId: Long, track: TrackEntity) {
+        viewModelScope.launch {
+            trackDao.insertTrack(track)
+            playlistDao.insertPlaylistTrackCrossRef(
+                PlaylistTrackCrossRef(
+                    playlistId = playlistId,
+                    trackId = track.id
+                )
+            )
+        }
+    }
+
+    fun removeTrackFromPlaylist(playlistId: Long, trackId: String) {
+        viewModelScope.launch {
+            playlistDao.deletePlaylistTrackCrossRef(playlistId, trackId)
+        }
+    }
+
+    fun toggleFavorite(track: TrackEntity) {
+        viewModelScope.launch {
+            trackDao.insertTrack(track)
+            var favPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+            if (favPlaylist == null) {
+                val newId = playlistDao.insertPlaylist(PlaylistEntity(name = "Liked Songs"))
+                favPlaylist = PlaylistEntity(playlistId = newId, name = "Liked Songs")
+            }
+            val existing = playlistDao.getPlaylistWithTracks(favPlaylist.playlistId).firstOrNull()
+            val isAlreadyLiked = existing?.tracks?.any { it.id == track.id } == true
+            if (isAlreadyLiked) {
+                playlistDao.deletePlaylistTrackCrossRef(favPlaylist.playlistId, track.id)
+            } else {
+                playlistDao.insertPlaylistTrackCrossRef(
+                    PlaylistTrackCrossRef(
+                        playlistId = favPlaylist.playlistId,
+                        trackId = track.id
+                    )
+                )
+            }
+        }
+    }
+}

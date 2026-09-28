@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path name="music_files" path="Music/" />
+    <cache-path name="apk_updates" path="updates/" />
+    <cache-path name="cached_audio" path="audio_cache/" />
+</paths>

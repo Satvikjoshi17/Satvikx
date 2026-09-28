@@ -1,0 +1,284 @@
+package com.satvik.satvikx.data.repository
+
+import com.satvik.satvikx.data.local.dao.PlaylistDao
+import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
+import com.satvik.satvikx.data.local.dao.TrackDao
+import com.satvik.satvikx.data.local.entity.TrackEntity
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.firstOrNull
+import java.util.Calendar
+import java.util.Locale
+import javax.inject.Inject
+import javax.inject.Singleton
+
+data class UserAffinities(
+    val topLikedArtists: List<String> = emptyList(),
+    val topRecentArtists: List<String> = emptyList(),
+    val topDownloadedArtists: List<String> = emptyList(),
+    val overallTopArtists: List<String> = emptyList(),
+    val topGenres: List<String> = emptyList(),
+    val heavyRotationTracks: List<TrackEntity> = emptyList(),
+    val vaultTracks: List<TrackEntity> = emptyList()
+)
+
+data class HomeRecommendationCategories(
+    val becauseYouLikedTitle: String = "BECAUSE YOU LIKED",
+    val becauseYouLikedTracks: List<TrackEntity> = emptyList(),
+    val heavyRotationTracks: List<TrackEntity> = emptyList(),
+    val discoveryRadarTracks: List<TrackEntity> = emptyList(),
+    val vaultFavoritesTracks: List<TrackEntity> = emptyList(),
+    val moodTracks: List<TrackEntity> = emptyList(),
+    val trendingTracks: List<TrackEntity> = emptyList(),
+    val quickPicks: List<TrackEntity> = emptyList(),
+    val timeOfDayTitle: String = "TIME-SHIFTED PROTOCOL",
+    val timeOfDaySubtitle: String = "ACOUSTIC FOCUS MATRIX"
+)
+
+@Singleton
+class RecommendationRepository @Inject constructor(
+    private val recentPlaybackDao: RecentPlaybackDao,
+    private val playlistDao: PlaylistDao,
+    private val trackDao: TrackDao,
+    private val streamRepository: StreamRepository
+) {
+
+    private val genreKeywords = listOf(
+        "lofi", "chill", "acoustic", "rock", "pop", "hip hop", "rap",
+        "edm", "synthwave", "ambient", "romantic", "bollywood",
+        "punjabi", "classical", "jazz", "metal", "indie", "workout", "retro"
+    )
+
+    /**
+     * Mines Liked Songs, Downloaded Tracks, and Recent History to produce a rich affinity profile.
+     */
+    suspend fun analyzeUserAffinities(): UserAffinities = coroutineScope {
+        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+        val likedTracks = likedPlaylist?.let {
+            playlistDao.getPlaylistWithTracks(it.playlistId).firstOrNull()?.tracks
+        } ?: emptyList()
+
+        val downloadedTracks = trackDao.getDownloadedTracks().firstOrNull() ?: emptyList()
+        val recentTracks = recentPlaybackDao.getRecentTracks(60).firstOrNull() ?: emptyList()
+
+        // Weight table: Liked = 5.0, Downloaded = 3.5, Recent = 2.0
+        val artistScores = mutableMapOf<String, Float>()
+        val likedArtists = mutableListOf<String>()
+        val downloadedArtists = mutableListOf<String>()
+        val recentArtists = mutableListOf<String>()
+        val genreScores = mutableMapOf<String, Int>()
+
+        // 1. Liked Tracks Scoring
+        likedTracks.forEach { track ->
+            extractArtists(track.artist).forEach { artist ->
+                artistScores[artist] = (artistScores[artist] ?: 0f) + 5.0f
+                if (!likedArtists.contains(artist)) likedArtists.add(artist)
+            }
+            detectGenres(track.title + " " + track.artist).forEach { g ->
+                genreScores[g] = (genreScores[g] ?: 0) + 3
+            }
+        }
+
+        // 2. Downloaded Tracks Scoring
+        downloadedTracks.forEach { track ->
+            extractArtists(track.artist).forEach { artist ->
+                artistScores[artist] = (artistScores[artist] ?: 0f) + 3.5f
+                if (!downloadedArtists.contains(artist)) downloadedArtists.add(artist)
+            }
+            detectGenres(track.title + " " + track.artist).forEach { g ->
+                genreScores[g] = (genreScores[g] ?: 0) + 2
+            }
+        }
+
+        // 3. Recent Tracks Frequency Scoring
+        recentTracks.forEachIndexed { index, track ->
+            val recencyMultiplier = if (index < 15) 2.5f else 1.2f
+            extractArtists(track.artist).forEach { artist ->
+                artistScores[artist] = (artistScores[artist] ?: 0f) + recencyMultiplier
+                if (!recentArtists.contains(artist)) recentArtists.add(artist)
+            }
+            detectGenres(track.title + " " + track.artist).forEach { g ->
+                genreScores[g] = (genreScores[g] ?: 0) + 1
+            }
+        }
+
+        // 4. Heavy Rotation Tracks (tracks played multiple times or top in history)
+        val trackFrequency = recentTracks.groupingBy { it.id }.eachCount()
+        val heavyRotation = recentTracks
+            .distinctBy { it.id }
+            .sortedByDescending { trackFrequency[it.id] ?: 1 }
+            .take(15)
+
+        val rankedArtists = artistScores.entries
+            .filter { it.key.isNotBlank() && it.key.lowercase() != "unknown artist" }
+            .sortedByDescending { it.value }
+            .map { it.key }
+
+        val rankedGenres = genreScores.entries
+            .sortedByDescending { it.value }
+            .map { it.key }
+
+        val vaultCombined = (likedTracks + downloadedTracks).distinctBy { it.id }
+
+        UserAffinities(
+            topLikedArtists = likedArtists,
+            topRecentArtists = recentArtists,
+            topDownloadedArtists = downloadedArtists,
+            overallTopArtists = rankedArtists,
+            topGenres = rankedGenres,
+            heavyRotationTracks = heavyRotation,
+            vaultTracks = vaultCombined
+        )
+    }
+
+    /**
+     * Builds categorized recommendation feeds for the Home Screen using the affinity matrix.
+     */
+    suspend fun loadHomeRecommendations(selectedMood: String): HomeRecommendationCategories = coroutineScope {
+        val affinities = analyzeUserAffinities()
+        val (timeTitle, timeSubtitle, defaultMoodQuery) = computeTimeOfDayInfo(affinities.topGenres.firstOrNull())
+
+        val topLiked = affinities.topLikedArtists.firstOrNull() ?: affinities.overallTopArtists.firstOrNull()
+        val becauseLikedQuery = if (!topLiked.isNullOrBlank()) {
+            "$topLiked best songs hits"
+        } else {
+            "Top Global Hits Master"
+        }
+
+        val discoveryGenre = affinities.topGenres.getOrNull(1) ?: affinities.topGenres.firstOrNull() ?: "chill acoustic"
+        val discoveryQuery = "$discoveryGenre mix radio essentials"
+
+        val moodQuery = getQueryForMood(selectedMood)
+
+        // Query recommendation feeds in parallel on IO dispatcher
+        val becauseLikedDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks(becauseLikedQuery).firstOrNull()?.getOrNull().orEmpty()
+        }
+        val discoveryDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks(discoveryQuery).firstOrNull()?.getOrNull().orEmpty()
+        }
+        val moodDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks(moodQuery).firstOrNull()?.getOrNull().orEmpty()
+        }
+        val trendingDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks("Trending Global Hits").firstOrNull()?.getOrNull().orEmpty()
+        }
+
+        val becauseLikedTracks = becauseLikedDeferred.await()
+        val discoveryTracks = discoveryDeferred.await()
+        val moodTracks = moodDeferred.await()
+        val trendingTracks = trendingDeferred.await()
+
+        // Quick Picks: combine recent/heavy rotation or trending
+        val quickPicks = if (affinities.heavyRotationTracks.isNotEmpty()) {
+            affinities.heavyRotationTracks.take(6)
+        } else if (affinities.vaultTracks.isNotEmpty()) {
+            affinities.vaultTracks.take(6)
+        } else {
+            trendingTracks.take(6)
+        }
+
+        HomeRecommendationCategories(
+            becauseYouLikedTitle = if (!topLiked.isNullOrBlank()) "BECAUSE YOU LIKED ${topLiked.uppercase()}" else "RECOMMENDED FOR YOU",
+            becauseYouLikedTracks = becauseLikedTracks,
+            heavyRotationTracks = affinities.heavyRotationTracks,
+            discoveryRadarTracks = discoveryTracks,
+            vaultFavoritesTracks = affinities.vaultTracks,
+            moodTracks = moodTracks,
+            trendingTracks = trendingTracks,
+            quickPicks = quickPicks,
+            timeOfDayTitle = timeTitle,
+            timeOfDaySubtitle = timeSubtitle
+        )
+    }
+
+    /**
+     * Generates a tailored, suggestion-based queue for a base track.
+     * Guaranteed to return high-affinity recommended tracks, NOT raw search results!
+     */
+    suspend fun generateRecommendationQueue(
+        baseTrack: TrackEntity,
+        limit: Int = 20
+    ): List<TrackEntity> = coroutineScope {
+        val cleanArtist = baseTrack.artist.replace(" - Topic", "").trim()
+        val radioQuery = if (cleanArtist.isNotBlank() && cleanArtist != "Unknown Artist") {
+            "$cleanArtist radio mix songs"
+        } else {
+            "${baseTrack.title} radio mix"
+        }
+
+        val complementaryQuery = "${baseTrack.title} similar music"
+
+        val radioDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks(radioQuery).firstOrNull()?.getOrNull().orEmpty()
+        }
+        val compDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks(complementaryQuery).firstOrNull()?.getOrNull().orEmpty()
+        }
+
+        val radioTracks = radioDeferred.await()
+        val compTracks = compDeferred.await()
+
+        val combined = (radioTracks + compTracks)
+            .distinctBy { it.id }
+            .filter { it.id != baseTrack.id }
+
+        // Start queue with baseTrack followed by algorithmic recommendations
+        (listOf(baseTrack) + combined).take(limit)
+    }
+
+    private fun extractArtists(artistStr: String): List<String> {
+        if (artistStr.isBlank()) return emptyList()
+        return artistStr
+            .split(",", "&", "feat.", "ft.", "/", ";", "•")
+            .map { it.replace(" - Topic", "").trim() }
+            .filter { it.length > 1 }
+    }
+
+    private fun detectGenres(text: String): List<String> {
+        val lower = text.lowercase(Locale.ROOT)
+        return genreKeywords.filter { lower.contains(it) }
+    }
+
+    private fun getQueryForMood(mood: String): String {
+        return when (mood.lowercase(Locale.ROOT)) {
+            "chill" -> "Chill Lo-Fi Beats relaxing"
+            "workout" -> "Workout Energy EDM Gym pump motivation"
+            "focus" -> "Deep Focus Ambient Study Flow"
+            "party" -> "Club Party Dance chartbusters"
+            "synthwave" -> "Synthwave Retrowave Cyberpunk 80s"
+            "retro" -> "Retro Classic Master Hits 80s 90s"
+            "romantic" -> "Acoustic Romantic Love Songs"
+            "acoustic" -> "Acoustic Pop Guitar Chill"
+            else -> "Top Acoustic Hits"
+        }
+    }
+
+    private fun computeTimeOfDayInfo(favGenre: String?): Triple<String, String, String> {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val style = favGenre ?: "acoustic"
+        return when (hour) {
+            in 5..11 -> Triple(
+                "Good morning, Tony",
+                "J.A.R.V.I.S. // MORNING ${style.uppercase()} MATRIX",
+                "Morning uplifting $style"
+            )
+            in 12..16 -> Triple(
+                "Good afternoon, Tony",
+                "J.A.R.V.I.S. // FOCUS & FLOW TELEMETRY NOMINAL",
+                "Focus deep work $style"
+            )
+            in 17..21 -> Triple(
+                "Good evening, Tony",
+                "J.A.R.V.I.S. // SUNSET AUDIO TELEMETRY SYNCHRONIZED",
+                "Sunset relaxing $style"
+            )
+            else -> Triple(
+                "Late Night Protocol, Tony",
+                "J.A.R.V.I.S. // NIGHT DRIVE & SYNTHWAVE CORES ONLINE",
+                "Late night lofi synthwave"
+            )
+        }
+    }
+}
