@@ -61,4 +61,30 @@ interface PlaylistDao {
     @Transaction
     @Query("SELECT * FROM playlists ORDER BY createdAtTimestamp DESC")
     fun getAllPlaylistsWithTracks(): Flow<List<PlaylistWithTracks>>
+
+    @Query("""
+        SELECT cr.trackId 
+        FROM playlist_track_cross_ref cr 
+        INNER JOIN playlists p ON cr.playlistId = p.playlistId 
+        WHERE p.name = 'Liked Songs'
+    """)
+    fun getLikedTrackIds(): Flow<List<String>>
+
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_track_cross_ref cr 
+            INNER JOIN playlists p ON cr.playlistId = p.playlistId 
+            WHERE p.name = 'Liked Songs' AND cr.trackId = :trackId
+        )
+    """)
+    fun isTrackLikedFlow(trackId: String): Flow<Boolean>
+
+    @Query("""
+        SELECT EXISTS(
+            SELECT 1 FROM playlist_track_cross_ref cr 
+            INNER JOIN playlists p ON cr.playlistId = p.playlistId 
+            WHERE p.name = 'Liked Songs' AND cr.trackId = :trackId
+        )
+    """)
+    suspend fun isTrackLikedSync(trackId: String): Boolean
 }

@@ -227,7 +227,7 @@ fun SearchScreen(
                         ) { track ->
                             TrackItem(
                                 track = track,
-                                onClick = { viewModel.playTrack(track) },
+                                onClick = { viewModel.playTrack(track, uiState.results) },
                                 onOptionClick = { selectedTrackForOptions = track },
                                 onDownloadClick = {
                                     viewModel.downloadTrack(track)
@@ -247,7 +247,11 @@ fun SearchScreen(
             track = track,
             sheetState = sheetState,
             onDismiss = { selectedTrackForOptions = null },
-            onPlayNow = { viewModel.playTrack(it) },
+            onPlayNow = { viewModel.playTrack(it, uiState.results) },
+            onPlayNext = {
+                viewModel.playNext(it)
+                Toast.makeText(context, "Playing next: ${it.title}", Toast.LENGTH_SHORT).show()
+            },
             onAddToQueue = {
                 viewModel.addToQueue(it)
                 Toast.makeText(context, "Added to playback queue", Toast.LENGTH_SHORT).show()

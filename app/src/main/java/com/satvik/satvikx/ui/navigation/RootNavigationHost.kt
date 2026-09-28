@@ -59,6 +59,7 @@ fun RootNavigationHost(
 
     val playbackState by playerViewModel.playbackState.collectAsStateWithLifecycle()
     val updateState by playerViewModel.updateState.collectAsStateWithLifecycle()
+    val likedTrackIds by libraryViewModel.likedTrackIds.collectAsStateWithLifecycle()
 
     var isFullPlayerExpanded by remember { mutableStateOf(false) }
     var trackForPlaylistDialog by remember { mutableStateOf<TrackEntity?>(null) }
@@ -149,6 +150,9 @@ fun RootNavigationHost(
 
     // Modal Full Player Sheet
     if (isFullPlayerExpanded && playbackState.currentTrack != null) {
+        val currentTrack = playbackState.currentTrack
+        val isCurrentTrackLiked = currentTrack?.let { it.id in likedTrackIds } ?: false
+
         FullPlayerSheet(
             playbackState = playbackState,
             sheetState = fullPlayerSheetState,
@@ -167,6 +171,7 @@ fun RootNavigationHost(
             onRemoveFromQueue = { playerViewModel.removeFromQueue(it) },
             onStartSleepTimer = { playerViewModel.startSleepTimer(it) },
             onCancelSleepTimer = { playerViewModel.cancelSleepTimer() },
+            isFavorite = isCurrentTrackLiked,
             onToggleFavorite = { libraryViewModel.toggleFavorite(it) }
         )
     }

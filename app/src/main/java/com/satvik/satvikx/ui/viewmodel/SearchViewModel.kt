@@ -57,13 +57,43 @@ class SearchViewModel @Inject constructor(
             }
             .launchIn(viewModelScope)
 
-        // Seed with trending query on initial launch
-        executeSearch("Trending")
+        // Seed with trending results without putting text in search bar
+        loadInitialTrending()
+    }
+
+    private fun loadInitialTrending() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSearching = true, error = null) }
+            streamRepository.searchTracks("Trending").collect { result ->
+                result.fold(
+                    onSuccess = { tracks ->
+                        _uiState.update {
+                            it.copy(
+                                isSearching = false,
+                                results = tracks,
+                                error = if (tracks.isEmpty()) "No tracks found" else null
+                            )
+                        }
+                    },
+                    onFailure = { throwable ->
+                        _uiState.update {
+                            it.copy(
+                                isSearching = false,
+                                error = throwable.message ?: "Search failed. Check connection."
+                            )
+                        }
+                    }
+                )
+            }
+        }
     }
 
     fun onQueryChanged(newQuery: String) {
         _uiState.update { it.copy(query = newQuery) }
         queryFlow.value = newQuery
+        if (newQuery.isBlank()) {
+            loadInitialTrending()
+        }
     }
 
     fun executeSearch(query: String) {
@@ -95,21 +125,10 @@ class SearchViewModel @Inject constructor(
         }
     }
 
-    fun playTrack(track: TrackEntity) {
-        // Start playback immediately for the chosen track
-        playbackConnectionManager.playTrack(track, listOf(track))
-
-        // Asynchronously populate the queue with high-relevance algorithmic recommendations
-        viewModelScope.launch {
-            try {
-                val recommendationQueue = recommendationRepository.generateRecommendationQueue(track)
-                if (recommendationQueue.isNotEmpty()) {
-                    playbackConnectionManager.updateUpcomingQueue(recommendationQueue)
-                }
-            } catch (e: Exception) {
-                // Keep playing single track if network fails
-            }
-        }
+    fun playTrack(track: TrackEntity, customQueue: List<TrackEntity>? = null) {
+        val searchResults = customQueue ?: _uiState.value.results
+        val queue = if (searchResults.isNotEmpty()) searchResults else listOf(track)
+        playbackConnectionManager.playTrack(track, queue)
     }
 
     fun playNext(track: TrackEntity) {

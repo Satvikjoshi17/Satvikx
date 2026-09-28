@@ -17,7 +17,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -45,6 +45,10 @@ class LibraryViewModel @Inject constructor(
 
     val playlists: StateFlow<List<PlaylistWithTracks>> = playlistDao.getAllPlaylistsWithTracks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val likedTrackIds: StateFlow<Set<String>> = playlistDao.getLikedTrackIds()
+        .map { it.toSet() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     private val _storageInfo = MutableStateFlow(StorageInfo())
     val storageInfo: StateFlow<StorageInfo> = _storageInfo.asStateFlow()
@@ -164,8 +168,7 @@ class LibraryViewModel @Inject constructor(
                 val newId = playlistDao.insertPlaylist(PlaylistEntity(name = "Liked Songs"))
                 favPlaylist = PlaylistEntity(playlistId = newId, name = "Liked Songs")
             }
-            val existing = playlistDao.getPlaylistWithTracks(favPlaylist.playlistId).firstOrNull()
-            val isAlreadyLiked = existing?.tracks?.any { it.id == track.id } == true
+            val isAlreadyLiked = playlistDao.isTrackLikedSync(track.id)
             if (isAlreadyLiked) {
                 playlistDao.deletePlaylistTrackCrossRef(favPlaylist.playlistId, track.id)
             } else {

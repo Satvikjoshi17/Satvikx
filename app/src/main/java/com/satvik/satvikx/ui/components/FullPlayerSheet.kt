@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -125,6 +126,7 @@ fun FullPlayerSheet(
     onRemoveFromQueue: (Int) -> Unit = {},
     onStartSleepTimer: (Int) -> Unit = {},
     onCancelSleepTimer: () -> Unit = {},
+    isFavorite: Boolean = false,
     onToggleFavorite: (TrackEntity) -> Unit = {}
 ) {
     val track = playbackState.currentTrack ?: return
@@ -133,7 +135,6 @@ fun FullPlayerSheet(
     var userDraggingSlider by remember { mutableFloatStateOf(-1f) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
-    var isFavorite by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
     val queueSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
@@ -351,19 +352,19 @@ fun FullPlayerSheet(
                     // Like / Favorite Heart
                     IconButton(
                         onClick = {
-                            isFavorite = !isFavorite
+                            val willBeLiked = !isFavorite
                             onToggleFavorite(track)
                             Toast.makeText(
                                 context,
-                                if (isFavorite) "Saved to Stark Favorites" else "Removed from Favorites",
+                                if (willBeLiked) "Saved to Stark Favorites" else "Removed from Favorites",
                                 Toast.LENGTH_SHORT
                             ).show()
                         }
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Favorite,
+                            imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                             contentDescription = "Favorite",
-                            tint = if (isFavorite) StarkCrimson else Color.Gray.copy(alpha = 0.5f),
+                            tint = if (isFavorite) StarkCrimson else Color.Gray.copy(alpha = 0.6f),
                             modifier = Modifier.size(28.dp)
                         )
                     }
