@@ -189,6 +189,7 @@ fun RootNavigationHost(
     UpdateDialog(
         updateState = updateState,
         onConfirmUpdate = { playerViewModel.downloadAndInstallUpdate(it) },
+        onInstallDownloaded = { playerViewModel.installDownloadedUpdate(it) },
         onDismiss = { playerViewModel.dismissUpdate() }
     )
 }

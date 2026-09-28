@@ -83,12 +83,15 @@ import com.satvik.satvikx.ui.theme.TextSecondary
 import com.satvik.satvikx.ui.theme.TextTertiary
 import com.satvik.satvikx.ui.viewmodel.HomeViewModel
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
+import com.satvik.satvikx.ui.viewmodel.PlayerViewModel
+import androidx.compose.material.icons.filled.SystemUpdate
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     homeViewModel: HomeViewModel = hiltViewModel(),
-    libraryViewModel: LibraryViewModel = hiltViewModel()
+    libraryViewModel: LibraryViewModel = hiltViewModel(),
+    playerViewModel: PlayerViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
@@ -150,6 +153,23 @@ fun HomeScreen(
                     }
 
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { playerViewModel.checkForUpdates(isManual = true) },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .border(1.dp, StarkBorder, CircleShape)
+                                .background(StarkSurface, CircleShape)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = "Check for Updates",
+                                tint = ArcCyan,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
                         IconButton(
                             onClick = { homeViewModel.loadHomeData() },
                             modifier = Modifier

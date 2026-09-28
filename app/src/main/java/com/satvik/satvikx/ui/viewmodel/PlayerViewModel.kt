@@ -62,9 +62,9 @@ class PlayerViewModel @Inject constructor(
         downloadRepository.enqueueDownload(currentTrack)
     }
 
-    fun checkForUpdates() {
+    fun checkForUpdates(isManual: Boolean = false) {
         viewModelScope.launch {
-            updateManager.checkForUpdates()
+            updateManager.checkForUpdates(isManual = isManual)
         }
     }
 
@@ -72,6 +72,10 @@ class PlayerViewModel @Inject constructor(
         viewModelScope.launch {
             updateManager.downloadAndInstallUpdate(downloadUrl)
         }
+    }
+
+    fun installDownloadedUpdate(filePath: String) {
+        updateManager.triggerPackageInstaller(java.io.File(filePath))
     }
 
     fun dismissUpdate() {

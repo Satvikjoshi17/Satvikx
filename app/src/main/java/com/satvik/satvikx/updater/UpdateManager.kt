@@ -39,8 +39,8 @@ class UpdateManager @Inject constructor(
 
     companion object {
         private const val TAG = "UpdateManager"
-        private const val DEFAULT_OWNER = "satvik"
-        private const val DEFAULT_REPO = "satvikx"
+        private const val DEFAULT_OWNER = "satvikjoshi17"
+        private const val DEFAULT_REPO = "Satvikx"
     }
 
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
@@ -58,7 +58,11 @@ class UpdateManager @Inject constructor(
     /**
      * Queries the latest release metadata from GitHub Releases API.
      */
-    suspend fun checkForUpdates(owner: String = DEFAULT_OWNER, repo: String = DEFAULT_REPO) = withContext(Dispatchers.IO) {
+    suspend fun checkForUpdates(
+        owner: String = DEFAULT_OWNER,
+        repo: String = DEFAULT_REPO,
+        isManual: Boolean = false
+    ) = withContext(Dispatchers.IO) {
         _updateState.value = UpdateState.Checking
         val url = "https://api.github.com/repos/$owner/$repo/releases/latest"
 
@@ -72,6 +76,15 @@ class UpdateManager @Inject constructor(
             val response = okHttpClient.newCall(request).execute()
             if (!response.isSuccessful || response.body == null) {
                 _updateState.value = UpdateState.Idle
+                if (isManual) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "SatvikX is up to date (v${BuildConfig.VERSION_NAME})",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
                 return@withContext
             }
 
@@ -96,10 +109,29 @@ class UpdateManager @Inject constructor(
                     }
                 }
             }
+
             _updateState.value = UpdateState.Idle
+            if (isManual) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "SatvikX is up to date (v${BuildConfig.VERSION_NAME})",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Update check failed: ${e.message}", e)
             _updateState.value = UpdateState.Idle
+            if (isManual) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Check for updates: SatvikX v${BuildConfig.VERSION_NAME}",
+                        android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }
+            }
         }
     }
 

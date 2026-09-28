@@ -25,6 +25,7 @@ import com.satvik.satvikx.ui.theme.PrimaryNeon
 fun UpdateDialog(
     updateState: UpdateState,
     onConfirmUpdate: (String) -> Unit,
+    onInstallDownloaded: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     when (updateState) {
@@ -86,6 +87,33 @@ fun UpdateDialog(
                     }
                 },
                 confirmButton = {}
+            )
+        }
+        is UpdateState.ReadyToInstall -> {
+            AlertDialog(
+                onDismissRequest = onDismiss,
+                title = {
+                    Text(
+                        text = "Update Ready to Install",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Text("The latest SatvikX update has been downloaded. Tap below to launch installation.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = { onInstallDownloaded(updateState.apkFilePath) },
+                        colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon)
+                    ) {
+                        Text("Install Now", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = onDismiss) {
+                        Text("Dismiss", color = Color.Gray)
+                    }
+                }
             )
         }
         is UpdateState.Error -> {
