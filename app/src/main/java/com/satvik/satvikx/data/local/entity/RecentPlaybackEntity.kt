@@ -12,11 +12,13 @@ import androidx.room.PrimaryKey
     tableName = "recent_playback",
     indices = [
         Index(value = ["trackId"]),
-        Index(value = ["playedAtTimestamp"])
+        Index(value = ["playedAtTimestamp"]),
+        Index(value = ["playCount"])
     ]
 )
 data class RecentPlaybackEntity(
     @PrimaryKey
     val trackId: String,
-    val playedAtTimestamp: Long = System.currentTimeMillis()
+    val playedAtTimestamp: Long = System.currentTimeMillis(),
+    val playCount: Int = 1
 )

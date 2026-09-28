@@ -27,6 +27,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import com.satvik.satvikx.data.repository.RecommendationRepository
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Provider
 import javax.inject.Singleton
 
 /**
@@ -46,7 +48,8 @@ class PlaybackConnectionManager @Inject constructor(
     private val streamRepository: StreamRepository,
     private val trackDao: TrackDao,
     private val recentPlaybackDao: RecentPlaybackDao,
-    private val storageManager: StorageManager
+    private val storageManager: StorageManager,
+    private val recommendationRepositoryProvider: Provider<RecommendationRepository>
 ) {
 
     companion object {
@@ -136,12 +139,12 @@ class PlaybackConnectionManager @Inject constructor(
 
             // Guarantee track persistence in local database and register in playback telemetry history
             trackDao.insertTrack(playableTrack)
-            recentPlaybackDao.recordRecentPlayback(
-                RecentPlaybackEntity(
-                    trackId = playableTrack.id,
-                    playedAtTimestamp = System.currentTimeMillis()
-                )
-            )
+            recentPlaybackDao.recordOrIncrementPlayback(playableTrack.id)
+
+            // If queue is single track, asynchronously load YouTube-like up next recommendations
+            if (currentPlaylist.size <= 1) {
+                extendAutoplayQueue(playableTrack)
+            }
 
             _playbackState.update {
                 it.copy(
@@ -493,12 +496,7 @@ class PlaybackConnectionManager @Inject constructor(
                 val track = currentPlaylist[currentIndex]
                 scope.launch(Dispatchers.IO) {
                     trackDao.insertTrack(track)
-                    recentPlaybackDao.recordRecentPlayback(
-                        RecentPlaybackEntity(
-                            trackId = track.id,
-                            playedAtTimestamp = System.currentTimeMillis()
-                        )
-                    )
+                    recentPlaybackDao.recordOrIncrementPlayback(track.id)
                 }
                 if (track.streamUrl.isNullOrBlank() && !track.isDownloaded) {
                     scope.launch {
@@ -511,6 +509,11 @@ class PlaybackConnectionManager @Inject constructor(
                     }
                 }
                 prefetchAdjacentTracks(currentIndex)
+
+                // YouTube-like Infinite Autoplay: automatically append more songs when nearing queue end
+                if (currentIndex >= currentPlaylist.size - 2) {
+                    extendAutoplayQueue(track)
+                }
             }
             syncPlaybackState()
         }
@@ -559,6 +562,36 @@ class PlaybackConnectionManager @Inject constructor(
                         skipToNext()
                     }
                 }
+            }
+        }
+    }
+
+    private var isExtendingQueue = false
+
+    /**
+     * Synthesizes and appends fresh high-affinity recommendations to the active ExoPlayer queue,
+     * delivering seamless infinite continuous playback just like YouTube Autoplay.
+     */
+    fun extendAutoplayQueue(seedTrack: TrackEntity) {
+        if (isExtendingQueue) return
+        isExtendingQueue = true
+        scope.launch {
+            try {
+                val recommendationRepo = recommendationRepositoryProvider.get()
+                val nextBatch = recommendationRepo.generateRecommendationQueue(seedTrack, 15)
+                val existingIds = currentPlaylist.map { it.id }.toSet()
+                val uniqueNew = nextBatch.filter { it.id !in existingIds }
+
+                if (uniqueNew.isNotEmpty()) {
+                    currentPlaylist.addAll(uniqueNew)
+                    val mediaItems = uniqueNew.map { buildMediaItem(it) }
+                    mediaController?.addMediaItems(mediaItems)
+                    _playbackState.update { it.copy(queue = currentPlaylist.toList()) }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Autoplay extension non-fatal: ${e.message}")
+            } finally {
+                isExtendingQueue = false
             }
         }
     }

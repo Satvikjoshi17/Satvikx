@@ -169,4 +169,54 @@ class NewPipeYouTubeEngine @Inject constructor(
         val regex = Regex("(?:v=|/v/|youtu\\.be/|/embed/|/watch\\?v=|/shorts/)([a-zA-Z0-9_-]{11})")
         return regex.find(url)?.groupValues?.get(1) ?: url.takeLast(11)
     }
+
+    /**
+     * Extracts YouTube's algorithmic "Up Next" / Related stream recommendations directly
+     * from NewPipe's StreamExtractor page.
+     */
+    fun getRelatedTracks(videoId: String): List<TrackEntity> {
+        val trimmedId = videoId.trim()
+        if (trimmedId.isEmpty()) return emptyList()
+
+        ensureInitialized()
+
+        return try {
+            val service = ServiceList.YouTube
+            val linkHandler = service.streamLHFactory.fromId(trimmedId)
+            val streamExtractor = service.getStreamExtractor(linkHandler)
+            streamExtractor.fetchPage()
+
+            val relatedItems = streamExtractor.relatedItems?.items.orEmpty()
+            val tracks = mutableListOf<TrackEntity>()
+
+            relatedItems.forEach { item ->
+                if (item is StreamInfoItem) {
+                    val url = item.url.orEmpty()
+                    val id = extractVideoIdFromUrl(url)
+                    val title = item.name.orEmpty().ifBlank { "Untitled Audio" }
+                    val artist = item.uploaderName.orEmpty().ifBlank { "Unknown Artist" }
+                    val thumb = item.thumbnails.lastOrNull()?.url.orEmpty()
+                    val duration = item.duration.coerceAtLeast(0L)
+
+                    if (id.isNotBlank() && id != trimmedId) {
+                        tracks.add(
+                            TrackEntity(
+                                id = id,
+                                title = title,
+                                artist = artist,
+                                durationSeconds = duration,
+                                thumbnailUrl = thumb,
+                                streamUrl = null,
+                                isDownloaded = false
+                            )
+                        )
+                    }
+                }
+            }
+            tracks
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract related YouTube tracks for $videoId: ${e.message}")
+            emptyList()
+        }
+    }
 }

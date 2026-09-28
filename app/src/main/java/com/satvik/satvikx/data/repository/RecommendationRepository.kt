@@ -4,6 +4,7 @@ import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.remote.newpipe.NewPipeYouTubeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -47,7 +48,8 @@ class RecommendationRepository @Inject constructor(
     private val recentPlaybackDao: RecentPlaybackDao,
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
-    private val streamRepository: StreamRepository
+    private val streamRepository: StreamRepository,
+    private val newPipeYouTubeEngine: NewPipeYouTubeEngine
 ) {
 
     private val genreKeywords = listOf(
@@ -281,38 +283,91 @@ class RecommendationRepository @Inject constructor(
     }
 
     /**
-     * Generates a tailored, suggestion-based queue for a base track.
-     * Guaranteed to return high-affinity recommended tracks, NOT raw search results!
+     * Generates a tailored, YouTube-like algorithmic "Up Next" queue for a base track.
+     * Combines YouTube's real "Up Next" / Related stream recommendations with the user's
+     * learned listening history (artists listened to frequently, categories, and likes).
      */
     suspend fun generateRecommendationQueue(
         baseTrack: TrackEntity,
-        limit: Int = 20
+        limit: Int = 25
     ): List<TrackEntity> = coroutineScope {
+        val affinities = analyzeUserAffinities()
+
+        // 1. YouTube Algorithmic "Up Next" / Related items for the seed track
+        val ytRelatedDeferred = async(Dispatchers.IO) {
+            try {
+                newPipeYouTubeEngine.getRelatedTracks(baseTrack.id)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+        // 2. Artist Radio / Discography for the seed artist
         val cleanArtist = baseTrack.artist.replace(" - Topic", "").trim()
-        val radioQuery = if (cleanArtist.isNotBlank() && cleanArtist != "Unknown Artist") {
-            "$cleanArtist radio mix songs"
-        } else {
-            "${baseTrack.title} radio mix"
+        val artistRadioDeferred = async(Dispatchers.IO) {
+            if (cleanArtist.isNotBlank() && cleanArtist != "Unknown Artist") {
+                streamRepository.searchTracks("$cleanArtist radio mix songs").firstOrNull()?.getOrNull().orEmpty()
+            } else emptyList()
         }
 
-        val complementaryQuery = "${baseTrack.title} similar music"
-
-        val radioDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks(radioQuery).firstOrNull()?.getOrNull().orEmpty()
+        // 3. User History Affinity Match:
+        // What artists or genres does this user frequently listen to alongside this artist?
+        val userTopArtists = affinities.overallTopArtists.take(4)
+        val userAffinityDeferred = async(Dispatchers.IO) {
+            val complementaryArtist = userTopArtists.firstOrNull { it.lowercase() != cleanArtist.lowercase() }
+            if (!complementaryArtist.isNullOrBlank()) {
+                streamRepository.searchTracks("$complementaryArtist best songs").firstOrNull()?.getOrNull().orEmpty()
+            } else {
+                val primaryGenre = affinities.primaryGenre ?: "trending"
+                streamRepository.searchTracks("$primaryGenre radio essentials").firstOrNull()?.getOrNull().orEmpty()
+            }
         }
-        val compDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks(complementaryQuery).firstOrNull()?.getOrNull().orEmpty()
-        }
 
-        val radioTracks = radioDeferred.await()
-        val compTracks = compDeferred.await()
+        val ytRelated = ytRelatedDeferred.await()
+        val artistRadio = artistRadioDeferred.await()
+        val userAffinityTracks = userAffinityDeferred.await()
 
-        val combined = (radioTracks + compTracks)
+        // 4. YouTube-Style Learning & Reranking Engine:
+        val candidates = (ytRelated + artistRadio + userAffinityTracks)
             .distinctBy { it.id }
             .filter { it.id != baseTrack.id }
 
-        // Start queue with baseTrack followed by algorithmic recommendations
-        (listOf(baseTrack) + combined).take(limit)
+        val scoredTracks = candidates.map { track ->
+            var score = 10f
+
+            // YouTube recommendation index score (higher in YouTube's related items = higher relevance)
+            val ytIndex = ytRelated.indexOfFirst { it.id == track.id }
+            if (ytIndex != -1) {
+                score += (25f - (ytIndex * 1.0f)).coerceAtLeast(0f)
+            }
+
+            // User History Affinity Boost
+            val trackArtist = track.artist.lowercase(Locale.ROOT)
+            if (affinities.overallTopArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
+                score += 15f
+            }
+            if (affinities.topLikedArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
+                score += 12f
+            }
+            if (affinities.topRecentArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
+                score += 10f
+            }
+
+            // Category / Genre Alignment Boost
+            val trackGenres = detectGenres(track.title + " " + track.artist)
+            if (affinities.topGenres.any { trackGenres.contains(it) }) {
+                score += 8f
+            }
+
+            // Exploration temperature (stochastic exploration factor like YouTube recommendations)
+            val explorationFactor = (Math.random() * 4.0).toFloat()
+
+            Pair(track, score + explorationFactor)
+        }
+
+        val rankedQueue = scoredTracks.sortedByDescending { it.second }.map { it.first }
+
+        (listOf(baseTrack) + rankedQueue).take(limit)
     }
 
     private fun extractArtists(artistStr: String): List<String> {
