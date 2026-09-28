@@ -143,7 +143,7 @@ class PlaybackConnectionManager @Inject constructor(
 
             // If queue is single track, asynchronously load YouTube-like up next recommendations
             if (currentPlaylist.size <= 1) {
-                extendAutoplayQueue(playableTrack)
+                extendAutoplayQueue(playableTrack, forceFresh = true)
             }
 
             _playbackState.update {
@@ -566,16 +566,19 @@ class PlaybackConnectionManager @Inject constructor(
         }
     }
 
-    private var isExtendingQueue = false
+    private var autoplayQueueJob: kotlinx.coroutines.Job? = null
 
     /**
      * Synthesizes and appends fresh high-affinity recommendations to the active ExoPlayer queue,
      * delivering seamless infinite continuous playback just like YouTube Autoplay.
      */
-    fun extendAutoplayQueue(seedTrack: TrackEntity) {
-        if (isExtendingQueue) return
-        isExtendingQueue = true
-        scope.launch {
+    fun extendAutoplayQueue(seedTrack: TrackEntity, forceFresh: Boolean = false) {
+        if (forceFresh) {
+            autoplayQueueJob?.cancel()
+        } else if (autoplayQueueJob?.isActive == true) {
+            return
+        }
+        autoplayQueueJob = scope.launch {
             try {
                 val recommendationRepo = recommendationRepositoryProvider.get()
                 val nextBatch = recommendationRepo.generateRecommendationQueue(seedTrack, 15)
@@ -589,9 +592,9 @@ class PlaybackConnectionManager @Inject constructor(
                     _playbackState.update { it.copy(queue = currentPlaylist.toList()) }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Autoplay extension non-fatal: ${e.message}")
-            } finally {
-                isExtendingQueue = false
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.w(TAG, "Autoplay extension non-fatal: ${e.message}")
+                }
             }
         }
     }

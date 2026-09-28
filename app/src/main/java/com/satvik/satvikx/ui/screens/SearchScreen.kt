@@ -267,7 +267,7 @@ fun SearchScreen(
                                 onClick = {
                                     keyboardController?.hide()
                                     focusManager.clearFocus()
-                                    viewModel.playTrack(track, uiState.results)
+                                    viewModel.playTrack(track)
                                 },
                                 onOptionClick = {
                                     keyboardController?.hide()
@@ -295,7 +295,7 @@ fun SearchScreen(
             onPlayNow = {
                 keyboardController?.hide()
                 focusManager.clearFocus()
-                viewModel.playTrack(it, uiState.results)
+                viewModel.playTrack(it)
             },
             onPlayNext = {
                 viewModel.playNext(it)

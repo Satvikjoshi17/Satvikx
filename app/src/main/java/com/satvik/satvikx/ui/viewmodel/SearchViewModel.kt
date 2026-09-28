@@ -126,9 +126,13 @@ class SearchViewModel @Inject constructor(
     }
 
     fun playTrack(track: TrackEntity, customQueue: List<TrackEntity>? = null) {
-        val searchResults = customQueue ?: _uiState.value.results
-        val queue = if (searchResults.isNotEmpty()) searchResults else listOf(track)
-        playbackConnectionManager.playTrack(track, queue)
+        if (customQueue != null) {
+            playbackConnectionManager.playTrack(track, customQueue)
+        } else {
+            // YouTube behavior: Selected song plays immediately as seed track,
+            // while YouTube algorithmic recommendations learned from history populate the "Up Next" queue.
+            playbackConnectionManager.playTrack(track, listOf(track))
+        }
     }
 
     fun playNext(track: TrackEntity) {
