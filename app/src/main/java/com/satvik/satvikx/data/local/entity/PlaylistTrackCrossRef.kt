@@ -7,6 +7,8 @@ import androidx.room.Index
 /**
  * Cross-reference table establishing a many-to-many relationship
  * between PlaylistEntity and TrackEntity with ordering support.
+ * Decoupled from TrackEntity cascade deletion so tracks are never
+ * purged from playlists when played, updated, or added across multiple playlists.
  */
 @Entity(
     tableName = "playlist_track_cross_ref",
@@ -16,12 +18,6 @@ import androidx.room.Index
             entity = PlaylistEntity::class,
             parentColumns = ["playlistId"],
             childColumns = ["playlistId"],
-            onDelete = ForeignKey.CASCADE
-        ),
-        ForeignKey(
-            entity = TrackEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["trackId"],
             onDelete = ForeignKey.CASCADE
         )
     ],

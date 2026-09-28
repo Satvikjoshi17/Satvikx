@@ -189,7 +189,14 @@ fun DownloadsScreen(
             sheetState = sheetState,
             onDismiss = { selectedTrackForOptions = null },
             onPlayNow = { viewModel.playTrack(it, downloadedTracks) },
-            onAddToQueue = { viewModel.playTrack(it) },
+            onPlayNext = {
+                viewModel.playNext(it)
+                android.widget.Toast.makeText(context, "Playing next: ${it.title}", android.widget.Toast.LENGTH_SHORT).show()
+            },
+            onAddToQueue = {
+                viewModel.addTrackToQueue(it)
+                android.widget.Toast.makeText(context, "Added to queue: ${it.title}", android.widget.Toast.LENGTH_SHORT).show()
+            },
             onDownload = { /* Already downloaded */ },
             onAddToPlaylist = { trackForAddToPlaylist = it },
             onShare = { /* Share */ }

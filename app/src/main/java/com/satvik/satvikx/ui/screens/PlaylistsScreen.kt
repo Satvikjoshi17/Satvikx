@@ -27,7 +27,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -176,6 +178,21 @@ fun PlaylistsScreen(
                             modifier = Modifier.size(36.dp)
                         )
                     }
+
+                    // Shuffle Play Button
+                    IconButton(
+                        onClick = {
+                            viewModel.playPlaylistShuffled(activePlaylist)
+                            Toast.makeText(context, "Shuffle playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Shuffle,
+                            contentDescription = "Shuffle Play",
+                            tint = ArcCyanBright,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
 
                 // 3-Dots Playlist Options Menu
@@ -192,6 +209,26 @@ fun PlaylistsScreen(
                         expanded = showPlaylistHeaderMenu,
                         onDismissRequest = { showPlaylistHeaderMenu = false }
                     ) {
+                        if (activePlaylist.tracks.isNotEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("Shuffle Play", fontFamily = FontFamily.Monospace) },
+                                leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = ArcCyanBright) },
+                                onClick = {
+                                    showPlaylistHeaderMenu = false
+                                    viewModel.playPlaylistShuffled(activePlaylist)
+                                    Toast.makeText(context, "Shuffle playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Add All to Queue", fontFamily = FontFamily.Monospace) },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = PrimaryNeon) },
+                                onClick = {
+                                    showPlaylistHeaderMenu = false
+                                    activePlaylist.tracks.forEach { viewModel.addTrackToQueue(it) }
+                                    Toast.makeText(context, "Added ${activePlaylist.tracks.size} tracks to queue", Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Rename Playlist", fontFamily = FontFamily.Monospace) },
                             leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryNeon) },
@@ -449,6 +486,18 @@ fun PlaylistsScreen(
                             PlaylistCyberRow(
                                 playlistWithTracks = playlistWithTracks,
                                 onClick = { selectedPlaylistId = playlistWithTracks.playlist.playlistId },
+                                onPlayAll = {
+                                    if (playlistWithTracks.tracks.isNotEmpty()) {
+                                        viewModel.playPlaylist(playlistWithTracks)
+                                        Toast.makeText(context, "Playing ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                onShufflePlay = {
+                                    if (playlistWithTracks.tracks.isNotEmpty()) {
+                                        viewModel.playPlaylistShuffled(playlistWithTracks)
+                                        Toast.makeText(context, "Shuffle playing ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
                                 onMenuClick = { showRowMenu = true },
                                 isMenuExpanded = showRowMenu,
                                 onDismissMenu = { showRowMenu = false },
@@ -486,8 +535,12 @@ fun PlaylistsScreen(
             onPlayNow = {
                 viewModel.playTrack(it, activePlaylist?.tracks.orEmpty())
             },
+            onPlayNext = {
+                viewModel.playNext(it)
+                Toast.makeText(context, "Playing next", Toast.LENGTH_SHORT).show()
+            },
             onAddToQueue = {
-                viewModel.playTrack(it)
+                viewModel.addTrackToQueue(it)
                 Toast.makeText(context, "Added to playback queue", Toast.LENGTH_SHORT).show()
             },
             onDownload = {
@@ -651,6 +704,8 @@ fun PlaylistsScreen(
 private fun PlaylistCyberRow(
     playlistWithTracks: PlaylistWithTracks,
     onClick: () -> Unit,
+    onPlayAll: () -> Unit,
+    onShufflePlay: () -> Unit,
     onMenuClick: () -> Unit,
     isMenuExpanded: Boolean,
     onDismissMenu: () -> Unit,
@@ -715,6 +770,18 @@ private fun PlaylistCyberRow(
             }
         }
 
+        // Quick Shuffle button right on the row if tracks are present
+        if (playlistWithTracks.tracks.isNotEmpty()) {
+            IconButton(onClick = onShufflePlay) {
+                Icon(
+                    imageVector = Icons.Default.Shuffle,
+                    contentDescription = "Shuffle Playlist",
+                    tint = ArcCyanBright,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
         // 3-Dots Action Menu for each playlist card
         Box {
             IconButton(onClick = onMenuClick) {
@@ -729,6 +796,24 @@ private fun PlaylistCyberRow(
                 expanded = isMenuExpanded,
                 onDismissRequest = onDismissMenu
             ) {
+                if (playlistWithTracks.tracks.isNotEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Play All", fontFamily = FontFamily.Monospace) },
+                        leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = PrimaryNeon) },
+                        onClick = {
+                            onDismissMenu()
+                            onPlayAll()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Shuffle Play", fontFamily = FontFamily.Monospace) },
+                        leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = ArcCyanBright) },
+                        onClick = {
+                            onDismissMenu()
+                            onShufflePlay()
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text("Rename", fontFamily = FontFamily.Monospace) },
                     leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryNeon) },

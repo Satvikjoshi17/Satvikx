@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -39,6 +40,7 @@ fun TrackActionBottomSheet(
     sheetState: SheetState,
     onDismiss: () -> Unit,
     onPlayNow: (TrackEntity) -> Unit,
+    onPlayNext: ((TrackEntity) -> Unit)? = null,
     onAddToQueue: (TrackEntity) -> Unit,
     onDownload: (TrackEntity) -> Unit,
     onAddToPlaylist: (TrackEntity) -> Unit,
@@ -121,6 +123,17 @@ fun TrackActionBottomSheet(
                     onDismiss()
                 }
             )
+
+            if (onPlayNext != null) {
+                ActionItem(
+                    icon = Icons.Default.SkipNext,
+                    title = "Play Next",
+                    onClick = {
+                        onPlayNext(track)
+                        onDismiss()
+                    }
+                )
+            }
 
             ActionItem(
                 icon = Icons.AutoMirrored.Filled.QueueMusic,

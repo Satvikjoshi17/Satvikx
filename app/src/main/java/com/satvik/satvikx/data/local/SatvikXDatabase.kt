@@ -20,7 +20,7 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
         PlaylistTrackCrossRef::class,
         RecentPlaybackEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class SatvikXDatabase : RoomDatabase() {

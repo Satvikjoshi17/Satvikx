@@ -157,7 +157,14 @@ fun RecentsScreen(
             sheetState = sheetState,
             onDismiss = { selectedTrackForOptions = null },
             onPlayNow = { viewModel.playTrack(it, recentTracks) },
-            onAddToQueue = { viewModel.playTrack(it) },
+            onPlayNext = {
+                viewModel.playNext(it)
+                android.widget.Toast.makeText(context, "Playing next: ${it.title}", android.widget.Toast.LENGTH_SHORT).show()
+            },
+            onAddToQueue = {
+                viewModel.addTrackToQueue(it)
+                android.widget.Toast.makeText(context, "Added to queue: ${it.title}", android.widget.Toast.LENGTH_SHORT).show()
+            },
             onDownload = {
                 viewModel.downloadTrack(it)
                 android.widget.Toast.makeText(context, "Downloading ${it.title}", android.widget.Toast.LENGTH_SHORT).show()

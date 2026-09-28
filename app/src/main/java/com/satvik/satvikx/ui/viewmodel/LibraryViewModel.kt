@@ -79,6 +79,24 @@ class LibraryViewModel @Inject constructor(
         }
     }
 
+    fun playPlaylistShuffled(playlistWithTracks: PlaylistWithTracks) {
+        if (playlistWithTracks.tracks.isNotEmpty()) {
+            val shuffled = playlistWithTracks.tracks.shuffled()
+            playbackConnectionManager.playTrack(
+                shuffled.first(),
+                shuffled
+            )
+        }
+    }
+
+    fun addTrackToQueue(track: TrackEntity) {
+        playbackConnectionManager.addToQueue(track)
+    }
+
+    fun playNext(track: TrackEntity) {
+        playbackConnectionManager.playNext(track)
+    }
+
     fun deleteDownload(trackId: String) {
         viewModelScope.launch {
             downloadRepository.deleteDownload(trackId)

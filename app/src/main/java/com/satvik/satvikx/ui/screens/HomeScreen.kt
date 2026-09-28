@@ -541,6 +541,10 @@ fun HomeScreen(
             onPlayNow = {
                 homeViewModel.playTrackWithSuggestionQueue(it, uiState.trendingTracks)
             },
+            onPlayNext = {
+                homeViewModel.playNext(it)
+                Toast.makeText(context, "Playing next: ${it.title}", Toast.LENGTH_SHORT).show()
+            },
             onAddToQueue = {
                 homeViewModel.addToQueue(it)
                 Toast.makeText(context, "Added to queue: ${it.title}", Toast.LENGTH_SHORT).show()
