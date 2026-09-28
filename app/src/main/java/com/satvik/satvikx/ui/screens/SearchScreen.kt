@@ -21,8 +21,11 @@ import com.satvik.satvikx.ui.theme.ArcCyan
 import com.satvik.satvikx.ui.theme.ArcCyanBright
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
@@ -37,6 +40,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -45,7 +49,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -66,11 +73,22 @@ fun SearchScreen(
     libraryViewModel: LibraryViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
     var trackForAddToPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val listState = rememberLazyListState()
+
+    // Dismiss keyboard when user starts scrolling the search results
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+        }
+    }
 
     val quickPicks = listOf("Trending", "Chill Lofi", "Gym Workout", "Bollywood Hits", "Synthwave", "EDM")
 
@@ -144,6 +162,18 @@ fun SearchScreen(
                     }
                 }
             },
+            keyboardOptions = KeyboardOptions(
+                imeAction = ImeAction.Search
+            ),
+            keyboardActions = KeyboardActions(
+                onSearch = {
+                    keyboardController?.hide()
+                    focusManager.clearFocus()
+                    if (uiState.query.isNotBlank()) {
+                        viewModel.executeSearch(uiState.query)
+                    }
+                }
+            ),
             singleLine = true,
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
@@ -170,7 +200,11 @@ fun SearchScreen(
                 val isSelected = uiState.query.equals(chipText, ignoreCase = true)
                 FilterChip(
                     selected = isSelected,
-                    onClick = { viewModel.executeSearch(chipText) },
+                    onClick = {
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                        viewModel.executeSearch(chipText)
+                    },
                     label = {
                         Text(
                             text = chipText,
@@ -220,15 +254,26 @@ fun SearchScreen(
                     }
                 }
                 else -> {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
                         items(
                             items = uiState.results,
                             key = { it.id }
                         ) { track ->
                             TrackItem(
                                 track = track,
-                                onClick = { viewModel.playTrack(track, uiState.results) },
-                                onOptionClick = { selectedTrackForOptions = track },
+                                onClick = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                    viewModel.playTrack(track, uiState.results)
+                                },
+                                onOptionClick = {
+                                    keyboardController?.hide()
+                                    focusManager.clearFocus()
+                                    selectedTrackForOptions = track
+                                },
                                 onDownloadClick = {
                                     viewModel.downloadTrack(track)
                                     Toast.makeText(context, "Download started for ${track.title}", Toast.LENGTH_SHORT).show()
@@ -247,7 +292,11 @@ fun SearchScreen(
             track = track,
             sheetState = sheetState,
             onDismiss = { selectedTrackForOptions = null },
-            onPlayNow = { viewModel.playTrack(it, uiState.results) },
+            onPlayNow = {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+                viewModel.playTrack(it, uiState.results)
+            },
             onPlayNext = {
                 viewModel.playNext(it)
                 Toast.makeText(context, "Playing next: ${it.title}", Toast.LENGTH_SHORT).show()
