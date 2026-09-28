@@ -36,7 +36,4 @@ abstract class SatvikXDatabase : RoomDatabase() {
     }
 }
 
-/**
- * Alias to support SoundWaveDatabase architecture naming convention.
- */
-typealias SoundWaveDatabase = SatvikXDatabase
+
