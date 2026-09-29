@@ -46,6 +46,7 @@ fun TrackActionBottomSheet(
     onAddToPlaylist: (TrackEntity) -> Unit,
     onShare: (TrackEntity) -> Unit,
     onRemoveFromPlaylist: ((TrackEntity) -> Unit)? = null,
+    onRemoveFromHistory: ((TrackEntity) -> Unit)? = null,
     onDeleteDownload: ((TrackEntity) -> Unit)? = null
 ) {
     if (track == null) return
@@ -182,6 +183,18 @@ fun TrackActionBottomSheet(
                     tint = androidx.compose.ui.graphics.Color(0xFFFF5252),
                     onClick = {
                         onRemoveFromPlaylist(track)
+                        onDismiss()
+                    }
+                )
+            }
+
+            if (onRemoveFromHistory != null) {
+                ActionItem(
+                    icon = Icons.Default.Delete,
+                    title = "Remove from History",
+                    tint = androidx.compose.ui.graphics.Color(0xFFFF5252),
+                    onClick = {
+                        onRemoveFromHistory(track)
                         onDismiss()
                     }
                 )

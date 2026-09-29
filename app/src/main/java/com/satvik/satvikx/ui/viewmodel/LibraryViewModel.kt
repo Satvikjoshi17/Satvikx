@@ -26,7 +26,10 @@ import javax.inject.Inject
 
 data class StorageInfo(
     val usedStorageFormatted: String = "0 B",
-    val availableStorageFormatted: String = "0 B"
+    val availableStorageFormatted: String = "0 B",
+    val usedBytes: Long = 0L,
+    val availableBytes: Long = 0L,
+    val usagePercentage: Float = 0f
 )
 
 @HiltViewModel
@@ -65,9 +68,14 @@ class LibraryViewModel @Inject constructor(
     fun refreshStorageInfo() {
         val used = storageManager.getUsedStorageBytes()
         val avail = storageManager.getAvailableDiskSpaceBytes()
+        val total = used + avail
+        val percentage = if (total > 0) (used.toFloat() / total.toFloat()).coerceIn(0f, 1f) else 0f
         _storageInfo.value = StorageInfo(
             usedStorageFormatted = storageManager.formatFileSize(used),
-            availableStorageFormatted = storageManager.formatFileSize(avail)
+            availableStorageFormatted = storageManager.formatFileSize(avail),
+            usedBytes = used,
+            availableBytes = avail,
+            usagePercentage = percentage
         )
     }
 
@@ -118,6 +126,28 @@ class LibraryViewModel @Inject constructor(
         viewModelScope.launch {
             downloadRepository.deleteDownload(trackId)
             refreshStorageInfo()
+        }
+    }
+
+    fun playAllDownloads(shuffled: Boolean = false) {
+        val tracks = downloadedTracks.value
+        if (tracks.isNotEmpty()) {
+            val list = if (shuffled) tracks.shuffled() else tracks
+            playbackConnectionManager.playTrack(list.first(), list)
+        }
+    }
+
+    fun playAllRecent(shuffled: Boolean = false) {
+        val tracks = recentTracks.value
+        if (tracks.isNotEmpty()) {
+            val list = if (shuffled) tracks.shuffled() else tracks
+            playbackConnectionManager.playTrack(list.first(), list)
+        }
+    }
+
+    fun removeFromHistory(trackId: String) {
+        viewModelScope.launch {
+            recentPlaybackDao.deleteRecentById(trackId)
         }
     }
 
