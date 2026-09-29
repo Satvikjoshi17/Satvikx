@@ -4,7 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.download.DownloadRepository
 import com.satvik.satvikx.data.local.dao.PlaylistDao
+import com.satvik.satvikx.data.local.dao.SearchHistoryDao
 import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
+import com.satvik.satvikx.data.local.entity.SearchHistoryEntity
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.playback.PlaybackConnectionManager
@@ -28,7 +30,8 @@ data class SearchUiState(
     val query: String = "",
     val isSearching: Boolean = false,
     val results: List<TrackEntity> = emptyList(),
-    val error: String? = null
+    val error: String? = null,
+    val searchHistory: List<String> = emptyList()
 )
 
 @OptIn(FlowPreview::class)
@@ -38,7 +41,8 @@ class SearchViewModel @Inject constructor(
     private val playbackConnectionManager: PlaybackConnectionManager,
     private val recommendationRepository: RecommendationRepository,
     private val downloadRepository: DownloadRepository,
-    private val playlistDao: PlaylistDao
+    private val playlistDao: PlaylistDao,
+    private val searchHistoryDao: SearchHistoryDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SearchUiState())
@@ -54,6 +58,13 @@ class SearchViewModel @Inject constructor(
             .filter { it.isNotBlank() }
             .onEach { query ->
                 executeSearch(query)
+            }
+            .launchIn(viewModelScope)
+
+        // Observe recent search history queries
+        searchHistoryDao.getRecentSearchQueries()
+            .onEach { historyEntities ->
+                _uiState.update { it.copy(searchHistory = historyEntities.map { item -> item.query }) }
             }
             .launchIn(viewModelScope)
 
@@ -97,11 +108,16 @@ class SearchViewModel @Inject constructor(
     }
 
     fun executeSearch(query: String) {
-        if (query.isBlank()) return
+        val trimmed = query.trim()
+        if (trimmed.isBlank()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(query = query, isSearching = true, error = null) }
-            streamRepository.searchTracks(query).collect { result ->
+            searchHistoryDao.recordSearchQuery(SearchHistoryEntity(trimmed))
+        }
+
+        viewModelScope.launch {
+            _uiState.update { it.copy(query = trimmed, isSearching = true, error = null) }
+            streamRepository.searchTracks(trimmed).collect { result ->
                 result.fold(
                     onSuccess = { tracks ->
                         _uiState.update {
@@ -122,6 +138,18 @@ class SearchViewModel @Inject constructor(
                     }
                 )
             }
+        }
+    }
+
+    fun deleteSearchQuery(query: String) {
+        viewModelScope.launch {
+            searchHistoryDao.deleteSearchQuery(query)
+        }
+    }
+
+    fun clearAllSearchHistory() {
+        viewModelScope.launch {
+            searchHistoryDao.clearAllSearchHistory()
         }
     }
 
