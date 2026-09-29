@@ -187,6 +187,7 @@ fun RootNavigationHost(
             },
             onPlayTrackAtIndex = { playerViewModel.playTrackAtIndex(it) },
             onRemoveFromQueue = { playerViewModel.removeFromQueue(it) },
+            onMoveQueueItem = { from, to -> playerViewModel.moveQueueItem(from, to) },
             onStartSleepTimer = { playerViewModel.startSleepTimer(it) },
             onCancelSleepTimer = { playerViewModel.cancelSleepTimer() },
             isFavorite = isCurrentTrackLiked,

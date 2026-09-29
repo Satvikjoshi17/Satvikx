@@ -331,6 +331,27 @@ class PlaybackConnectionManager @Inject constructor(
         }
     }
 
+    /**
+     * Reorders an item in the queue from [fromIndex] to [toIndex], keeping ExoPlayer
+     * playback perfectly synchronized without interrupting the current track.
+     */
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) {
+        if (fromIndex !in currentPlaylist.indices || toIndex !in currentPlaylist.indices || fromIndex == toIndex) {
+            return
+        }
+        val item = currentPlaylist.removeAt(fromIndex)
+        currentPlaylist.add(toIndex, item)
+        mediaController?.let { controller ->
+            controller.moveMediaItem(fromIndex, toIndex)
+            _playbackState.update {
+                it.copy(
+                    queue = currentPlaylist.toList(),
+                    currentQueueIndex = controller.currentMediaItemIndex
+                )
+            }
+        }
+    }
+
     private var sleepTimerJob: Job? = null
 
     fun startSleepTimer(minutes: Int) {

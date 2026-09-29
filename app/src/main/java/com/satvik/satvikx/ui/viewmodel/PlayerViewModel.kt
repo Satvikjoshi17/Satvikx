@@ -52,6 +52,7 @@ class PlayerViewModel @Inject constructor(
     fun playTrackAtIndex(index: Int) = playbackConnectionManager.playTrackAtIndex(index)
 
     fun removeFromQueue(index: Int) = playbackConnectionManager.removeFromQueue(index)
+    fun moveQueueItem(fromIndex: Int, toIndex: Int) = playbackConnectionManager.moveQueueItem(fromIndex, toIndex)
 
     fun startSleepTimer(minutes: Int) = playbackConnectionManager.startSleepTimer(minutes)
 
