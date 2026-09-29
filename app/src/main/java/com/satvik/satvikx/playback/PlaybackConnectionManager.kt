@@ -401,11 +401,22 @@ class PlaybackConnectionManager @Inject constructor(
     private fun buildMediaItem(track: TrackEntity): MediaItem {
         val uri = when {
             !track.localPath.isNullOrBlank() -> {
-                if (track.localPath.startsWith("file://")) {
-                    Uri.parse(track.localPath)
+                val file = if (track.localPath.startsWith("file://")) {
+                    java.io.File(Uri.parse(track.localPath).path.orEmpty())
                 } else {
-                    Uri.fromFile(java.io.File(track.localPath))
+                    java.io.File(track.localPath)
                 }
+                if (file.exists() && file.length() > 0L) {
+                    Uri.fromFile(file)
+                } else if (!track.streamUrl.isNullOrBlank()) {
+                    Uri.parse(track.streamUrl)
+                } else {
+                    Uri.EMPTY
+                }
+            }
+            storageManager.isAudioDownloaded(track.id) -> {
+                val file = storageManager.getTrackAudioFile(track.id)
+                Uri.fromFile(file)
             }
             !track.streamUrl.isNullOrBlank() -> Uri.parse(track.streamUrl)
             else -> Uri.EMPTY

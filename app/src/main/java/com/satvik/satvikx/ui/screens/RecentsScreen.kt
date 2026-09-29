@@ -1,5 +1,6 @@
 package com.satvik.satvikx.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -171,6 +172,10 @@ fun RecentsScreen(
             },
             onAddToPlaylist = {
                 trackForAddToPlaylist = it
+            },
+            onDeleteDownload = { trackToDelete ->
+                viewModel.deleteDownload(trackToDelete.id)
+                Toast.makeText(context, "Deleted ${trackToDelete.title} from offline storage", Toast.LENGTH_SHORT).show()
             },
             onShare = { /* Share */ }
         )

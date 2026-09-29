@@ -58,6 +58,10 @@ class DownloadWorker @AssistedInject constructor(
         appContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
 
     override suspend fun doWork(): Result = withContext(Dispatchers.IO) {
+        if (runAttemptCount > 2) {
+            return@withContext Result.failure()
+        }
+
         val trackId = inputData.getString(KEY_TRACK_ID) ?: return@withContext Result.failure()
         val title = inputData.getString(KEY_TITLE) ?: "Audio Track"
         val artist = inputData.getString(KEY_ARTIST) ?: "Unknown Artist"
@@ -78,7 +82,7 @@ class DownloadWorker @AssistedInject constructor(
         if (streamUrl.isNullOrBlank()) {
             val streamResult = streamRepository.resolveAudioStream(trackId, qualityKey).firstOrNull()?.getOrNull()
             if (streamResult == null || streamResult.streamUrl.isBlank()) {
-                return@withContext Result.failure()
+                return@withContext if (runAttemptCount < 2) Result.retry() else Result.failure()
             }
             streamUrl = streamResult.streamUrl
         }
@@ -96,15 +100,40 @@ class DownloadWorker @AssistedInject constructor(
         val tempFile = storageManager.getTemporaryDownloadFile(trackId)
         val targetFile = storageManager.getTrackAudioFile(trackId)
 
+        val downloadClient = okHttpClient.newBuilder()
+            .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .retryOnConnectionFailure(true)
+            .build()
+
         try {
-            val request = Request.Builder()
+            var request = Request.Builder()
                 .url(streamUrl)
                 .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
                 .build()
 
-            val response = okHttpClient.newCall(request).execute()
+            var response = downloadClient.newCall(request).execute()
+
+            // If the URL has expired (common with YouTube googlevideo links or signed CDN tokens), re-resolve a fresh link
+            if (!response.isSuccessful || response.code in 400..499) {
+                response.close()
+                val freshResult = streamRepository.resolveAudioStream(trackId, qualityKey).firstOrNull()?.getOrNull()
+                if (freshResult != null && !freshResult.streamUrl.isBlank()) {
+                    streamUrl = freshResult.streamUrl
+                    request = Request.Builder()
+                        .url(streamUrl)
+                        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36")
+                        .build()
+                    response = downloadClient.newCall(request).execute()
+                }
+            }
+
             if (!response.isSuccessful || response.body == null) {
-                return@withContext Result.retry()
+                response.close()
+                tempFile.delete()
+                return@withContext if (runAttemptCount < 2) Result.retry() else Result.failure()
             }
 
             val body = response.body!!
@@ -129,12 +158,12 @@ class DownloadWorker @AssistedInject constructor(
                         downloadedBytes += bytesRead
 
                         val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastUpdateTimestamp >= 400 || downloadedBytes == totalBytes) {
+                        if (currentTime - lastUpdateTimestamp >= 400 || (totalBytes > 0 && downloadedBytes == totalBytes)) {
                             lastUpdateTimestamp = currentTime
                             val progress = if (totalBytes > 0) {
                                 (downloadedBytes.toFloat() / totalBytes.toFloat()).coerceIn(0f, 1f)
                             } else {
-                                0f
+                                0.5f // Indeterminate streaming progress
                             }
 
                             setProgress(
@@ -166,7 +195,7 @@ class DownloadWorker @AssistedInject constructor(
                 return@withContext Result.failure()
             }
 
-            // 3. Update Room database entity
+            // 3. Update Room database entity and download state
             val existing = trackDao.getTrackByIdSync(trackId)
             val updated = (existing ?: TrackEntity(
                 id = trackId,
@@ -179,6 +208,7 @@ class DownloadWorker @AssistedInject constructor(
                 localPath = targetFile.absolutePath
             )
             trackDao.insertTrack(updated)
+            trackDao.updateDownloadStatus(trackId, isDownloaded = true, localPath = targetFile.absolutePath)
 
             // 4. Show completed notification briefly
             showCompletedNotification(notificationId, title, artist)
@@ -192,7 +222,7 @@ class DownloadWorker @AssistedInject constructor(
 
         } catch (e: Exception) {
             tempFile.delete()
-            return@withContext if (e is IOException) Result.retry() else Result.failure()
+            return@withContext if (e is IOException && runAttemptCount < 2) Result.retry() else Result.failure()
         }
     }
 

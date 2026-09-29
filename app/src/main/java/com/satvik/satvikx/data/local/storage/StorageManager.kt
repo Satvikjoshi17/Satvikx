@@ -50,10 +50,14 @@ class StorageManager @Inject constructor(
 
     /**
      * Returns the permanent storage destination File for an audio track.
+     * If a file already exists for this track with any audio extension, it is returned.
      */
     fun getTrackAudioFile(trackId: String, extension: String = "m4a"): File {
         val safeId = sanitizeFileName(trackId)
         val ext = extension.removePrefix(".")
+        val existing = musicDir.listFiles { _, name -> name.startsWith(safeId) && !name.endsWith(".tmp") }
+            ?.firstOrNull { it.length() > 0L }
+        if (existing != null) return existing
         return File(musicDir, "$safeId.$ext")
     }
 
@@ -88,24 +92,28 @@ class StorageManager @Inject constructor(
      * Verifies if a given track ID exists and has non-zero size in the music storage.
      */
     fun isAudioDownloaded(trackId: String): Boolean {
-        val file = getTrackAudioFile(trackId)
-        return file.exists() && file.length() > 0L
+        val safeId = sanitizeFileName(trackId)
+        val file = File(musicDir, "$safeId.m4a")
+        if (file.exists() && file.length() > 0L) return true
+        val anyMatch = musicDir.listFiles { _, name -> name.startsWith(safeId) && !name.endsWith(".tmp") }
+        return anyMatch?.any { it.length() > 0L } == true
     }
 
     /**
-     * Deletes the audio file associated with a track ID.
+     * Deletes the audio file associated with a track ID across all extension variants and temp files.
      */
     fun deleteTrackAudio(trackId: String): Boolean {
-        val file = getTrackAudioFile(trackId)
-        var deleted = true
-        if (file.exists()) {
-            deleted = file.delete()
+        val safeId = sanitizeFileName(trackId)
+        var anyDeleted = false
+        val matchingFiles = musicDir.listFiles { _, name -> name.startsWith(safeId) }
+        matchingFiles?.forEach { file ->
+            if (file.delete()) anyDeleted = true
         }
-        val temp = getTemporaryDownloadFile(trackId)
-        if (temp.exists()) {
-            temp.delete()
+        val tempFiles = tempDir.listFiles { _, name -> name.startsWith(safeId) }
+        tempFiles?.forEach { file ->
+            file.delete()
         }
-        return deleted
+        return anyDeleted
     }
 
     /**

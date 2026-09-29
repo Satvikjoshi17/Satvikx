@@ -45,7 +45,8 @@ fun TrackActionBottomSheet(
     onDownload: (TrackEntity) -> Unit,
     onAddToPlaylist: (TrackEntity) -> Unit,
     onShare: (TrackEntity) -> Unit,
-    onRemoveFromPlaylist: ((TrackEntity) -> Unit)? = null
+    onRemoveFromPlaylist: ((TrackEntity) -> Unit)? = null,
+    onDeleteDownload: ((TrackEntity) -> Unit)? = null
 ) {
     if (track == null) return
 
@@ -150,6 +151,16 @@ fun TrackActionBottomSheet(
                     title = "Download Offline",
                     onClick = {
                         onDownload(track)
+                        onDismiss()
+                    }
+                )
+            } else if (onDeleteDownload != null) {
+                ActionItem(
+                    icon = Icons.Default.Delete,
+                    title = "Delete from Downloads",
+                    tint = androidx.compose.ui.graphics.Color(0xFFFF5252),
+                    onClick = {
+                        onDeleteDownload(track)
                         onDismiss()
                     }
                 )

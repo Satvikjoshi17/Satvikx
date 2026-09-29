@@ -258,7 +258,11 @@ fun DownloadsScreen(
                     TrackItem(
                         track = track,
                         onClick = { viewModel.playTrack(track, downloadedTracks) },
-                        onOptionClick = { selectedTrackForOptions = track }
+                        onOptionClick = { selectedTrackForOptions = track },
+                        onDeleteClick = {
+                            viewModel.deleteDownload(track.id)
+                            Toast.makeText(context, "Deleted ${track.title} from offline storage", Toast.LENGTH_SHORT).show()
+                        }
                     )
                 }
             }
@@ -273,13 +277,17 @@ fun DownloadsScreen(
             onPlayNow = { viewModel.playTrack(it, downloadedTracks) },
             onPlayNext = {
                 viewModel.playNext(it)
-                android.widget.Toast.makeText(context, "Playing next: ${it.title}", android.widget.Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Playing next: ${it.title}", Toast.LENGTH_SHORT).show()
             },
             onAddToQueue = {
                 viewModel.addTrackToQueue(it)
-                android.widget.Toast.makeText(context, "Added to queue: ${it.title}", android.widget.Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Added to queue: ${it.title}", Toast.LENGTH_SHORT).show()
             },
             onDownload = { /* Already downloaded */ },
+            onDeleteDownload = { trackToDelete ->
+                viewModel.deleteDownload(trackToDelete.id)
+                Toast.makeText(context, "Deleted ${trackToDelete.title} from offline storage", Toast.LENGTH_SHORT).show()
+            },
             onAddToPlaylist = { trackForAddToPlaylist = it },
             onShare = { /* Share */ }
         )

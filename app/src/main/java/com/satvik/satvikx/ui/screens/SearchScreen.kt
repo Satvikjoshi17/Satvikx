@@ -476,6 +476,10 @@ fun SearchScreen(
             onAddToPlaylist = {
                 trackForAddToPlaylist = it
             },
+            onDeleteDownload = { trackToDelete ->
+                libraryViewModel.deleteDownload(trackToDelete.id)
+                Toast.makeText(context, "Deleted ${trackToDelete.title} from offline storage", Toast.LENGTH_SHORT).show()
+            },
             onShare = { /* Share */ }
         )
     }

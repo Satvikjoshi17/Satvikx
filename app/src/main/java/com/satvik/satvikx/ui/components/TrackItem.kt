@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
@@ -46,6 +47,7 @@ fun TrackItem(
     onClick: () -> Unit,
     onOptionClick: () -> Unit,
     onDownloadClick: (() -> Unit)? = null,
+    onDeleteClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val durationText = formatDuration(track.durationSeconds)
@@ -158,6 +160,21 @@ fun TrackItem(
                     imageVector = Icons.Default.Download,
                     contentDescription = "Download ${track.title}",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
+            }
+        }
+
+        // Quick Delete Action (for Downloads screen)
+        if (onDeleteClick != null) {
+            IconButton(
+                onClick = onDeleteClick,
+                modifier = Modifier.size(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.DeleteOutline,
+                    contentDescription = "Delete ${track.title} from offline storage",
+                    tint = Color(0xFFFF5252).copy(alpha = 0.85f),
                     modifier = Modifier.size(22.dp)
                 )
             }

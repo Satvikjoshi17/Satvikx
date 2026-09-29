@@ -586,7 +586,11 @@ fun PlaylistsScreen(
                     viewModel.removeTrackFromPlaylist(activePlaylist.playlist.playlistId, trackToRemove.id)
                     Toast.makeText(context, "Removed from ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
                 }
-            } else null
+            } else null,
+            onDeleteDownload = { trackToDelete ->
+                viewModel.deleteDownload(trackToDelete.id)
+                Toast.makeText(context, "Deleted ${trackToDelete.title} from offline storage", Toast.LENGTH_SHORT).show()
+            }
         )
     }
 
