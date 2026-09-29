@@ -27,6 +27,14 @@ data class UserAffinities(
     val primaryGenre: String? = null
 )
 
+data class DailyMix(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val tracks: List<TrackEntity>,
+    val gradientColors: List<Long>
+)
+
 data class HomeRecommendationCategories(
     val becauseYouLikedTitle: String = "BECAUSE YOU LIKED",
     val becauseYouLikedTracks: List<TrackEntity> = emptyList(),
@@ -36,6 +44,7 @@ data class HomeRecommendationCategories(
     val moodTracks: List<TrackEntity> = emptyList(),
     val trendingTracks: List<TrackEntity> = emptyList(),
     val quickPicks: List<TrackEntity> = emptyList(),
+    val dailyMixes: List<DailyMix> = emptyList(),
     val categoryRadarTitle: String = "CATEGORY RADAR",
     val categoryRadarTracks: List<TrackEntity> = emptyList(),
     val timeOfDayTitle: String = "TIME-SHIFTED PROTOCOL",
@@ -201,6 +210,43 @@ class RecommendationRepository @Inject constructor(
             trendingTracks.take(6)
         }
 
+        // Spotify-style Daily Mixes (4 personalized algorithmic mixes with custom artwork gradients)
+        val dailyMix1Tracks = (becauseLikedTracks.take(8) + affinities.heavyRotationTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.take(10) }
+        val dailyMix2Tracks = (discoveryTracks.take(8) + trendingTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.drop(5).take(10) }
+        val dailyMix3Tracks = moodTracks.take(10).ifEmpty { trendingTracks.take(10) }
+        val dailyMix4Tracks = (categoryTracks.take(8) + trendingTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.take(10) }
+
+        val dailyMixes = listOf(
+            DailyMix(
+                id = "mix_1",
+                title = "Daily Mix 1",
+                subtitle = if (!topLiked.isNullOrBlank()) "$topLiked & More" else "Personalized Hits",
+                tracks = dailyMix1Tracks,
+                gradientColors = listOf(0xFFFF416CL, 0xFFFF4B2BL)
+            ),
+            DailyMix(
+                id = "mix_2",
+                title = "Daily Mix 2",
+                subtitle = "${discoveryGenre.replaceFirstChar { it.uppercase() }} & Discoveries",
+                tracks = dailyMix2Tracks,
+                gradientColors = listOf(0xFF00C6FFL, 0xFF0072FFL)
+            ),
+            DailyMix(
+                id = "mix_3",
+                title = "Chill Mix",
+                subtitle = "Lo-Fi, Acoustic & Downtempo",
+                tracks = dailyMix3Tracks,
+                gradientColors = listOf(0xFF8A2387L, 0xFFE94057L)
+            ),
+            DailyMix(
+                id = "mix_4",
+                title = "Energy Mix",
+                subtitle = "Gym, Phonk & High Tempo",
+                tracks = dailyMix4Tracks,
+                gradientColors = listOf(0xFF11998EL, 0xFF38EF7DL)
+            )
+        )
+
         HomeRecommendationCategories(
             becauseYouLikedTitle = if (!topLiked.isNullOrBlank()) "BECAUSE YOU LIKED ${topLiked.uppercase()}" else "RECOMMENDED FOR YOU",
             becauseYouLikedTracks = becauseLikedTracks,
@@ -212,6 +258,7 @@ class RecommendationRepository @Inject constructor(
             moodTracks = moodTracks,
             trendingTracks = trendingTracks,
             quickPicks = quickPicks,
+            dailyMixes = dailyMixes,
             timeOfDayTitle = timeTitle,
             timeOfDaySubtitle = timeSubtitle,
             autopilotTargetSinger = topLiked?.uppercase() ?: "GLOBAL ICONS",
@@ -387,14 +434,15 @@ class RecommendationRepository @Inject constructor(
 
     private fun getQueryForMood(mood: String): String {
         return when (mood.lowercase(Locale.ROOT)) {
-            "chill" -> "Chill Lo-Fi Beats relaxing"
-            "workout" -> "Workout Energy EDM Gym pump motivation"
-            "focus" -> "Deep Focus Ambient Study Flow"
+            "all" -> "Top Global Hits Viral"
+            "relax", "chill" -> "Chill Lo-Fi Beats relaxing acoustic"
+            "workout", "energize" -> "Workout Energy EDM Gym pump motivation"
+            "focus" -> "Deep Focus Ambient Study Flow beats"
+            "night drive", "drive" -> "Night Drive Phonk Synthwave"
             "party" -> "Club Party Dance chartbusters"
             "synthwave" -> "Synthwave Retrowave Cyberpunk 80s"
             "retro" -> "Retro Classic Master Hits 80s 90s"
-            "romantic" -> "Acoustic Romantic Love Songs"
-            "acoustic" -> "Acoustic Pop Guitar Chill"
+            "romance", "romantic" -> "Acoustic Romantic Love Songs Bollywood"
             else -> "Top Acoustic Hits"
         }
     }

@@ -53,10 +53,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import com.satvik.satvikx.data.repository.DailyMix
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -187,7 +189,49 @@ fun HomeScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // YouTube Music & Spotify Style Mood / Activity Filter Capsules
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    homeViewModel.availableMoods.forEach { mood ->
+                        val isSelected = uiState.selectedMood == mood
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { homeViewModel.selectMood(mood) },
+                            label = {
+                                Text(
+                                    text = mood.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.5.sp
+                                    )
+                                )
+                            },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = ArcCyanBright,
+                                selectedLabelColor = StarkCarbon,
+                                containerColor = StarkSurface,
+                                labelColor = TextSecondary
+                            ),
+                            border = FilterChipDefaults.filterChipBorder(
+                                enabled = true,
+                                selected = isSelected,
+                                borderColor = StarkBorder,
+                                selectedBorderColor = ArcCyanBright
+                            ),
+                            shape = RoundedCornerShape(20.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 // Autopilot Smart Mix Hero Banner
                 Surface(
@@ -298,6 +342,36 @@ fun HomeScreen(
             }
         }
 
+        // Active Mood Picks (when a mood filter other than 'All' is active)
+        if (uiState.selectedMood != "All" && uiState.moodTracks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(14.dp))
+                SectionHeader(
+                    title = "${uiState.selectedMood.uppercase()} PICKS",
+                    tag = "ACTIVE VIBE",
+                    tagColor = ArcCyanBright
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    items(uiState.moodTracks, key = { "active_mood_${it.id}" }) { track ->
+                        RecommendationCard(
+                            track = track,
+                            onClick = {
+                                homeViewModel.playTrackWithSuggestionQueue(
+                                    track,
+                                    uiState.moodTracks
+                                )
+                            },
+                            onOptionsClick = { selectedTrackForOptions = track }
+                        )
+                    }
+                }
+            }
+        }
+
         // 2. Quick Picks (2x3 Grid)
         if (uiState.quickPicks.isNotEmpty()) {
             item {
@@ -338,6 +412,30 @@ fun HomeScreen(
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        // 3. Made For You // Daily Mixes (Spotify & YT Music Style)
+        if (uiState.dailyMixes.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                SectionHeader(
+                    title = "DAILY MIXES",
+                    tag = "MADE FOR YOU",
+                    tagColor = ArcCyanBright
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    items(uiState.dailyMixes, key = { it.id }) { mix ->
+                        DailyMixCard(
+                            mix = mix,
+                            onClick = { homeViewModel.playDailyMix(mix) }
+                        )
                     }
                 }
             }
@@ -501,62 +599,21 @@ fun HomeScreen(
             }
         }
 
-        // 4. Arc Mood Matrix (Filter Chips + Carousel)
-        item {
-            Spacer(modifier = Modifier.height(20.dp))
-            SectionHeader(
-                title = "MOOD MATRIX",
-                tag = "TELEMETRY FILTER",
-                tagColor = ArcCyanBright
-            )
-
-            // Mood Filter Chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                homeViewModel.availableMoods.forEach { mood ->
-                    val isSelected = uiState.selectedMood == mood
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { homeViewModel.selectMood(mood) },
-                        label = {
-                            Text(
-                                text = mood.uppercase(),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                            )
-                        },
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = ArcCyan,
-                            selectedLabelColor = StarkCarbon,
-                            containerColor = StarkSurface,
-                            labelColor = TextSecondary
-                        ),
-                        border = FilterChipDefaults.filterChipBorder(
-                            enabled = true,
-                            selected = isSelected,
-                            borderColor = StarkBorder,
-                            selectedBorderColor = ArcCyanBright
-                        ),
-                        shape = RoundedCornerShape(20.dp)
-                    )
-                }
-            }
-
-            // Mood Tracks Horizontal Carousel
-            if (uiState.moodTracks.isNotEmpty()) {
+        // 4. Arc Mood Matrix (Ambient Mood Stations when 'All' is selected)
+        if (uiState.selectedMood == "All" && uiState.moodTracks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                SectionHeader(
+                    title = "MOOD MATRIX",
+                    tag = "CHILL & AMBIENT",
+                    tagColor = ArcCyanBright
+                )
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(top = 6.dp)
+                    modifier = Modifier.padding(top = 8.dp)
                 ) {
-                    items(uiState.moodTracks, key = { it.id }) { track ->
+                    items(uiState.moodTracks, key = { "station_${it.id}" }) { track ->
                         RecommendationCard(
                             track = track,
                             onClick = {
@@ -861,6 +918,133 @@ private fun RecommendationCard(
                     )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun DailyMixCard(
+    mix: DailyMix,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = StarkSurface,
+        modifier = modifier
+            .width(155.dp)
+            .border(1.dp, StarkBorder, RoundedCornerShape(16.dp))
+            .clickable(onClick = onClick)
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            // Artwork Box with gradient cover and stacked thumbnails
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(145.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        Brush.linearGradient(
+                            colors = if (mix.gradientColors.size >= 2) {
+                                mix.gradientColors.map { Color(it) }
+                            } else {
+                                listOf(Color(0xFF1E3A8A), Color(0xFF0F172A))
+                            }
+                        )
+                    ),
+                contentAlignment = Alignment.BottomEnd
+            ) {
+                // First track thumbnail if available
+                val firstThumb = mix.tracks.firstOrNull { it.thumbnailUrl.isNotBlank() }?.thumbnailUrl
+                if (!firstThumb.isNullOrBlank()) {
+                    AsyncImage(
+                        model = firstThumb,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(0.65f)
+                    )
+                    // Gradient scrim over image
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        StarkCarbon.copy(alpha = 0.85f)
+                                    )
+                                )
+                            )
+                    )
+                }
+
+                // Daily Mix top tag
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(8.dp)
+                        .background(StarkCarbon.copy(alpha = 0.75f), RoundedCornerShape(6.dp))
+                        .border(0.5.dp, ArcCyanBright.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        text = "DAILY MIX",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.8.sp
+                        ),
+                        color = ArcCyanBright
+                    )
+                }
+
+                // Floating circular Play Button
+                Box(
+                    modifier = Modifier
+                        .padding(8.dp)
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(ArcCyan)
+                        .border(1.dp, ArcCyanBright, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play Mix",
+                        tint = StarkCarbon,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = mix.title,
+                style = MaterialTheme.typography.titleSmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                ),
+                color = TextPrimary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = mix.subtitle,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    lineHeight = 14.sp
+                ),
+                color = TextSecondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

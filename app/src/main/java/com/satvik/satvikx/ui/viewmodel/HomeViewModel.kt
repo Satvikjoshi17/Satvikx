@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.download.DownloadRepository
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.isSongOnly
+import com.satvik.satvikx.data.repository.DailyMix
 import com.satvik.satvikx.data.repository.HomeRecommendationCategories
 import com.satvik.satvikx.data.repository.RecommendationRepository
 import com.satvik.satvikx.playback.PlaybackConnectionManager
@@ -22,6 +23,7 @@ data class HomeUiState(
     val isLoading: Boolean = false,
     val isAutopilotEngaging: Boolean = false,
     val quickPicks: List<TrackEntity> = emptyList(),
+    val dailyMixes: List<DailyMix> = emptyList(),
     val becauseYouLikedTitle: String = "BECAUSE YOU LIKED",
     val becauseYouLikedTracks: List<TrackEntity> = emptyList(),
     val heavyRotationTracks: List<TrackEntity> = emptyList(),
@@ -31,7 +33,7 @@ data class HomeUiState(
     val vaultFavoritesTracks: List<TrackEntity> = emptyList(),
     val trendingTracks: List<TrackEntity> = emptyList(),
     val moodTracks: List<TrackEntity> = emptyList(),
-    val selectedMood: String = "Chill",
+    val selectedMood: String = "All",
     val autopilotTargetSinger: String = "GLOBAL ICONS",
     val autopilotTargetGenre: String = "ALL CATEGORIES",
     val error: String? = null
@@ -47,7 +49,7 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    val availableMoods = listOf("Chill", "Workout", "Focus", "Party", "Synthwave", "Retro", "Romantic")
+    val availableMoods = listOf("All", "Relax", "Workout", "Focus", "Night Drive", "Party", "Romance")
 
     init {
         loadHomeData()
@@ -64,6 +66,7 @@ class HomeViewModel @Inject constructor(
                         greeting = data.timeOfDayTitle,
                         telemetryStatus = data.timeOfDaySubtitle,
                         quickPicks = data.quickPicks,
+                        dailyMixes = data.dailyMixes,
                         becauseYouLikedTitle = data.becauseYouLikedTitle,
                         becauseYouLikedTracks = data.becauseYouLikedTracks,
                         heavyRotationTracks = data.heavyRotationTracks,
@@ -99,6 +102,12 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 // Silently ignore mood error
             }
+        }
+    }
+
+    fun playDailyMix(mix: DailyMix) {
+        if (mix.tracks.isNotEmpty()) {
+            playbackConnectionManager.playTrack(mix.tracks.first(), mix.tracks)
         }
     }
 

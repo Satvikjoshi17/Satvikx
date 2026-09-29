@@ -409,15 +409,17 @@ class PlaybackConnectionManager @Inject constructor(
     private fun prefetchAdjacentTracks(currentIndex: Int) {
         prefetchJob?.cancel()
         prefetchJob = scope.launch(Dispatchers.IO) {
-            val nextIndex = currentIndex + 1
-            if (nextIndex in currentPlaylist.indices) {
-                val nextTrack = currentPlaylist[nextIndex]
-                if (nextTrack.streamUrl.isNullOrBlank() && !nextTrack.isDownloaded) {
-                    val resolved = resolveTrackForPlayback(nextTrack)
-                    if (resolved != null) {
-                        currentPlaylist[nextIndex] = resolved
-                        launch(Dispatchers.Main) {
-                            mediaController?.replaceMediaItem(nextIndex, buildMediaItem(resolved))
+            for (offset in 1..2) {
+                val nextIndex = currentIndex + offset
+                if (nextIndex in currentPlaylist.indices) {
+                    val nextTrack = currentPlaylist[nextIndex]
+                    if (nextTrack.streamUrl.isNullOrBlank() && !nextTrack.isDownloaded) {
+                        val resolved = resolveTrackForPlayback(nextTrack)
+                        if (resolved != null) {
+                            currentPlaylist[nextIndex] = resolved
+                            launch(Dispatchers.Main) {
+                                mediaController?.replaceMediaItem(nextIndex, buildMediaItem(resolved))
+                            }
                         }
                     }
                 }
@@ -578,25 +580,31 @@ class PlaybackConnectionManager @Inject constructor(
             val currentIndex = controller.currentMediaItemIndex
             if (currentIndex in currentPlaylist.indices) {
                 val currentTrack = currentPlaylist[currentIndex]
-                // Intelligent recovery: Invalidate cached stream URL and re-resolve
+                val currentPos = controller.currentPosition.coerceAtLeast(0L)
+                // Intelligent recovery: Invalidate cached stream URL and re-resolve with retry
                 scope.launch {
-                    try {
-                        trackDao.updateStreamUrl(currentTrack.id, null)
-                        val refreshed = streamRepository.resolveAudioStream(currentTrack.id).firstOrNull()?.getOrNull()
-                        if (refreshed != null && !refreshed.streamUrl.isNullOrBlank()) {
-                            val updatedTrack = currentTrack.copy(streamUrl = refreshed.streamUrl)
-                            currentPlaylist[currentIndex] = updatedTrack
-                            trackDao.insertTrack(updatedTrack)
-                            controller.replaceMediaItem(currentIndex, buildMediaItem(updatedTrack))
-                            controller.prepare()
-                            controller.play()
-                            return@launch
+                    var recovered = false
+                    for (attempt in 1..2) {
+                        try {
+                            trackDao.updateStreamUrl(currentTrack.id, null)
+                            val refreshed = streamRepository.resolveAudioStream(currentTrack.id).firstOrNull()?.getOrNull()
+                            if (refreshed != null && !refreshed.streamUrl.isNullOrBlank()) {
+                                val updatedTrack = currentTrack.copy(streamUrl = refreshed.streamUrl)
+                                currentPlaylist[currentIndex] = updatedTrack
+                                trackDao.insertTrack(updatedTrack)
+                                controller.replaceMediaItem(currentIndex, buildMediaItem(updatedTrack))
+                                controller.seekTo(currentIndex, currentPos)
+                                controller.prepare()
+                                controller.play()
+                                recovered = true
+                                break
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Playback auto-recovery attempt $attempt failed for ${currentTrack.id}: ${e.message}")
+                            delay(600)
                         }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Playback auto-recovery failed for ${currentTrack.id}: ${e.message}")
                     }
-                    // Auto-advance to next track in queue if retry failed
-                    if (currentIndex < currentPlaylist.size - 1) {
+                    if (!recovered && currentIndex < currentPlaylist.size - 1) {
                         skipToNext()
                     }
                 }
@@ -624,8 +632,13 @@ class PlaybackConnectionManager @Inject constructor(
                 val uniqueNew = nextBatch.filter { it.id !in existingIds && it.isSongOnly() }
 
                 if (uniqueNew.isNotEmpty()) {
-                    currentPlaylist.addAll(uniqueNew)
-                    val mediaItems = uniqueNew.map { buildMediaItem(it) }
+                    // Pre-resolve the first autoplay track so it never lands in ExoPlayer with Uri.EMPTY
+                    val firstTrack = uniqueNew.first()
+                    val resolvedFirst = resolveTrackForPlayback(firstTrack) ?: firstTrack
+                    val finalNew = listOf(resolvedFirst) + uniqueNew.drop(1)
+
+                    currentPlaylist.addAll(finalNew)
+                    val mediaItems = finalNew.map { buildMediaItem(it) }
                     mediaController?.addMediaItems(mediaItems)
                     _playbackState.update { it.copy(queue = currentPlaylist.toList()) }
                 }

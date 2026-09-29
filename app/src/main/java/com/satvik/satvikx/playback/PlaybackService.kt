@@ -48,19 +48,34 @@ class PlaybackService : MediaSessionService() {
 
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
 
+        // Initialize high-performance WifiLock to prevent Android OS from putting network radio to sleep during background playback
+        try {
+            val wifiManager = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+            val lockMode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            } else {
+                @Suppress("DEPRECATION")
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF
+            }
+            wifiLock = wifiManager?.createWifiLock(lockMode, "SatvikX:PlaybackWifiLock")?.apply {
+                setReferenceCounted(false)
+            }
+        } catch (_: Exception) {}
+
         // 1. Configure optimized buffering strategy via DefaultLoadControl
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15000,
-                /* maxBufferMs = */ 50000,
+                /* minBufferMs = */ 20000,
+                /* maxBufferMs = */ 60000,
                 /* bufferForPlaybackMs = */ 1000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2500
+                /* bufferForPlaybackAfterRebufferMs = */ 2000
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -122,6 +137,13 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         serviceScope.cancel()
+        try {
+            if (wifiLock?.isHeld == true) {
+                wifiLock?.release()
+            }
+        } catch (_: Exception) {}
+        wifiLock = null
+
         mediaSession?.run {
             player.release()
             release()
@@ -132,9 +154,39 @@ class PlaybackService : MediaSessionService() {
     }
 
     /**
-     * Intercepts media item transitions to persist history into RecentPlaybackDao.
+     * Intercepts media item transitions and playback errors to guarantee rock-solid playback.
      */
     private inner class PlayerEventListener : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            try {
+                if (isPlaying) {
+                    if (wifiLock?.isHeld == false) wifiLock?.acquire()
+                } else {
+                    if (player?.playbackState != Player.STATE_BUFFERING && wifiLock?.isHeld == true) {
+                        wifiLock?.release()
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_BUFFERING) {
+                try {
+                    if (wifiLock?.isHeld == false) wifiLock?.acquire()
+                } catch (_: Exception) {}
+            }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            android.util.Log.e("PlaybackService", "ExoPlayer service-level error: ${error.errorCodeName} - ${error.message}", error)
+            // Auto-recovery: If network dropped or buffer timed out, auto-retry without stopping
+            val p = player ?: return
+            if (p.currentMediaItem != null) {
+                p.prepare()
+                p.play()
+            }
+        }
+
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val trackId = mediaItem?.mediaId ?: return
             serviceScope.launch {
