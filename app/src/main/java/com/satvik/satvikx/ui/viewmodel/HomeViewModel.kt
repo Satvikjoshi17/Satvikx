@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.download.DownloadRepository
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.repository.HomeRecommendationCategories
 import com.satvik.satvikx.data.repository.RecommendationRepository
 import com.satvik.satvikx.playback.PlaybackConnectionManager
@@ -107,7 +108,7 @@ class HomeViewModel @Inject constructor(
      */
     fun playTrackWithSuggestionQueue(track: TrackEntity, contextList: List<TrackEntity> = emptyList()) {
         val initialQueue = if (contextList.isNotEmpty()) {
-            listOf(track) + contextList.filter { it.id != track.id }
+            listOf(track) + contextList.filter { it.id != track.id && it.isSongOnly() }
         } else {
             listOf(track)
         }

@@ -8,12 +8,16 @@ import com.satvik.satvikx.data.local.dao.SearchHistoryDao
 import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
 import com.satvik.satvikx.data.local.entity.SearchHistoryEntity
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.playback.PlaybackConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -47,6 +51,13 @@ class SearchViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    private val _focusSearchEvents = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val focusSearchEvents: SharedFlow<Unit> = _focusSearchEvents.asSharedFlow()
+
+    fun requestSearchFocus() {
+        _focusSearchEvents.tryEmit(Unit)
+    }
 
     private val queryFlow = MutableStateFlow("")
 
@@ -155,11 +166,22 @@ class SearchViewModel @Inject constructor(
 
     fun playTrack(track: TrackEntity, customQueue: List<TrackEntity>? = null) {
         if (customQueue != null) {
-            playbackConnectionManager.playTrack(track, customQueue)
+            val filtered = customQueue.filter { it.id == track.id || it.isSongOnly() }
+            playbackConnectionManager.playTrack(track, filtered)
         } else {
             // YouTube behavior: Selected song plays immediately as seed track,
-            // while YouTube algorithmic recommendations learned from history populate the "Up Next" queue.
+            // while YouTube algorithmic recommendations populate the "Up Next" queue,
+            // strictly filtering out compilation videos, listicles, and long non-song videos.
             playbackConnectionManager.playTrack(track, listOf(track))
+            viewModelScope.launch {
+                try {
+                    val recommendations = recommendationRepository.generateRecommendationQueue(track)
+                    val filteredRecs = recommendations.filter { it.isSongOnly() }
+                    if (filteredRecs.isNotEmpty()) {
+                        playbackConnectionManager.updateUpcomingQueue(filteredRecs)
+                    }
+                } catch (_: Exception) {}
+            }
         }
     }
 

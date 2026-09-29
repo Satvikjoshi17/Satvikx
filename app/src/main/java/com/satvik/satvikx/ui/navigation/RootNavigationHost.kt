@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -46,12 +47,14 @@ import com.satvik.satvikx.ui.theme.BackgroundDark
 import com.satvik.satvikx.ui.theme.SurfaceDark
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 import com.satvik.satvikx.ui.viewmodel.PlayerViewModel
+import com.satvik.satvikx.ui.viewmodel.SearchViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RootNavigationHost(
     playerViewModel: PlayerViewModel = hiltViewModel(),
-    libraryViewModel: LibraryViewModel = hiltViewModel()
+    libraryViewModel: LibraryViewModel = hiltViewModel(),
+    searchViewModel: SearchViewModel = hiltViewModel()
 ) {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
@@ -64,6 +67,7 @@ fun RootNavigationHost(
     var isFullPlayerExpanded by remember { mutableStateOf(false) }
     var trackForPlaylistDialog by remember { mutableStateOf<TrackEntity?>(null) }
     val fullPlayerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var lastSearchClickTime by remember { mutableLongStateOf(0L) }
 
     Scaffold(
         bottomBar = {
@@ -97,12 +101,23 @@ fun RootNavigationHost(
                         NavigationBarItem(
                             selected = isSelected,
                             onClick = {
+                                val isSearch = screen.route == Screen.Search.route
+                                val currentTime = System.currentTimeMillis()
+                                val isDoubleTap = isSearch && (currentTime - lastSearchClickTime < 500L)
+                                if (isSearch) {
+                                    lastSearchClickTime = currentTime
+                                }
+
                                 navController.navigate(screen.route) {
                                     popUpTo(navController.graph.findStartDestination().id) {
                                         saveState = true
                                     }
                                     launchSingleTop = true
                                     restoreState = true
+                                }
+
+                                if (isSearch && (isDoubleTap || isSelected)) {
+                                    searchViewModel.requestSearchFocus()
                                 }
                             },
                             icon = {
@@ -133,7 +148,10 @@ fun RootNavigationHost(
                     HomeScreen()
                 }
                 composable(Screen.Search.route) {
-                    SearchScreen()
+                    SearchScreen(
+                        viewModel = searchViewModel,
+                        libraryViewModel = libraryViewModel
+                    )
                 }
                 composable(Screen.Downloads.route) {
                     DownloadsScreen()

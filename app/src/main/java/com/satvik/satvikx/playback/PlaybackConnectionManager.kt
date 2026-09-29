@@ -17,6 +17,7 @@ import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.RecentPlaybackEntity
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.local.storage.StorageManager
 import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.playback.model.PlaybackState
@@ -97,7 +98,12 @@ class PlaybackConnectionManager @Inject constructor(
      * The mini player UI appears instantaneously with track metadata & buffering state.
      */
     fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {
-        val initialQueue = if (playlist.isNotEmpty()) playlist else listOf(track)
+        val filteredPlaylist = if (playlist.isNotEmpty()) {
+            playlist.filter { it.id == track.id || it.isSongOnly() }
+        } else {
+            emptyList()
+        }
+        val initialQueue = if (filteredPlaylist.isNotEmpty()) filteredPlaylist else listOf(track)
         val initialIndex = initialQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
 
         // 1. Immediately update UI state so Spotify-style bottom mini-player pops up instantly!
@@ -273,7 +279,7 @@ class PlaybackConnectionManager @Inject constructor(
             val currentTrack = if (currentIdx in currentPlaylist.indices) currentPlaylist[currentIdx] else _playbackState.value.currentTrack
             if (currentTrack == null) return@launch
 
-            val filteredUpcoming = newQueue.filter { it.id != currentTrack.id }
+            val filteredUpcoming = newQueue.filter { it.id != currentTrack.id && it.isSongOnly() }
             currentPlaylist = (listOf(currentTrack) + filteredUpcoming).toMutableList()
 
             val mediaItems = currentPlaylist.map { buildMediaItem(it) }
@@ -594,7 +600,7 @@ class PlaybackConnectionManager @Inject constructor(
                 val recommendationRepo = recommendationRepositoryProvider.get()
                 val nextBatch = recommendationRepo.generateRecommendationQueue(seedTrack, 15)
                 val existingIds = currentPlaylist.map { it.id }.toSet()
-                val uniqueNew = nextBatch.filter { it.id !in existingIds }
+                val uniqueNew = nextBatch.filter { it.id !in existingIds && it.isSongOnly() }
 
                 if (uniqueNew.isNotEmpty()) {
                     currentPlaylist.addAll(uniqueNew)

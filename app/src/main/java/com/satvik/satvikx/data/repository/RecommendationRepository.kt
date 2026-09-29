@@ -4,6 +4,7 @@ import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.remote.newpipe.NewPipeYouTubeEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -185,11 +186,11 @@ class RecommendationRepository @Inject constructor(
             streamRepository.searchTracks("Trending Global Hits").firstOrNull()?.getOrNull().orEmpty()
         }
 
-        val becauseLikedTracks = becauseLikedDeferred.await()
-        val discoveryTracks = discoveryDeferred.await()
-        val categoryTracks = categoryDeferred.await()
-        val moodTracks = moodDeferred.await()
-        val trendingTracks = trendingDeferred.await()
+        val becauseLikedTracks = becauseLikedDeferred.await().filter { it.isSongOnly() }
+        val discoveryTracks = discoveryDeferred.await().filter { it.isSongOnly() }
+        val categoryTracks = categoryDeferred.await().filter { it.isSongOnly() }
+        val moodTracks = moodDeferred.await().filter { it.isSongOnly() }
+        val trendingTracks = trendingDeferred.await().filter { it.isSongOnly() }
 
         // Quick Picks: combine recent/heavy rotation or trending
         val quickPicks = if (affinities.heavyRotationTracks.isNotEmpty()) {
@@ -255,6 +256,7 @@ class RecommendationRepository @Inject constructor(
 
         val recommendations = (singerTracks + genreTracks + trendingTracks)
             .distinctBy { it.id }
+            .filter { it.isSongOnly() }
             .shuffled()
 
         // 4. Interleaving Algorithm: Anchor favorite -> Recommended discoveries -> High affinity gems
@@ -276,9 +278,9 @@ class RecommendationRepository @Inject constructor(
         }
 
         if (autopilotQueue.isEmpty()) {
-            trendingTracks.take(limit)
+            trendingTracks.filter { it.isSongOnly() }.take(limit)
         } else {
-            autopilotQueue.distinctBy { it.id }.take(limit)
+            autopilotQueue.distinctBy { it.id }.filter { it.isSongOnly() }.take(limit)
         }
     }
 
@@ -330,7 +332,7 @@ class RecommendationRepository @Inject constructor(
         // 4. YouTube-Style Learning & Reranking Engine:
         val candidates = (ytRelated + artistRadio + userAffinityTracks)
             .distinctBy { it.id }
-            .filter { it.id != baseTrack.id }
+            .filter { it.id != baseTrack.id && it.isSongOnly() }
 
         val scoredTracks = candidates.map { track ->
             var score = 10f
