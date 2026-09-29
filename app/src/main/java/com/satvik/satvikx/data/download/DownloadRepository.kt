@@ -68,7 +68,7 @@ class DownloadRepositoryImpl @Inject constructor(
 
             workManager.enqueueUniqueWork(
                 "download_${track.id}",
-                ExistingWorkPolicy.KEEP,
+                ExistingWorkPolicy.REPLACE,
                 downloadRequest
             )
         } catch (e: Exception) {

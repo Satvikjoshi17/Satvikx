@@ -1,8 +1,13 @@
 package com.satvik.satvikx.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -98,6 +103,18 @@ fun SearchScreen(
     var isSearchActive by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
+    // Fluid back-and-forth navigation (Spotify & YouTube inspiration):
+    // Intercept back button to return from search results / query / suggestions back to explore landing page
+    val canGoBack = isSearchActive || uiState.query.isNotEmpty() || uiState.results.isNotEmpty()
+    BackHandler(enabled = canGoBack) {
+        keyboardController?.hide()
+        focusManager.clearFocus()
+        isSearchActive = false
+        if (uiState.query.isNotEmpty() || uiState.results.isNotEmpty()) {
+            viewModel.clearSearch()
+        }
+    }
+
     // Respond to bottom-bar search double-tap or re-tap by activating search and focusing text field
     LaunchedEffect(Unit) {
         viewModel.focusSearchEvents.collect {
@@ -117,6 +134,21 @@ fun SearchScreen(
             keyboardController?.hide()
             focusManager.clearFocus()
         }
+    }
+
+    val exploreGenres = remember {
+        listOf(
+            ExploreCategory("Bollywood Hits", "Bollywood Hits", "HITS", Brush.linearGradient(listOf(Color(0xFFFF416C), Color(0xFFFF4B2B)))),
+            ExploreCategory("Trending 50", "Trending Music 2026", "HOT", Brush.linearGradient(listOf(Color(0xFF00C6FF), Color(0xFF0072FF)))),
+            ExploreCategory("Chill Lo-Fi", "Chill Lofi Beats", "VIBES", Brush.linearGradient(listOf(Color(0xFF8A2387), Color(0xFFE94057)))),
+            ExploreCategory("Gym & Workout", "Workout Motivation Songs", "ENERGY", Brush.linearGradient(listOf(Color(0xFFFF0844), Color(0xFFFFB199)))),
+            ExploreCategory("Synthwave 2088", "Cyberpunk Synthwave", "CYBER", Brush.linearGradient(listOf(Color(0xFF00F5D4), Color(0xFF7B2CBF)))),
+            ExploreCategory("Punjabi Beats", "Punjabi Hits 2026", "DESI", Brush.linearGradient(listOf(Color(0xFFF7971E), Color(0xFFFFD200)))),
+            ExploreCategory("Night Drive", "Night Drive Phonk Synth", "DRIVE", Brush.linearGradient(listOf(Color(0xFF2C3E50), Color(0xFF4CA1AF)))),
+            ExploreCategory("Acoustic Chill", "Acoustic Pop Chill", "CALM", Brush.linearGradient(listOf(Color(0xFF11998E), Color(0xFF38EF7D)))),
+            ExploreCategory("Hip Hop & Rap", "Best Hip Hop Rap", "BEATS", Brush.linearGradient(listOf(Color(0xFFED213A), Color(0xFF93291E)))),
+            ExploreCategory("EDM & Club", "EDM Festival Hits", "DANCE", Brush.linearGradient(listOf(Color(0xFF654EA3), Color(0xFFEAAFC8))))
+        )
     }
 
     val quickPicks = listOf("Trending", "Chill Lofi", "Gym Workout", "Bollywood Hits", "Synthwave", "EDM")
@@ -159,7 +191,7 @@ fun SearchScreen(
             }
         }
 
-        // Search Bar (Cyber Vision Style)
+        // Search Bar (Cyber Vision Style with fluid Spotify-style Back & Forth Navigation)
         OutlinedTextField(
             value = uiState.query,
             onValueChange = {
@@ -183,17 +215,20 @@ fun SearchScreen(
                 )
             },
             leadingIcon = {
-                if (isSearchActive) {
+                if (canGoBack) {
                     IconButton(
                         onClick = {
                             isSearchActive = false
                             focusManager.clearFocus()
                             keyboardController?.hide()
+                            if (uiState.query.isNotEmpty() || uiState.results.isNotEmpty()) {
+                                viewModel.clearSearch()
+                            }
                         }
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Dismiss search",
+                            contentDescription = "Back to Explore",
                             tint = ArcCyanBright
                         )
                     }
@@ -207,7 +242,7 @@ fun SearchScreen(
             },
             trailingIcon = {
                 if (uiState.query.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.onQueryChanged("") }) {
+                    IconButton(onClick = { viewModel.clearSearch() }) {
                         Icon(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Clear search query",
@@ -245,7 +280,7 @@ fun SearchScreen(
 
         // Content Area with YouTube-style Search History Floating Popup Overlay
         Box(modifier = Modifier.fillMaxSize()) {
-            // Main Feed (Quick picks + Top Results)
+            // Main Feed (Quick picks + Top Results OR Spotify-style Explore Categories)
             Column(modifier = Modifier.fillMaxSize()) {
                 // Quick Pick Category Chips (Spotify Style Capsules)
                 Row(
@@ -285,17 +320,7 @@ fun SearchScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Results Section Header
-                if (uiState.results.isNotEmpty() && !uiState.isSearching) {
-                    Text(
-                        text = "Top Results",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                    )
-                }
-
-                // Results / Loading / Error
+                // Results / Explore Grid / Loading / Error
                 Box(modifier = Modifier.fillMaxSize()) {
                     when {
                         uiState.isSearching -> {
@@ -313,34 +338,106 @@ fun SearchScreen(
                                 )
                             }
                         }
+                        uiState.results.isNotEmpty() -> {
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                Text(
+                                    text = "Top Results",
+                                    style = MaterialTheme.typography.headlineSmall,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                                LazyColumn(
+                                    state = listState,
+                                    modifier = Modifier.fillMaxSize()
+                                ) {
+                                    items(
+                                        items = uiState.results,
+                                        key = { it.id }
+                                    ) { track ->
+                                        TrackItem(
+                                            track = track,
+                                            onClick = {
+                                                keyboardController?.hide()
+                                                focusManager.clearFocus()
+                                                isSearchActive = false
+                                                viewModel.playTrack(track)
+                                            },
+                                            onOptionClick = {
+                                                keyboardController?.hide()
+                                                focusManager.clearFocus()
+                                                isSearchActive = false
+                                                selectedTrackForOptions = track
+                                            },
+                                            onDownloadClick = {
+                                                viewModel.downloadTrack(track)
+                                                Toast.makeText(context, "Download started for ${track.title}", Toast.LENGTH_SHORT).show()
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                         else -> {
-                            LazyColumn(
-                                state = listState,
-                                modifier = Modifier.fillMaxSize()
+                            // Spotify & YouTube Style Explore & Browse Landing View
+                            LazyVerticalGrid(
+                                columns = GridCells.Fixed(2),
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 16.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                items(
-                                    items = uiState.results,
-                                    key = { it.id }
-                                ) { track ->
-                                    TrackItem(
-                                        track = track,
-                                        onClick = {
-                                            keyboardController?.hide()
-                                            focusManager.clearFocus()
-                                            isSearchActive = false
-                                            viewModel.playTrack(track)
-                                        },
-                                        onOptionClick = {
-                                            keyboardController?.hide()
-                                            focusManager.clearFocus()
-                                            isSearchActive = false
-                                            selectedTrackForOptions = track
-                                        },
-                                        onDownloadClick = {
-                                            viewModel.downloadTrack(track)
-                                            Toast.makeText(context, "Download started for ${track.title}", Toast.LENGTH_SHORT).show()
-                                        }
+                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                                    Text(
+                                        text = "Explore Genres & Moods",
+                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                        color = Color.White,
+                                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
                                     )
+                                }
+
+                                items(exploreGenres) { category ->
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(96.dp)
+                                            .clip(RoundedCornerShape(16.dp))
+                                            .background(category.gradient)
+                                            .clickable {
+                                                keyboardController?.hide()
+                                                focusManager.clearFocus()
+                                                isSearchActive = false
+                                                viewModel.executeSearch(category.query)
+                                            }
+                                            .padding(14.dp)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.fillMaxSize(),
+                                            verticalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Text(
+                                                text = category.code,
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    letterSpacing = 1.sp
+                                                ),
+                                                color = Color.White.copy(alpha = 0.75f)
+                                            )
+                                            Text(
+                                                text = category.title,
+                                                style = MaterialTheme.typography.titleMedium.copy(
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 17.sp
+                                                ),
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+
+                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                                    Spacer(modifier = Modifier.height(32.dp))
                                 }
                             }
                         }
@@ -510,3 +607,11 @@ fun SearchScreen(
         )
     }
 }
+
+private data class ExploreCategory(
+    val title: String,
+    val query: String,
+    val code: String,
+    val gradient: Brush
+)
+

@@ -1,11 +1,14 @@
 package com.satvik.satvikx.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -33,6 +36,8 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +46,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -48,6 +54,11 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import coil3.compose.AsyncImage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -106,11 +117,29 @@ fun PlaylistsScreen(
 
     val activePlaylist = playlists.find { it.playlist.playlistId == selectedPlaylistId }
 
+    // Fluid back navigation: Back button in playlist detail takes user back to playlists overview
+    BackHandler(enabled = selectedPlaylistId != null) {
+        selectedPlaylistId = null
+    }
+
     if (activePlaylist != null) {
         // ==========================================
-        // PLAYLIST DETAIL VIEW (CODING & VISION THEME)
+        // PLAYLIST DETAIL VIEW (SPOTIFY & CYBER VISION)
         // ==========================================
         var showPlaylistHeaderMenu by remember { mutableStateOf(false) }
+
+        val totalSeconds = remember(activePlaylist.tracks) {
+            activePlaylist.tracks.sumOf { it.durationSeconds }
+        }
+        val totalPlaytimeText = remember(totalSeconds) {
+            if (totalSeconds >= 3600) {
+                val hrs = totalSeconds / 3600
+                val mins = (totalSeconds % 3600) / 60
+                "${hrs} hr ${mins} min"
+            } else if (totalSeconds > 0) {
+                "${totalSeconds / 60} min"
+            } else ""
+        }
 
         Column(
             modifier = Modifier
@@ -118,99 +147,31 @@ fun PlaylistsScreen(
                 .statusBarsPadding()
                 .padding(top = 8.dp)
         ) {
-            // Header Bar
+            // Top Navigation & Action Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 IconButton(onClick = { selectedPlaylistId = null }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back",
+                        contentDescription = "Back to Playlists",
                         tint = TextPrimary
                     )
                 }
 
-                Spacer(modifier = Modifier.width(6.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "// PLAYLIST: ${activePlaylist.playlist.name.uppercase()}",
-                        style = MaterialTheme.typography.titleLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 0.5.sp
-                        ),
-                        color = TextPrimary,
-                        maxLines = 1
+                Text(
+                    text = "// PLAYLIST BUFFER",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.sp,
+                        color = ArcCyan
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = "[ TRACKS: ${String.format("%02d", activePlaylist.tracks.size)} ]",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = PrimaryNeon
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "• LOCAL_SQLITE_STORE",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace
-                            ),
-                            color = TextSecondary
-                        )
-                    }
-                }
-
-                // Play All Button (Neon Cyber Play)
-                if (activePlaylist.tracks.isNotEmpty()) {
-                    IconButton(
-                        onClick = {
-                            viewModel.playPlaylist(activePlaylist)
-                            Toast.makeText(context, "Playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.PlayCircle,
-                            contentDescription = "Play All",
-                            tint = PrimaryNeon,
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
-
-                    // Shuffle Play Button
-                    IconButton(
-                        onClick = {
-                            viewModel.playPlaylistShuffled(activePlaylist)
-                            Toast.makeText(context, "Shuffle playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Shuffle,
-                            contentDescription = "Shuffle Play",
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-
-                    // Download Full Playlist Button
-                    IconButton(
-                        onClick = {
-                            playlistToDownload = activePlaylist
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Download,
-                            contentDescription = "Download Playlist",
-                            tint = PrimaryNeon,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                }
+                )
 
                 // 3-Dots Playlist Options Menu
                 Box {
@@ -288,10 +249,146 @@ fun PlaylistsScreen(
                 }
             }
 
+            // Spotify-Inspired Playlist Hero Section (Large Artwork, Title, Details & Quick Controls)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 6.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                val firstThumbnail = activePlaylist.tracks.firstOrNull { it.thumbnailUrl.isNotBlank() }?.thumbnailUrl
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = SurfaceElevated,
+                    modifier = Modifier
+                        .size(136.dp)
+                        .shadow(12.dp, RoundedCornerShape(16.dp))
+                        .border(1.5.dp, ArcCyanBright.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                ) {
+                    if (!firstThumbnail.isNullOrBlank()) {
+                        AsyncImage(
+                            model = firstThumbnail,
+                            contentDescription = activePlaylist.playlist.name,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Brush.verticalGradient(listOf(SurfaceElevated, SurfaceDark))),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                contentDescription = null,
+                                tint = PrimaryNeon,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text(
+                    text = activePlaylist.playlist.name,
+                    style = MaterialTheme.typography.headlineMedium.copy(
+                        fontWeight = FontWeight.Bold
+                    ),
+                    color = TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "${activePlaylist.tracks.size} tracks",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                        color = PrimaryNeon
+                    )
+                    if (totalPlaytimeText.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "•  $totalPlaytimeText",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Prominent Action Buttons Bar (Spotify & YouTube Music style)
+                if (activePlaylist.tracks.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Play Button
+                        Button(
+                            onClick = {
+                                viewModel.playPlaylist(activePlaylist)
+                                Toast.makeText(context, "Playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = PrimaryNeon,
+                                contentColor = StarkCarbon
+                            ),
+                            shape = RoundedCornerShape(24.dp),
+                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 9.dp)
+                        ) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Play", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // Shuffle Button
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.playPlaylistShuffled(activePlaylist)
+                                Toast.makeText(context, "Shuffle playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
+                            },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = ArcCyanBright
+                            ),
+                            border = BorderStroke(1.dp, ArcCyanBright),
+                            shape = RoundedCornerShape(24.dp),
+                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 9.dp)
+                        ) {
+                            Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Shuffle", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // Download All Button
+                        IconButton(
+                            onClick = { playlistToDownload = activePlaylist },
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(SurfaceElevated, CircleShape)
+                                .border(1.dp, SurfaceVariantDark, CircleShape)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = "Download All", tint = PrimaryNeon, modifier = Modifier.size(20.dp))
+                        }
+                    }
+                }
+            }
+
             HorizontalDivider(
                 color = SurfaceVariantDark,
                 thickness = 1.dp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
             )
 
             // Playlist Track List
@@ -778,20 +875,37 @@ private fun PlaylistCyberRow(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        val firstThumbnail = playlistWithTracks.tracks.firstOrNull { it.thumbnailUrl.isNotBlank() }?.thumbnailUrl
+        val rowSeconds = playlistWithTracks.tracks.sumOf { it.durationSeconds }
+        val rowDurationText = if (rowSeconds >= 3600) {
+            "${rowSeconds / 3600}h ${(rowSeconds % 3600) / 60}m"
+        } else if (rowSeconds > 0) {
+            "${rowSeconds / 60}m"
+        } else null
+
         Surface(
             color = SurfaceElevated,
-            shape = RoundedCornerShape(10.dp),
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier
-                .size(54.dp)
-                .border(1.dp, SurfaceVariantDark, RoundedCornerShape(10.dp))
+                .size(56.dp)
+                .border(1.dp, if (!firstThumbnail.isNullOrBlank()) ArcCyanBright.copy(alpha = 0.5f) else SurfaceVariantDark, RoundedCornerShape(12.dp))
         ) {
-            Box(contentAlignment = Alignment.Center) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                    contentDescription = null,
-                    tint = PrimaryNeon,
-                    modifier = Modifier.size(28.dp)
+            if (!firstThumbnail.isNullOrBlank()) {
+                AsyncImage(
+                    model = firstThumbnail,
+                    contentDescription = playlistWithTracks.playlist.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
                 )
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                        contentDescription = null,
+                        tint = PrimaryNeon,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         }
 
@@ -805,26 +919,29 @@ private fun PlaylistCyberRow(
                     fontSize = 16.sp
                 ),
                 color = TextPrimary,
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 2.dp)
             ) {
                 Text(
-                    text = "[ ${String.format("%02d", playlistWithTracks.tracks.size)} TRACKS ]",
+                    text = "${playlistWithTracks.tracks.size} tracks",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
                     ),
                     color = PrimaryNeon
                 )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "ID: #PL_${playlistWithTracks.playlist.playlistId}",
-                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                    color = TextSecondary
-                )
+                if (rowDurationText != null) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "• $rowDurationText",
+                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                        color = TextSecondary
+                    )
+                }
             }
         }
 

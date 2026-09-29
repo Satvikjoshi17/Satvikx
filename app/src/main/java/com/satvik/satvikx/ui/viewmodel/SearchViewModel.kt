@@ -78,9 +78,6 @@ class SearchViewModel @Inject constructor(
                 _uiState.update { it.copy(searchHistory = historyEntities.map { item -> item.query }) }
             }
             .launchIn(viewModelScope)
-
-        // Seed with trending results without putting text in search bar
-        loadInitialTrending()
     }
 
     private fun loadInitialTrending() {
@@ -114,8 +111,13 @@ class SearchViewModel @Inject constructor(
         _uiState.update { it.copy(query = newQuery) }
         queryFlow.value = newQuery
         if (newQuery.isBlank()) {
-            loadInitialTrending()
+            _uiState.update { it.copy(results = emptyList(), isSearching = false, error = null) }
         }
+    }
+
+    fun clearSearch() {
+        _uiState.update { it.copy(query = "", results = emptyList(), isSearching = false, error = null) }
+        queryFlow.value = ""
     }
 
     fun executeSearch(query: String) {
