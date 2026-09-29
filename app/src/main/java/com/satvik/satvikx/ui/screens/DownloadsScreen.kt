@@ -2,6 +2,7 @@ package com.satvik.satvikx.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -53,6 +54,13 @@ import com.satvik.satvikx.ui.theme.SecondaryNeon
 import com.satvik.satvikx.ui.theme.SurfaceDark
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Surface
+import androidx.compose.ui.text.font.FontFamily
+import com.satvik.satvikx.data.download.model.DownloadQuality
+import com.satvik.satvikx.ui.components.DownloadQualityDialog
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadsScreen(
@@ -61,9 +69,11 @@ fun DownloadsScreen(
     val context = LocalContext.current
     val downloadedTracks by viewModel.downloadedTracks.collectAsStateWithLifecycle()
     val storageInfo by viewModel.storageInfo.collectAsStateWithLifecycle()
+    val currentQuality by viewModel.downloadQuality.collectAsStateWithLifecycle()
 
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
     var trackForAddToPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
+    var showQualityDialog by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     Column(
@@ -104,7 +114,7 @@ fun DownloadsScreen(
             }
         }
 
-        // Storage Metrics Banner
+        // Storage Metrics Banner with Download Quality Control
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -112,30 +122,102 @@ fun DownloadsScreen(
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = com.satvik.satvikx.ui.theme.SurfaceElevated)
         ) {
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
+                    .padding(16.dp)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Storage,
-                    contentDescription = "Storage status",
-                    tint = PrimaryNeon,
-                    modifier = Modifier.size(30.dp)
-                )
-                Column(modifier = Modifier.padding(start = 14.dp)) {
-                    Text(
-                        text = "Offline Storage",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = Color.White
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Storage,
+                        contentDescription = "Storage status",
+                        tint = PrimaryNeon,
+                        modifier = Modifier.size(30.dp)
                     )
-                    Text(
-                        text = "Used: ${storageInfo.usedStorageFormatted}  •  Available: ${storageInfo.availableStorageFormatted}",
-                        style = MaterialTheme.typography.bodySmall.copy(color = com.satvik.satvikx.ui.theme.TextSecondary)
-                    )
+                    Column(modifier = Modifier.padding(start = 14.dp)) {
+                        Text(
+                            text = "Offline Storage",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Used: ${storageInfo.usedStorageFormatted}  •  Available: ${storageInfo.availableStorageFormatted}",
+                            style = MaterialTheme.typography.bodySmall.copy(color = com.satvik.satvikx.ui.theme.TextSecondary)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Download Quality Selector Capsule
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { showQualityDialog = true },
+                    shape = RoundedCornerShape(8.dp),
+                    color = com.satvik.satvikx.ui.theme.SurfaceVariantDark.copy(alpha = 0.7f)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = ArcCyanBright,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "QUALITY: ${currentQuality.label.uppercase()}",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = ArcCyanBright.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "CHANGE",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = ArcCyanBright
+                                ),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                 }
             }
+        }
+
+        if (showQualityDialog) {
+            DownloadQualityDialog(
+                initialQuality = currentQuality,
+                title = "Download Quality Settings",
+                subtitle = "// DEFAULT STORAGE PREFERENCE",
+                confirmButtonText = "Save Preference",
+                onConfirm = { quality, _ ->
+                    viewModel.setDownloadQuality(quality)
+                    showQualityDialog = false
+                    Toast.makeText(context, "Default download quality set to ${quality.label}", Toast.LENGTH_SHORT).show()
+                },
+                onDismiss = { showQualityDialog = false }
+            )
         }
 
         Spacer(modifier = Modifier.height(12.dp))

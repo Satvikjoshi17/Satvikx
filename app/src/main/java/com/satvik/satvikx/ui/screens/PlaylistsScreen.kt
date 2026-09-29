@@ -25,8 +25,10 @@ import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
+import com.satvik.satvikx.ui.components.DownloadQualityDialog
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Shuffle
@@ -93,6 +95,7 @@ fun PlaylistsScreen(
     // Dialog & Sheet States
     var showCreateDialog by remember { mutableStateOf(false) }
     var playlistToRename by remember { mutableStateOf<PlaylistWithTracks?>(null) }
+    var playlistToDownload by remember { mutableStateOf<PlaylistWithTracks?>(null) }
     var renameInput by remember { mutableStateOf("") }
     var newPlaylistName by remember { mutableStateOf("") }
 
@@ -193,6 +196,20 @@ fun PlaylistsScreen(
                             modifier = Modifier.size(28.dp)
                         )
                     }
+
+                    // Download Full Playlist Button
+                    IconButton(
+                        onClick = {
+                            playlistToDownload = activePlaylist
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Download Playlist",
+                            tint = PrimaryNeon,
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
 
                 // 3-Dots Playlist Options Menu
@@ -210,6 +227,14 @@ fun PlaylistsScreen(
                         onDismissRequest = { showPlaylistHeaderMenu = false }
                     ) {
                         if (activePlaylist.tracks.isNotEmpty()) {
+                            DropdownMenuItem(
+                                text = { Text("Download All Tracks", fontFamily = FontFamily.Monospace) },
+                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryNeon) },
+                                onClick = {
+                                    showPlaylistHeaderMenu = false
+                                    playlistToDownload = activePlaylist
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Shuffle Play", fontFamily = FontFamily.Monospace) },
                                 leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = ArcCyanBright) },
@@ -498,6 +523,9 @@ fun PlaylistsScreen(
                                         Toast.makeText(context, "Shuffle playing ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
                                     }
                                 },
+                                onDownload = {
+                                    playlistToDownload = playlistWithTracks
+                                },
                                 onMenuClick = { showRowMenu = true },
                                 isMenuExpanded = showRowMenu,
                                 onDismissMenu = { showRowMenu = false },
@@ -698,6 +726,31 @@ fun PlaylistsScreen(
             containerColor = SurfaceDark
         )
     }
+
+    // Download Playlist Quality Dialog
+    if (playlistToDownload != null) {
+        val currentQuality by viewModel.downloadQuality.collectAsStateWithLifecycle()
+        DownloadQualityDialog(
+            initialQuality = currentQuality,
+            title = "Download Playlist",
+            subtitle = "// BUFFER: ${playlistToDownload!!.playlist.name.uppercase()}",
+            trackCount = playlistToDownload!!.tracks.size,
+            confirmButtonText = "Download All",
+            onConfirm = { quality, setAsDefault ->
+                if (setAsDefault) {
+                    viewModel.setDownloadQuality(quality)
+                }
+                viewModel.downloadPlaylist(playlistToDownload!!, quality)
+                Toast.makeText(
+                    context,
+                    "Downloading ${playlistToDownload!!.tracks.size} tracks (${quality.label})",
+                    Toast.LENGTH_LONG
+                ).show()
+                playlistToDownload = null
+            },
+            onDismiss = { playlistToDownload = null }
+        )
+    }
 }
 
 @Composable
@@ -706,6 +759,7 @@ private fun PlaylistCyberRow(
     onClick: () -> Unit,
     onPlayAll: () -> Unit,
     onShufflePlay: () -> Unit,
+    onDownload: () -> Unit,
     onMenuClick: () -> Unit,
     isMenuExpanded: Boolean,
     onDismissMenu: () -> Unit,
@@ -797,6 +851,14 @@ private fun PlaylistCyberRow(
                 onDismissRequest = onDismissMenu
             ) {
                 if (playlistWithTracks.tracks.isNotEmpty()) {
+                    DropdownMenuItem(
+                        text = { Text("Download All", fontFamily = FontFamily.Monospace) },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryNeon) },
+                        onClick = {
+                            onDismissMenu()
+                            onDownload()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Play All", fontFamily = FontFamily.Monospace) },
                         leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = PrimaryNeon) },

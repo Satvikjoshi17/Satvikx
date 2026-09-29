@@ -29,7 +29,7 @@ import javax.inject.Singleton
 
 interface StreamRepository {
     fun searchTracks(query: String): Flow<Result<List<TrackEntity>>>
-    fun resolveAudioStream(trackIdOrUrl: String): Flow<Result<AudioStreamResult>>
+    fun resolveAudioStream(trackIdOrUrl: String, quality: String? = null): Flow<Result<AudioStreamResult>>
     fun extractVideoId(input: String): String
 }
 
@@ -229,8 +229,14 @@ class StreamRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun resolveAudioStream(trackIdOrUrl: String): Flow<Result<AudioStreamResult>> = flow {
+    override fun resolveAudioStream(trackIdOrUrl: String, quality: String?): Flow<Result<AudioStreamResult>> = flow {
         val videoId = extractVideoId(trackIdOrUrl)
+        val targetQualityStr = quality ?: "high"
+        val targetBitrateInt = when (targetQualityStr.lowercase()) {
+            "saver", "low", "eco" -> 96
+            "standard", "medium", "balanced" -> 160
+            else -> 320
+        }
 
         // 1. Check if track is already downloaded locally
         if (storageManager.isAudioDownloaded(videoId)) {
@@ -255,15 +261,23 @@ class StreamRepositoryImpl @Inject constructor(
         // 2. Check if trackIdOrUrl is already an HTTP / HTTPS direct stream URL
         if (trackIdOrUrl.startsWith("http://") || trackIdOrUrl.startsWith("https://")) {
             val cached = trackDao.getTrackByIdSync(videoId)
+            var directUrl = trackIdOrUrl
+            if (directUrl.contains(".mp4") || directUrl.contains(".m4a")) {
+                directUrl = when (targetBitrateInt) {
+                    96 -> directUrl.replace("_320.mp4", "_96.mp4").replace("_160.mp4", "_96.mp4")
+                    160 -> directUrl.replace("_320.mp4", "_160.mp4").replace("_96.mp4", "_160.mp4")
+                    else -> directUrl.replace("_96.mp4", "_320.mp4").replace("_160.mp4", "_320.mp4")
+                }
+            }
             val result = AudioStreamResult(
                 trackId = videoId,
                 title = cached?.title ?: "Stream Audio",
                 artist = cached?.artist ?: "Unknown Artist",
                 durationSeconds = cached?.durationSeconds ?: 0L,
                 thumbnailUrl = cached?.thumbnailUrl.orEmpty(),
-                streamUrl = trackIdOrUrl,
+                streamUrl = directUrl,
                 mimeType = "audio/mp4",
-                bitrate = 320000,
+                bitrate = targetBitrateInt * 1000,
                 codec = "m4a",
                 resolvedNode = "direct_url"
             )
@@ -276,15 +290,23 @@ class StreamRepositoryImpl @Inject constructor(
 
         // 3. Check if cached track entity already has a working streamUrl
         if (cached != null && !cached.streamUrl.isNullOrBlank()) {
+            var streamUrl = cached.streamUrl!!
+            if (streamUrl.contains(".mp4") || streamUrl.contains(".m4a")) {
+                streamUrl = when (targetBitrateInt) {
+                    96 -> streamUrl.replace("_320.mp4", "_96.mp4").replace("_160.mp4", "_96.mp4")
+                    160 -> streamUrl.replace("_320.mp4", "_160.mp4").replace("_96.mp4", "_160.mp4")
+                    else -> streamUrl.replace("_96.mp4", "_320.mp4").replace("_160.mp4", "_320.mp4")
+                }
+            }
             streamResult = AudioStreamResult(
                 trackId = cached.id,
                 title = cached.title,
                 artist = cached.artist,
                 durationSeconds = cached.durationSeconds,
                 thumbnailUrl = cached.thumbnailUrl,
-                streamUrl = cached.streamUrl,
+                streamUrl = streamUrl,
                 mimeType = "audio/mp4",
-                bitrate = 320000,
+                bitrate = targetBitrateInt * 1000,
                 codec = "m4a",
                 resolvedNode = "cached_stream_url"
             )
@@ -295,7 +317,7 @@ class StreamRepositoryImpl @Inject constructor(
         // 4. Resolve via NewPipeExtractor if YouTube ID
         if (streamResult == null && isLikelyYouTubeId) {
             try {
-                val ytResult = newPipeYouTubeEngine.resolveAudioStream(videoId)
+                val ytResult = newPipeYouTubeEngine.resolveAudioStream(videoId, targetQualityStr)
                 if (ytResult != null && !ytResult.streamUrl.isNullOrBlank()) {
                     streamResult = ytResult
                 }
@@ -309,7 +331,7 @@ class StreamRepositoryImpl @Inject constructor(
         // 5. Resolve via native Saavn engine by trackId
         if (streamResult == null) {
             try {
-                val saavnResult = saavnMediaEngine.resolveTrackById(videoId)
+                val saavnResult = saavnMediaEngine.resolveTrackById(videoId, targetBitrateInt)
                 if (saavnResult != null && !saavnResult.streamUrl.isNullOrBlank()) {
                     streamResult = saavnResult
                 }
@@ -323,7 +345,7 @@ class StreamRepositoryImpl @Inject constructor(
         // 6. Direct native on-device YouTube resolution fallback (if not already tried)
         if (streamResult == null && !isLikelyYouTubeId) {
             try {
-                val ytResult = newPipeYouTubeEngine.resolveAudioStream(videoId)
+                val ytResult = newPipeYouTubeEngine.resolveAudioStream(videoId, targetQualityStr)
                 if (ytResult != null && !ytResult.streamUrl.isNullOrBlank()) {
                     streamResult = ytResult
                 }

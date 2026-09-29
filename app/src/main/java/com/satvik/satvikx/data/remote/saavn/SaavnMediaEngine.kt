@@ -97,9 +97,9 @@ class SaavnMediaEngine @Inject constructor(
     }
 
     /**
-     * Resolves individual track by unique identifier, deciphering the 320kbps Akamai CDN stream.
+     * Resolves individual track by unique identifier, deciphering the Akamai CDN stream at target bitrate.
      */
-    fun resolveTrackById(trackId: String): AudioStreamResult? {
+    fun resolveTrackById(trackId: String, targetBitrate: Int = 320): AudioStreamResult? {
         val trimmedId = trackId.trim()
         if (trimmedId.isEmpty()) return null
 
@@ -138,7 +138,7 @@ class SaavnMediaEngine @Inject constructor(
             val duration = songObj.optLong("duration", 0L)
             val albumArt = SaavnCryptoUtils.cleanAlbumArt(songObj.optString("image"))
             val encryptedMediaUrl = songObj.optString("encrypted_media_url")
-            val streamUrl = SaavnCryptoUtils.decryptMediaUrl(encryptedMediaUrl, 320)
+            val streamUrl = SaavnCryptoUtils.decryptMediaUrl(encryptedMediaUrl, targetBitrate)
 
             if (streamUrl.isNullOrBlank()) {
                 return null
@@ -152,7 +152,7 @@ class SaavnMediaEngine @Inject constructor(
                 thumbnailUrl = albumArt,
                 streamUrl = streamUrl,
                 mimeType = "audio/mp4",
-                bitrate = 320000,
+                bitrate = targetBitrate * 1000,
                 codec = "m4a",
                 resolvedNode = "native_saavn_cdn"
             )

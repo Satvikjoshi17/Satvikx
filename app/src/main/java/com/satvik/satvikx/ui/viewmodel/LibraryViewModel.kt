@@ -20,6 +20,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.satvik.satvikx.data.download.DownloadQualityManager
+import com.satvik.satvikx.data.download.model.DownloadQuality
 import javax.inject.Inject
 
 data class StorageInfo(
@@ -34,7 +36,8 @@ class LibraryViewModel @Inject constructor(
     private val recentPlaybackDao: RecentPlaybackDao,
     private val storageManager: StorageManager,
     private val downloadRepository: DownloadRepository,
-    private val playbackConnectionManager: PlaybackConnectionManager
+    private val playbackConnectionManager: PlaybackConnectionManager,
+    private val downloadQualityManager: DownloadQualityManager
 ) : ViewModel() {
 
     val downloadedTracks: StateFlow<List<TrackEntity>> = trackDao.getDownloadedTracks()
@@ -49,6 +52,8 @@ class LibraryViewModel @Inject constructor(
     val likedTrackIds: StateFlow<Set<String>> = playlistDao.getLikedTrackIds()
         .map { it.toSet() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    val downloadQuality: StateFlow<DownloadQuality> = downloadQualityManager.currentQuality
 
     private val _storageInfo = MutableStateFlow(StorageInfo())
     val storageInfo: StateFlow<StorageInfo> = _storageInfo.asStateFlow()
@@ -66,12 +71,20 @@ class LibraryViewModel @Inject constructor(
         )
     }
 
+    fun setDownloadQuality(quality: DownloadQuality) {
+        downloadQualityManager.setQuality(quality)
+    }
+
     fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {
         playbackConnectionManager.playTrack(track, playlist)
     }
 
-    fun downloadTrack(track: TrackEntity) {
-        downloadRepository.enqueueDownload(track)
+    fun downloadTrack(track: TrackEntity, quality: DownloadQuality? = null) {
+        downloadRepository.enqueueDownload(track, quality)
+    }
+
+    fun downloadPlaylist(playlistWithTracks: PlaylistWithTracks, quality: DownloadQuality? = null) {
+        downloadRepository.enqueuePlaylistDownload(playlistWithTracks.tracks, quality)
     }
 
     fun playPlaylist(playlistWithTracks: PlaylistWithTracks) {

@@ -48,6 +48,7 @@ class DownloadWorker @AssistedInject constructor(
         const val KEY_BYTES_DOWNLOADED = "key_bytes_downloaded"
         const val KEY_TOTAL_BYTES = "key_total_bytes"
         const val KEY_LOCAL_PATH = "key_local_path"
+        const val KEY_QUALITY = "key_quality"
 
         private const val CHANNEL_ID = "satvikx_download_channel"
         private const val CHANNEL_NAME = "SatvikX Downloads"
@@ -61,6 +62,7 @@ class DownloadWorker @AssistedInject constructor(
         val title = inputData.getString(KEY_TITLE) ?: "Audio Track"
         val artist = inputData.getString(KEY_ARTIST) ?: "Unknown Artist"
         val thumbnailUrl = inputData.getString(KEY_THUMBNAIL_URL).orEmpty()
+        val qualityKey = inputData.getString(KEY_QUALITY) ?: "saver"
         var streamUrl = inputData.getString(KEY_STREAM_URL)
 
         createNotificationChannel()
@@ -74,11 +76,21 @@ class DownloadWorker @AssistedInject constructor(
 
         // 1. Resolve direct audio stream if not supplied
         if (streamUrl.isNullOrBlank()) {
-            val streamResult = streamRepository.resolveAudioStream(trackId).firstOrNull()?.getOrNull()
+            val streamResult = streamRepository.resolveAudioStream(trackId, qualityKey).firstOrNull()?.getOrNull()
             if (streamResult == null || streamResult.streamUrl.isBlank()) {
                 return@withContext Result.failure()
             }
             streamUrl = streamResult.streamUrl
+        }
+
+        // Adapt existing CDN URL to the chosen storage quality
+        if (streamUrl.contains(".mp4") || streamUrl.contains(".m4a")) {
+            streamUrl = when (qualityKey.lowercase()) {
+                "saver", "low", "eco" -> streamUrl.replace("_320.mp4", "_96.mp4").replace("_160.mp4", "_96.mp4")
+                "standard", "medium", "balanced" -> streamUrl.replace("_320.mp4", "_160.mp4").replace("_96.mp4", "_160.mp4")
+                "high" -> streamUrl.replace("_96.mp4", "_320.mp4").replace("_160.mp4", "_320.mp4")
+                else -> streamUrl
+            }
         }
 
         val tempFile = storageManager.getTemporaryDownloadFile(trackId)

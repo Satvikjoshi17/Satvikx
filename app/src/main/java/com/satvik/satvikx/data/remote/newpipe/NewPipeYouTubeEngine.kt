@@ -118,9 +118,10 @@ class NewPipeYouTubeEngine @Inject constructor(
     }
 
     /**
-     * Resolves audio stream URLs directly from YouTube using on-device signature deobfuscation.
+     * Resolves audio stream URLs directly from YouTube using on-device signature deobfuscation,
+     * tailoring the stream selection to the user's storage/quality preference.
      */
-    fun resolveAudioStream(videoId: String): AudioStreamResult? {
+    fun resolveAudioStream(videoId: String, targetQuality: String = "high"): AudioStreamResult? {
         val trimmedId = videoId.trim()
         if (trimmedId.isEmpty()) return null
 
@@ -138,9 +139,21 @@ class NewPipeYouTubeEngine @Inject constructor(
                 return null
             }
 
-            // Pick highest quality audio stream (m4a / opus)
-            val bestAudio = audioStreams.maxByOrNull { it.averageBitrate }
-                ?: audioStreams.first()
+            // Pick stream based on target storage/audio quality
+            val selectedAudio = when (targetQuality.lowercase()) {
+                "saver", "low", "eco" -> {
+                    audioStreams.minByOrNull { it.averageBitrate } ?: audioStreams.first()
+                }
+                "standard", "medium", "balanced" -> {
+                    // Prefer balanced ~128-160 kbps stream
+                    audioStreams.filter { it.averageBitrate in 90..160 }.maxByOrNull { it.averageBitrate }
+                        ?: audioStreams.minByOrNull { Math.abs(it.averageBitrate - 128) }
+                        ?: audioStreams.first()
+                }
+                else -> {
+                    audioStreams.maxByOrNull { it.averageBitrate } ?: audioStreams.first()
+                }
+            }
 
             val title = streamExtractor.name.orEmpty().ifBlank { "Untitled Audio" }
             val artist = streamExtractor.uploaderName.orEmpty().ifBlank { "Unknown Artist" }
@@ -153,10 +166,10 @@ class NewPipeYouTubeEngine @Inject constructor(
                 artist = artist,
                 durationSeconds = duration,
                 thumbnailUrl = thumbnail,
-                streamUrl = bestAudio.content,
-                mimeType = bestAudio.format?.mimeType ?: "audio/mp4",
-                bitrate = bestAudio.averageBitrate * 1000,
-                codec = bestAudio.format?.name ?: "m4a",
+                streamUrl = selectedAudio.content,
+                mimeType = selectedAudio.format?.mimeType ?: "audio/mp4",
+                bitrate = selectedAudio.averageBitrate * 1000,
+                codec = selectedAudio.format?.name ?: "m4a",
                 resolvedNode = "newpipe_native_extractor"
             )
         } catch (e: Exception) {

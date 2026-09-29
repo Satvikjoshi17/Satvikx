@@ -17,10 +17,12 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import javax.inject.Inject
+import com.satvik.satvikx.data.download.model.DownloadQuality
 import javax.inject.Singleton
 
 interface DownloadRepository {
-    fun enqueueDownload(track: TrackEntity)
+    fun enqueueDownload(track: TrackEntity, quality: DownloadQuality? = null)
+    fun enqueuePlaylistDownload(tracks: List<TrackEntity>, quality: DownloadQuality? = null)
     fun cancelDownload(trackId: String)
     suspend fun deleteDownload(trackId: String)
     fun observeTrackDownload(trackId: String): Flow<DownloadState>
@@ -31,7 +33,8 @@ interface DownloadRepository {
 class DownloadRepositoryImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val trackDao: TrackDao,
-    private val storageManager: StorageManager
+    private val storageManager: StorageManager,
+    private val downloadQualityManager: DownloadQualityManager
 ) : DownloadRepository {
 
     companion object {
@@ -40,14 +43,16 @@ class DownloadRepositoryImpl @Inject constructor(
 
     private val workManager by lazy { WorkManager.getInstance(context) }
 
-    override fun enqueueDownload(track: TrackEntity) {
+    override fun enqueueDownload(track: TrackEntity, quality: DownloadQuality?) {
         try {
+            val targetQuality = quality ?: downloadQualityManager.getQuality()
             val inputData = workDataOf(
                 DownloadWorker.KEY_TRACK_ID to track.id,
                 DownloadWorker.KEY_TITLE to track.title,
                 DownloadWorker.KEY_ARTIST to track.artist,
                 DownloadWorker.KEY_THUMBNAIL_URL to track.thumbnailUrl,
-                DownloadWorker.KEY_STREAM_URL to (track.streamUrl ?: "")
+                DownloadWorker.KEY_STREAM_URL to (track.streamUrl ?: ""),
+                DownloadWorker.KEY_QUALITY to targetQuality.key
             )
 
             val constraints = Constraints.Builder()
@@ -68,6 +73,15 @@ class DownloadRepositoryImpl @Inject constructor(
             )
         } catch (e: Exception) {
             android.util.Log.e("DownloadRepository", "Failed to enqueue download for ${track.id}: ${e.message}", e)
+        }
+    }
+
+    override fun enqueuePlaylistDownload(tracks: List<TrackEntity>, quality: DownloadQuality?) {
+        val targetQuality = quality ?: downloadQualityManager.getQuality()
+        tracks.forEach { track ->
+            if (!storageManager.isAudioDownloaded(track.id)) {
+                enqueueDownload(track, targetQuality)
+            }
         }
     }
 
