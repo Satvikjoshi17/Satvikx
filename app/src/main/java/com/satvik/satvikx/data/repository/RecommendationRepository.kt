@@ -24,6 +24,7 @@ data class UserAffinities(
     val heavyRotationTracks: List<TrackEntity> = emptyList(),
     val vaultTracks: List<TrackEntity> = emptyList(),
     val primaryArtist: String? = null,
+    val secondaryArtist: String? = null,
     val primaryGenre: String? = null
 )
 
@@ -37,7 +38,11 @@ data class DailyMix(
 
 data class HomeRecommendationCategories(
     val becauseYouLikedTitle: String = "BECAUSE YOU LIKED",
+    val becauseYouLikedSubtitle: String = "BASED ON YOUR LISTENING PROFILE",
     val becauseYouLikedTracks: List<TrackEntity> = emptyList(),
+    val similarArtistTitle: String = "MORE LIKE THIS",
+    val similarArtistSubtitle: String = "DISCOVERIES FROM SIMILAR ARTISTS",
+    val similarArtistTracks: List<TrackEntity> = emptyList(),
     val heavyRotationTracks: List<TrackEntity> = emptyList(),
     val discoveryRadarTracks: List<TrackEntity> = emptyList(),
     val vaultFavoritesTracks: List<TrackEntity> = emptyList(),
@@ -141,8 +146,10 @@ class RecommendationRepository @Inject constructor(
 
         val vaultCombined = (likedTracks + downloadedTracks).distinctBy { it.id }
 
-        val primaryArtist = rankedArtists.firstOrNull() ?: likedArtists.firstOrNull()
-        val primaryGenre = rankedGenres.firstOrNull()
+        // Fallback curated flagship artists if user has no listening history yet
+        val primaryArtist = rankedArtists.getOrNull(0) ?: likedArtists.firstOrNull() ?: "Arijit Singh"
+        val secondaryArtist = rankedArtists.getOrNull(1) ?: likedArtists.getOrNull(1) ?: "The Weeknd"
+        val primaryGenre = rankedGenres.firstOrNull() ?: "acoustic"
 
         UserAffinities(
             topLikedArtists = likedArtists,
@@ -153,6 +160,7 @@ class RecommendationRepository @Inject constructor(
             heavyRotationTracks = heavyRotation,
             vaultTracks = vaultCombined,
             primaryArtist = primaryArtist,
+            secondaryArtist = secondaryArtist,
             primaryGenre = primaryGenre
         )
     }
@@ -164,23 +172,25 @@ class RecommendationRepository @Inject constructor(
         val affinities = analyzeUserAffinities()
         val (timeTitle, timeSubtitle, defaultMoodQuery) = computeTimeOfDayInfo(affinities.topGenres.firstOrNull())
 
-        val topLiked = affinities.topLikedArtists.firstOrNull() ?: affinities.overallTopArtists.firstOrNull()
-        val becauseLikedQuery = if (!topLiked.isNullOrBlank()) {
-            "$topLiked official tracks audio"
-        } else {
-            "Trending Global Songs"
-        }
+        val primaryArtist = affinities.primaryArtist ?: "Arijit Singh"
+        val secondaryArtist = affinities.secondaryArtist ?: "The Weeknd"
+
+        val becauseLikedQuery = "$primaryArtist songs official audio"
+        val similarArtistQuery = "$secondaryArtist songs official audio"
 
         val discoveryGenre = affinities.topGenres.getOrNull(1) ?: affinities.topGenres.firstOrNull() ?: "chill acoustic"
-        val discoveryQuery = "$discoveryGenre songs audio"
+        val discoveryQuery = "$discoveryGenre songs official audio"
 
         val primaryGenre = affinities.primaryGenre ?: "synthwave"
-        val categoryQuery = "$primaryGenre songs audio"
+        val categoryQuery = "$primaryGenre songs official audio"
         val moodQuery = getQueryForMood(selectedMood)
 
         // Query recommendation feeds in parallel on IO dispatcher
         val becauseLikedDeferred = async(Dispatchers.IO) {
             streamRepository.searchTracks(becauseLikedQuery).firstOrNull()?.getOrNull().orEmpty()
+        }
+        val similarArtistDeferred = async(Dispatchers.IO) {
+            streamRepository.searchTracks(similarArtistQuery).firstOrNull()?.getOrNull().orEmpty()
         }
         val discoveryDeferred = async(Dispatchers.IO) {
             streamRepository.searchTracks(discoveryQuery).firstOrNull()?.getOrNull().orEmpty()
@@ -192,16 +202,17 @@ class RecommendationRepository @Inject constructor(
             streamRepository.searchTracks(moodQuery).firstOrNull()?.getOrNull().orEmpty()
         }
         val trendingDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks("Trending Global Songs Audio").firstOrNull()?.getOrNull().orEmpty()
+            streamRepository.searchTracks("Top Global Hits Music Official Audio").firstOrNull()?.getOrNull().orEmpty()
         }
 
         val becauseLikedTracks = becauseLikedDeferred.await().filter { it.isSongOnly() }
+        val similarArtistTracks = similarArtistDeferred.await().filter { it.isSongOnly() }
         val discoveryTracks = discoveryDeferred.await().filter { it.isSongOnly() }
         val categoryTracks = categoryDeferred.await().filter { it.isSongOnly() }
         val moodTracks = moodDeferred.await().filter { it.isSongOnly() }
         val trendingTracks = trendingDeferred.await().filter { it.isSongOnly() }
 
-        // Quick Picks: combine recent/heavy rotation or trending (songs only)
+        // Quick Picks: combine recent/heavy rotation or trending (strictly pure songs)
         val quickPicks = (if (affinities.heavyRotationTracks.isNotEmpty()) {
             affinities.heavyRotationTracks
         } else if (affinities.vaultTracks.isNotEmpty()) {
@@ -210,24 +221,39 @@ class RecommendationRepository @Inject constructor(
             trendingTracks
         }).filter { it.isSongOnly() }.take(6)
 
-        // Spotify-style Daily Mixes (4 personalized algorithmic mixes with custom artwork gradients)
-        val dailyMix1Tracks = (becauseLikedTracks.take(8) + affinities.heavyRotationTracks.filter { it.isSongOnly() }.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.take(10) }
-        val dailyMix2Tracks = (discoveryTracks.take(8) + trendingTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.drop(5).take(10) }
-        val dailyMix3Tracks = moodTracks.take(10).ifEmpty { trendingTracks.take(10) }
-        val dailyMix4Tracks = (categoryTracks.take(8) + trendingTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.take(10) }
+        // Spotify-style Daily Mixes (5 personalized algorithmic mixes with vibrant linear gradients)
+        val dailyMix1Tracks = (becauseLikedTracks.take(8) + affinities.heavyRotationTracks.filter { it.isSongOnly() }.take(4))
+            .distinctBy { it.id }
+            .ifEmpty { trendingTracks.take(10) }
+
+        val dailyMix2Tracks = (similarArtistTracks.take(8) + discoveryTracks.take(4))
+            .distinctBy { it.id }
+            .ifEmpty { trendingTracks.drop(4).take(10) }
+
+        val dailyMix3Tracks = (discoveryTracks.take(8) + moodTracks.take(4))
+            .distinctBy { it.id }
+            .ifEmpty { trendingTracks.take(10) }
+
+        val dailyMix4Tracks = (categoryTracks.take(8) + trendingTracks.take(4))
+            .distinctBy { it.id }
+            .ifEmpty { trendingTracks.take(10) }
+
+        val dailyMix5Tracks = (moodTracks.take(8) + categoryTracks.take(4))
+            .distinctBy { it.id }
+            .ifEmpty { trendingTracks.take(10) }
 
         val dailyMixes = listOf(
             DailyMix(
                 id = "mix_1",
                 title = "Daily Mix 1",
-                subtitle = if (!topLiked.isNullOrBlank()) "$topLiked & More" else "Personalized Hits",
+                subtitle = "$primaryArtist, Pritam & favorites",
                 tracks = dailyMix1Tracks,
                 gradientColors = listOf(0xFFFF416CL, 0xFFFF4B2BL)
             ),
             DailyMix(
                 id = "mix_2",
                 title = "Daily Mix 2",
-                subtitle = "${discoveryGenre.replaceFirstChar { it.uppercase() }} & Discoveries",
+                subtitle = "$secondaryArtist, Discoveries & more",
                 tracks = dailyMix2Tracks,
                 gradientColors = listOf(0xFF00C6FFL, 0xFF0072FFL)
             ),
@@ -244,12 +270,25 @@ class RecommendationRepository @Inject constructor(
                 subtitle = "Gym, Phonk & High Tempo",
                 tracks = dailyMix4Tracks,
                 gradientColors = listOf(0xFF11998EL, 0xFF38EF7DL)
+            ),
+            DailyMix(
+                id = "mix_5",
+                title = "Focus Flow",
+                subtitle = "Ambient, Synth & Night Waves",
+                tracks = dailyMix5Tracks,
+                gradientColors = listOf(0xFFFF8008L, 0xFFFFC837L)
             )
         )
 
+        val hasUserAffinities = affinities.overallTopArtists.isNotEmpty() || affinities.topLikedArtists.isNotEmpty()
+
         HomeRecommendationCategories(
-            becauseYouLikedTitle = if (!topLiked.isNullOrBlank()) "BECAUSE YOU LIKED ${topLiked.uppercase()}" else "RECOMMENDED FOR YOU",
+            becauseYouLikedTitle = if (hasUserAffinities) "BECAUSE YOU LISTEN TO ${primaryArtist.uppercase()}" else "TOP PICKS // ${primaryArtist.uppercase()}",
+            becauseYouLikedSubtitle = "Handpicked tracks & related soundscapes",
             becauseYouLikedTracks = becauseLikedTracks,
+            similarArtistTitle = "SIMILAR TO ${secondaryArtist.uppercase()}",
+            similarArtistSubtitle = "Popular audio inspired by ${secondaryArtist}",
+            similarArtistTracks = similarArtistTracks,
             heavyRotationTracks = affinities.heavyRotationTracks,
             discoveryRadarTracks = discoveryTracks,
             categoryRadarTitle = "CATEGORY RADAR // ${primaryGenre.uppercase()}",
@@ -261,7 +300,7 @@ class RecommendationRepository @Inject constructor(
             dailyMixes = dailyMixes,
             timeOfDayTitle = timeTitle,
             timeOfDaySubtitle = timeSubtitle,
-            autopilotTargetSinger = topLiked?.uppercase() ?: "GLOBAL ICONS",
+            autopilotTargetSinger = primaryArtist.uppercase(),
             autopilotTargetGenre = primaryGenre.uppercase()
         )
     }

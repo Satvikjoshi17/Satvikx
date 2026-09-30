@@ -233,13 +233,13 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Autopilot Smart Mix Hero Banner
+                // Autopilot Smart Mix Hero Banner (Spotify AI DJ & YT Music Speed Dial style)
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(16.dp),
                     color = StarkSurface,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, StarkBorder, RoundedCornerShape(12.dp))
+                        .border(1.dp, StarkBorder, RoundedCornerShape(16.dp))
                         .clickable { homeViewModel.playAutopilotMix() }
                 ) {
                     Box(
@@ -248,8 +248,9 @@ fun HomeScreen(
                             .background(
                                 Brush.horizontalGradient(
                                     colors = listOf(
-                                        StarkCarbon,
-                                        ArcCyanGlow.copy(alpha = 0.15f)
+                                        Color(0xFF0F1A2A),
+                                        Color(0xFF14243B),
+                                        Color(0xFF0A1220)
                                     )
                                 )
                             )
@@ -281,7 +282,10 @@ fun HomeScreen(
                                 }
                                 Text(
                                     text = "Start AI Recommendation Queue",
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    ),
                                     color = TextPrimary,
                                     modifier = Modifier.padding(top = 2.dp)
                                 )
@@ -289,7 +293,8 @@ fun HomeScreen(
                                     text = "TARGET: ${uiState.autopilotTargetSinger} • ${uiState.autopilotTargetGenre}",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 11.sp
                                     ),
                                     color = ArcCyanBright,
                                     modifier = Modifier.padding(top = 2.dp)
@@ -299,10 +304,10 @@ fun HomeScreen(
                             Button(
                                 onClick = { homeViewModel.playAutopilotMix() },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (uiState.isAutopilotEngaging) StarkGold else ArcCyan,
+                                    containerColor = if (uiState.isAutopilotEngaging) StarkGold else ArcCyanBright,
                                     contentColor = StarkCarbon
                                 ),
-                                shape = CircleShape,
+                                shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
                                 enabled = !uiState.isAutopilotEngaging
                             ) {
@@ -345,9 +350,10 @@ fun HomeScreen(
         // Active Mood Picks (when a mood filter other than 'All' is active)
         if (uiState.selectedMood != "All" && uiState.moodTracks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(18.dp))
                 SectionHeader(
                     title = "${uiState.selectedMood.uppercase()} PICKS",
+                    subtitle = "Handpicked tracks matching your active vibe",
                     tag = "ACTIVE VIBE",
                     tagColor = ArcCyanBright
                 )
@@ -372,22 +378,18 @@ fun HomeScreen(
             }
         }
 
-        // 2. Quick Picks (2x3 Grid)
+        // 2. Quick Picks (Spotify-style 2x3 Grid with Mini Play AFFORDANCE)
         if (uiState.quickPicks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(18.dp))
+                SectionHeader(
+                    title = "JUMP BACK IN",
+                    subtitle = "Your top rotation and recent cores",
+                    tag = "QUICK ACCESS",
+                    tagColor = ArcCyanBright
+                )
+                Spacer(modifier = Modifier.height(8.dp))
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
-                    Text(
-                        text = "QUICK ACCESS // CORES",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 1.sp
-                        ),
-                        color = ArcCyanBright,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-
                     val chunked = uiState.quickPicks.take(6).chunked(2)
                     chunked.forEach { rowTracks ->
                         Row(
@@ -420,10 +422,11 @@ fun HomeScreen(
         // 3. Made For You // Daily Mixes (Spotify & YT Music Style)
         if (uiState.dailyMixes.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
                 SectionHeader(
-                    title = "DAILY MIXES",
-                    tag = "MADE FOR YOU",
+                    title = "MADE FOR YOU",
+                    subtitle = "Algorithmic mixes personalized for you",
+                    tag = "DAILY MIXES",
                     tagColor = ArcCyanBright
                 )
                 LazyRow(
@@ -449,42 +452,13 @@ fun HomeScreen(
             }
         }
 
-        // 3. Heavy Rotation (Repeatedly played tracks & highest affinity)
-        if (uiState.heavyRotationTracks.isNotEmpty()) {
-            item {
-                Spacer(modifier = Modifier.height(20.dp))
-                SectionHeader(
-                    title = "HEAVY ROTATION",
-                    tag = "FREQUENCY MATRIX",
-                    tagColor = ArcCyanBright
-                )
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
-                    items(uiState.heavyRotationTracks, key = { "heavy_${it.id}" }) { track ->
-                        RecommendationCard(
-                            track = track,
-                            onClick = {
-                                homeViewModel.playTrackWithSuggestionQueue(
-                                    track,
-                                    uiState.heavyRotationTracks
-                                )
-                            },
-                            onOptionsClick = { selectedTrackForOptions = track }
-                        )
-                    }
-                }
-            }
-        }
-
-        // 4. Because You Liked (Top liked artist recommendation)
+        // 4. Because You Listen To (Top liked artist recommendation)
         if (uiState.becauseYouLikedTracks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
                 SectionHeader(
                     title = uiState.becauseYouLikedTitle,
+                    subtitle = uiState.becauseYouLikedSubtitle,
                     tag = "AFFINITY ENGINE",
                     tagColor = StarkGold
                 )
@@ -509,12 +483,75 @@ fun HomeScreen(
             }
         }
 
-        // 5. Discovery Radar (New sonic horizons based on user's favorite genres)
+        // 5. Similar To (Secondary Artist Discovery Carousel)
+        if (uiState.similarArtistTracks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(22.dp))
+                SectionHeader(
+                    title = uiState.similarArtistTitle,
+                    subtitle = uiState.similarArtistSubtitle,
+                    tag = "DISCOVERY",
+                    tagColor = ArcCyanBright
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    items(uiState.similarArtistTracks, key = { "similar_${it.id}" }) { track ->
+                        RecommendationCard(
+                            track = track,
+                            onClick = {
+                                homeViewModel.playTrackWithSuggestionQueue(
+                                    track,
+                                    uiState.similarArtistTracks
+                                )
+                            },
+                            onOptionsClick = { selectedTrackForOptions = track }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 6. Heavy Rotation (Repeatedly played tracks & highest affinity)
+        if (uiState.heavyRotationTracks.isNotEmpty()) {
+            item {
+                Spacer(modifier = Modifier.height(22.dp))
+                SectionHeader(
+                    title = "HEAVY ROTATION",
+                    subtitle = "Tracks you play the most on repeat",
+                    tag = "FREQUENCY MATRIX",
+                    tagColor = ArcCyanBright
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    items(uiState.heavyRotationTracks, key = { "heavy_${it.id}" }) { track ->
+                        RecommendationCard(
+                            track = track,
+                            onClick = {
+                                homeViewModel.playTrackWithSuggestionQueue(
+                                    track,
+                                    uiState.heavyRotationTracks
+                                )
+                            },
+                            onOptionsClick = { selectedTrackForOptions = track }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 7. Discovery Radar (New sonic horizons based on user's favorite genres)
         if (uiState.discoveryRadarTracks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
                 SectionHeader(
                     title = "DISCOVERY RADAR",
+                    subtitle = "New sonic horizons based on your favorite genres",
                     tag = "ADJACENT CORES",
                     tagColor = ArcCyan
                 )
@@ -539,12 +576,13 @@ fun HomeScreen(
             }
         }
 
-        // 6. Category Radar (Deep Genre / Category Classification)
+        // 8. Category Radar (Deep Genre / Category Classification)
         if (uiState.categoryRadarTracks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
                 SectionHeader(
                     title = uiState.categoryRadarTitle,
+                    subtitle = "Genre classification matrix",
                     tag = "CATEGORY RADAR",
                     tagColor = ArcCyanBright
                 )
@@ -569,12 +607,13 @@ fun HomeScreen(
             }
         }
 
-        // 6. Vault Favorites (Liked songs & downloads)
+        // 9. Vault Favorites (Liked songs & downloads)
         if (uiState.vaultFavoritesTracks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
                 SectionHeader(
                     title = "VAULT FAVORITES",
+                    subtitle = "Saved tracks from your library and downloads",
                     tag = "LIKED & OFFLINE",
                     tagColor = StarkGold
                 )
@@ -599,12 +638,13 @@ fun HomeScreen(
             }
         }
 
-        // 4. Arc Mood Matrix (Ambient Mood Stations when 'All' is selected)
+        // 10. Arc Mood Matrix (Ambient Mood Stations when 'All' is selected)
         if (uiState.selectedMood == "All" && uiState.moodTracks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(22.dp))
                 SectionHeader(
                     title = "MOOD MATRIX",
+                    subtitle = "Acoustic and ambient soundscapes",
                     tag = "CHILL & AMBIENT",
                     tagColor = ArcCyanBright
                 )
@@ -629,16 +669,17 @@ fun HomeScreen(
             }
         }
 
-        // 5. Trending Masters (Vertical Track List with Quick Suggestion Queue)
+        // 11. Trending Masters (Vertical Track List with Quick Suggestion Queue)
         if (uiState.trendingTracks.isNotEmpty()) {
             item {
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(26.dp))
                 SectionHeader(
                     title = "TRENDING MASTERS",
+                    subtitle = "Global viral tracks updated live",
                     tag = "GLOBAL AUDIO LOG",
                     tagColor = ArcCyan
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(6.dp))
             }
 
             items(uiState.trendingTracks, key = { "trend_${it.id}" }) { track ->
@@ -708,8 +749,9 @@ fun HomeScreen(
 @Composable
 private fun SectionHeader(
     title: String,
-    tag: String,
-    tagColor: Color,
+    subtitle: String? = null,
+    tag: String? = null,
+    tagColor: Color = ArcCyanBright,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -722,30 +764,46 @@ private fun SectionHeader(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium.copy(
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = (-0.2).sp
-                ),
-                color = TextPrimary
-            )
-            Surface(
-                shape = RoundedCornerShape(4.dp),
-                color = tagColor.copy(alpha = 0.12f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, tagColor.copy(alpha = 0.3f))
-            ) {
+            Column(modifier = Modifier.weight(1f, fill = false)) {
                 Text(
-                    text = tag,
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
+                        letterSpacing = (-0.2).sp
                     ),
-                    color = tagColor,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    color = TextPrimary
                 )
+                if (!subtitle.isNullOrBlank()) {
+                    Text(
+                        text = subtitle,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontSize = 11.5.sp,
+                            letterSpacing = 0.2.sp
+                        ),
+                        color = TextSecondary,
+                        modifier = Modifier.padding(top = 1.dp)
+                    )
+                }
+            }
+
+            if (!tag.isNullOrBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = tagColor.copy(alpha = 0.12f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, tagColor.copy(alpha = 0.3f))
+                ) {
+                    Text(
+                        text = tag,
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.5.sp
+                        ),
+                        color = tagColor,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
             }
         }
     }
@@ -758,21 +816,21 @@ private fun QuickPickCard(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        shape = RoundedCornerShape(8.dp),
+        shape = RoundedCornerShape(10.dp),
         color = StarkSurface,
         modifier = modifier
-            .height(52.dp)
-            .border(1.dp, StarkBorder, RoundedCornerShape(8.dp))
+            .height(58.dp)
+            .border(1.dp, StarkBorder, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.fillMaxSize()
         ) {
-            // Album art thumbnail
+            // Album art thumbnail flush to the left
             Box(
                 modifier = Modifier
-                    .size(52.dp)
+                    .size(58.dp)
                     .background(Color(0xFF161F30)),
                 contentAlignment = Alignment.Center
             ) {
@@ -797,21 +855,45 @@ private fun QuickPickCard(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 10.dp)
+                    .padding(horizontal = 10.dp),
+                verticalArrangement = Arrangement.Center
             ) {
                 Text(
                     text = track.title,
-                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                    style = MaterialTheme.typography.bodySmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.5.sp
+                    ),
                     color = TextPrimary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     text = track.artist,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp
+                    ),
                     color = TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            // Spotify-style mini circular play button on the right edge
+            Box(
+                modifier = Modifier
+                    .padding(end = 8.dp)
+                    .size(28.dp)
+                    .clip(CircleShape)
+                    .background(ArcCyanBright)
+                    .clickable(onClick = onClick),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = "Play",
+                    tint = StarkCarbon,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
@@ -826,11 +908,11 @@ private fun RecommendationCard(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(14.dp),
         color = StarkSurface,
         modifier = modifier
-            .width(140.dp)
-            .border(1.dp, StarkBorder, RoundedCornerShape(12.dp))
+            .width(148.dp)
+            .border(1.dp, StarkBorder, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
     ) {
         Column(modifier = Modifier.padding(8.dp)) {
@@ -839,7 +921,7 @@ private fun RecommendationCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(1f)
-                    .clip(RoundedCornerShape(8.dp))
+                    .clip(RoundedCornerShape(10.dp))
                     .background(Color(0xFF161F30)),
                 contentAlignment = Alignment.BottomEnd
             ) {
@@ -868,9 +950,9 @@ private fun RecommendationCard(
                 Box(
                     modifier = Modifier
                         .padding(6.dp)
-                        .size(28.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
-                        .background(ArcCyan)
+                        .background(ArcCyanBright)
                         .border(1.dp, ArcCyanBright, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
@@ -878,7 +960,7 @@ private fun RecommendationCard(
                         imageVector = Icons.Default.PlayArrow,
                         contentDescription = "Play with Suggestions",
                         tint = StarkCarbon,
-                        modifier = Modifier.size(16.dp)
+                        modifier = Modifier.size(18.dp)
                     )
                 }
             }
@@ -888,7 +970,10 @@ private fun RecommendationCard(
             // Title & Artist
             Text(
                 text = track.title,
-                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                style = MaterialTheme.typography.bodySmall.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                ),
                 color = TextPrimary,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -900,7 +985,9 @@ private fun RecommendationCard(
             ) {
                 Text(
                     text = track.artist,
-                    style = MaterialTheme.typography.labelSmall,
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontSize = 11.sp
+                    ),
                     color = TextSecondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -932,7 +1019,7 @@ private fun DailyMixCard(
         shape = RoundedCornerShape(16.dp),
         color = StarkSurface,
         modifier = modifier
-            .width(155.dp)
+            .width(160.dp)
             .border(1.dp, StarkBorder, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
     ) {
@@ -941,7 +1028,7 @@ private fun DailyMixCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(145.dp)
+                    .height(148.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(
                         Brush.linearGradient(
@@ -1005,9 +1092,9 @@ private fun DailyMixCard(
                 Box(
                     modifier = Modifier
                         .padding(8.dp)
-                        .size(34.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
-                        .background(ArcCyan)
+                        .background(ArcCyanBright)
                         .border(1.dp, ArcCyanBright, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
