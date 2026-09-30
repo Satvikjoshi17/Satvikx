@@ -166,16 +166,16 @@ class RecommendationRepository @Inject constructor(
 
         val topLiked = affinities.topLikedArtists.firstOrNull() ?: affinities.overallTopArtists.firstOrNull()
         val becauseLikedQuery = if (!topLiked.isNullOrBlank()) {
-            "$topLiked best songs hits"
+            "$topLiked official tracks audio"
         } else {
-            "Top Global Hits Master"
+            "Trending Global Songs"
         }
 
         val discoveryGenre = affinities.topGenres.getOrNull(1) ?: affinities.topGenres.firstOrNull() ?: "chill acoustic"
-        val discoveryQuery = "$discoveryGenre mix radio essentials"
+        val discoveryQuery = "$discoveryGenre songs audio"
 
         val primaryGenre = affinities.primaryGenre ?: "synthwave"
-        val categoryQuery = "$primaryGenre top hits mix radio"
+        val categoryQuery = "$primaryGenre songs audio"
         val moodQuery = getQueryForMood(selectedMood)
 
         // Query recommendation feeds in parallel on IO dispatcher
@@ -192,7 +192,7 @@ class RecommendationRepository @Inject constructor(
             streamRepository.searchTracks(moodQuery).firstOrNull()?.getOrNull().orEmpty()
         }
         val trendingDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks("Trending Global Hits").firstOrNull()?.getOrNull().orEmpty()
+            streamRepository.searchTracks("Trending Global Songs Audio").firstOrNull()?.getOrNull().orEmpty()
         }
 
         val becauseLikedTracks = becauseLikedDeferred.await().filter { it.isSongOnly() }
@@ -201,17 +201,17 @@ class RecommendationRepository @Inject constructor(
         val moodTracks = moodDeferred.await().filter { it.isSongOnly() }
         val trendingTracks = trendingDeferred.await().filter { it.isSongOnly() }
 
-        // Quick Picks: combine recent/heavy rotation or trending
-        val quickPicks = if (affinities.heavyRotationTracks.isNotEmpty()) {
-            affinities.heavyRotationTracks.take(6)
+        // Quick Picks: combine recent/heavy rotation or trending (songs only)
+        val quickPicks = (if (affinities.heavyRotationTracks.isNotEmpty()) {
+            affinities.heavyRotationTracks
         } else if (affinities.vaultTracks.isNotEmpty()) {
-            affinities.vaultTracks.take(6)
+            affinities.vaultTracks
         } else {
-            trendingTracks.take(6)
-        }
+            trendingTracks
+        }).filter { it.isSongOnly() }.take(6)
 
         // Spotify-style Daily Mixes (4 personalized algorithmic mixes with custom artwork gradients)
-        val dailyMix1Tracks = (becauseLikedTracks.take(8) + affinities.heavyRotationTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.take(10) }
+        val dailyMix1Tracks = (becauseLikedTracks.take(8) + affinities.heavyRotationTracks.filter { it.isSongOnly() }.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.take(10) }
         val dailyMix2Tracks = (discoveryTracks.take(8) + trendingTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.drop(5).take(10) }
         val dailyMix3Tracks = moodTracks.take(10).ifEmpty { trendingTracks.take(10) }
         val dailyMix4Tracks = (categoryTracks.take(8) + trendingTracks.take(4)).distinctBy { it.id }.ifEmpty { trendingTracks.take(10) }
@@ -281,20 +281,20 @@ class RecommendationRepository @Inject constructor(
             .distinctBy { it.id }
             .shuffled()
 
-        // 2. Fetch radio mixes for top singers
+        // 2. Fetch tracks for top singers
         val singerRadiosDeferred = topSingers.take(2).map { singer ->
             async(Dispatchers.IO) {
-                streamRepository.searchTracks("$singer best hits radio mix").firstOrNull()?.getOrNull().orEmpty()
+                streamRepository.searchTracks("$singer songs official audio").firstOrNull()?.getOrNull().orEmpty()
             }
         }
 
         // 3. Fetch category discovery tracks
         val genreRadioDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks("$primaryGenre essentials mix radio").firstOrNull()?.getOrNull().orEmpty()
+            streamRepository.searchTracks("$primaryGenre songs official").firstOrNull()?.getOrNull().orEmpty()
         }
 
         val trendingDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks("Global Trending Viral Hits").firstOrNull()?.getOrNull().orEmpty()
+            streamRepository.searchTracks("Global Trending Songs Audio").firstOrNull()?.getOrNull().orEmpty()
         }
 
         val singerTracks = singerRadiosDeferred.flatMap { it.await() }
@@ -351,11 +351,11 @@ class RecommendationRepository @Inject constructor(
             }
         }
 
-        // 2. Artist Radio / Discography for the seed artist
+        // 2. Artist Discography for the seed artist
         val cleanArtist = baseTrack.artist.replace(" - Topic", "").trim()
         val artistRadioDeferred = async(Dispatchers.IO) {
             if (cleanArtist.isNotBlank() && cleanArtist != "Unknown Artist") {
-                streamRepository.searchTracks("$cleanArtist radio mix songs").firstOrNull()?.getOrNull().orEmpty()
+                streamRepository.searchTracks("$cleanArtist songs official audio").firstOrNull()?.getOrNull().orEmpty()
             } else emptyList()
         }
 
@@ -365,10 +365,10 @@ class RecommendationRepository @Inject constructor(
         val userAffinityDeferred = async(Dispatchers.IO) {
             val complementaryArtist = userTopArtists.firstOrNull { it.lowercase() != cleanArtist.lowercase() }
             if (!complementaryArtist.isNullOrBlank()) {
-                streamRepository.searchTracks("$complementaryArtist best songs").firstOrNull()?.getOrNull().orEmpty()
+                streamRepository.searchTracks("$complementaryArtist songs audio").firstOrNull()?.getOrNull().orEmpty()
             } else {
                 val primaryGenre = affinities.primaryGenre ?: "trending"
-                streamRepository.searchTracks("$primaryGenre radio essentials").firstOrNull()?.getOrNull().orEmpty()
+                streamRepository.searchTracks("$primaryGenre songs official").firstOrNull()?.getOrNull().orEmpty()
             }
         }
 

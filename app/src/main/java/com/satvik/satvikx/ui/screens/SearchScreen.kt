@@ -260,7 +260,7 @@ fun SearchScreen(
                     focusManager.clearFocus()
                     isSearchActive = false
                     if (uiState.query.isNotBlank()) {
-                        viewModel.executeSearch(uiState.query)
+                        viewModel.executeSearch(uiState.query, saveToHistory = true)
                     }
                 }
             ),
@@ -298,7 +298,7 @@ fun SearchScreen(
                                 keyboardController?.hide()
                                 focusManager.clearFocus()
                                 isSearchActive = false
-                                viewModel.executeSearch(chipText)
+                                viewModel.executeSearch(chipText, saveToHistory = true)
                             },
                             label = {
                                 Text(
@@ -407,7 +407,7 @@ fun SearchScreen(
                                                 keyboardController?.hide()
                                                 focusManager.clearFocus()
                                                 isSearchActive = false
-                                                viewModel.executeSearch(category.query)
+                                                viewModel.executeSearch(category.query, saveToHistory = true)
                                             }
                                             .padding(14.dp)
                                     ) {
@@ -525,7 +525,7 @@ fun SearchScreen(
                                         isSearchActive = false
                                         keyboardController?.hide()
                                         focusManager.clearFocus()
-                                        viewModel.executeSearch(historyQuery)
+                                        viewModel.executeSearch(historyQuery, saveToHistory = true)
                                     }
                                     .padding(horizontal = 16.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically

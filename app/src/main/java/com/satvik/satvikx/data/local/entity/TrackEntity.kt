@@ -22,70 +22,80 @@ data class TrackEntity(
 
 /**
  * Determines whether a track is an individual song rather than a long video mix,
- * full album, compilation, or listicle (e.g., "Top 10 songs", "Best Bollywood songs of 2020", etc.).
+ * full album, compilation, mashup, or listicle (e.g., "Top 10 songs", "Best Bollywood songs of 2020", etc.).
  */
-fun TrackEntity.isSongOnly(): Boolean {
-    // 1. Duration filter: Tracks longer than 11 minutes (660 seconds) are almost always compilations,
-    // DJ sets, podcasts, or full albums.
-    if (durationSeconds > 660L) return false
+fun TrackEntity.isSongOnly(allowMashup: Boolean = false): Boolean {
+    // 1. Duration bounds: Standard single songs run between 35 seconds and 7.5 minutes (450 seconds).
+    // Videos longer than 450s (7.5 min) or 0s (live/stream) are almost certainly compilations, DJ sets, or albums.
+    if (durationSeconds <= 35L || durationSeconds > 450L) return false
 
     val titleLower = title.lowercase()
 
-    // 2. Explicit listicle regex: "top 10", "top 20", "top 50", "top 100", "top 5", "top 15"
+    // 2. Mashup detection (strictly excluded unless the user explicitly searched for mashup)
+    if (!allowMashup && (
+        titleLower.contains("mashup") ||
+        titleLower.contains("mash-up") ||
+        titleLower.contains("mash up")
+    )) {
+        return false
+    }
+
+    // 3. Explicit listicle regex: "top 10", "top 20", "top 50", "top 100", "top 5", "top 15", "top 3"
     if (Regex("\\btop\\s*\\d+\\b").containsMatchIn(titleLower)) return false
 
-    // 3. Multi-hour / long mix markers: "1 hour", "2 hours", "3 hrs", "100 songs", "50 songs"
-    if (Regex("\\b\\d+\\s*(hour|hr)s?\\b").containsMatchIn(titleLower)) return false
-    if (Regex("\\b\\d{2,}\\s*songs?\\b").containsMatchIn(titleLower)) return false
+    // 4. Multi-hour / long mix markers: "1 hour", "2 hours", "30 min", "1 hr", "100 songs", "50 songs"
+    if (Regex("\\b\\d+\\s*(hour|hr|minute|min)s?\\b").containsMatchIn(titleLower)) return false
+    if (Regex("\\b\\d{2,}\\s*(songs|sogs|tracks|hits)\\b").containsMatchIn(titleLower)) return false
 
-    // 4. Jukebox & full album markers
+    // 5. Jukebox, Album, and Collection markers
     if (titleLower.contains("jukebox") ||
         titleLower.contains("full album") ||
         titleLower.contains("complete album") ||
+        titleLower.contains("full audio") ||
         titleLower.contains("audio jukebox") ||
-        titleLower.contains("video jukebox")
+        titleLower.contains("video jukebox") ||
+        titleLower.contains("album songs") ||
+        titleLower.contains("all songs") ||
+        titleLower.contains("songs collection") ||
+        titleLower.contains("hit songs collection") ||
+        titleLower.contains("collection of") ||
+        titleLower.contains("greatest hits") ||
+        titleLower.contains("evergreen hits")
     ) return false
 
-    // 5. Non-stop and collection markers
+    // 6. Non-stop, megamix, dj mix, continuous mix
     if (titleLower.contains("non stop") ||
         titleLower.contains("non-stop") ||
         titleLower.contains("nonstop") ||
-        titleLower.contains("songs collection") ||
-        titleLower.contains("hit songs collection") ||
-        titleLower.contains("megamix")
+        titleLower.contains("megamix") ||
+        titleLower.contains("continuous mix") ||
+        titleLower.contains("party mix") ||
+        titleLower.contains("dj mix") ||
+        titleLower.contains("club mix") ||
+        titleLower.contains("dj remix collection")
     ) return false
 
-    // 6. "Best of" / Year compilation markers (e.g. "best bollywood songs of 2020", "best of 90s", "best songs of")
+    // 7. "Best of" / "Top songs" compilations (e.g. "best bollywood songs of 2020", "best of 90s", "top songs of 2024")
     if (titleLower.contains("best songs of") ||
+        titleLower.contains("best of ") ||
+        titleLower.contains("best of:") ||
         titleLower.contains("best bollywood") ||
-        titleLower.contains("best hindi songs") ||
-        titleLower.contains("best punjabi songs") ||
-        titleLower.contains("greatest hits of") ||
-        Regex("\\b(best|top)\\s+.*(songs|sogs|hits|tracks)\\s+of\\b").containsMatchIn(titleLower)
+        titleLower.contains("best hindi") ||
+        titleLower.contains("best punjabi") ||
+        titleLower.contains("best english") ||
+        titleLower.contains("best romantic") ||
+        titleLower.contains("best sad") ||
+        titleLower.contains("top bollywood") ||
+        titleLower.contains("top hindi") ||
+        titleLower.contains("top punjabi") ||
+        titleLower.contains("top romantic") ||
+        titleLower.contains("top songs") ||
+        titleLower.contains("top hits") ||
+        Regex("\\b(best|top)\\s+.*(songs|sogs|hits|tracks|audio)\\b").containsMatchIn(titleLower)
     ) return false
 
     // "best of 2020", "best of 90s", etc.
     if (Regex("\\bbest of\\s+(19|20)?\\d{2}\\b").containsMatchIn(titleLower)) return false
-
-    // If it contains "best of" and exceeds 6 minutes (360s) or has 0s duration, it is an artist collection mix
-    if (titleLower.contains("best of") && (durationSeconds > 360L || durationSeconds == 0L)) {
-        return false
-    }
-
-    // Long mashup mixes (> 6 minutes)
-    if (titleLower.contains("mashup") && (durationSeconds > 360L || durationSeconds == 0L)) {
-        return false
-    }
-
-    // "greatest hits" longer than 6 minutes
-    if (titleLower.contains("greatest hits") && (durationSeconds > 360L || durationSeconds == 0L)) {
-        return false
-    }
-
-    // "all songs"
-    if (titleLower.contains("all songs") && (durationSeconds > 300L || durationSeconds == 0L)) {
-        return false
-    }
 
     return true
 }

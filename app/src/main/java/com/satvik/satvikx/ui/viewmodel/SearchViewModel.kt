@@ -64,11 +64,11 @@ class SearchViewModel @Inject constructor(
     init {
         // Debounce query input to eliminate unnecessary API requests
         queryFlow
-            .debounce(400)
+            .debounce(450)
             .distinctUntilChanged()
             .filter { it.isNotBlank() }
             .onEach { query ->
-                executeSearch(query)
+                executeSearch(query, saveToHistory = false)
             }
             .launchIn(viewModelScope)
 
@@ -83,14 +83,15 @@ class SearchViewModel @Inject constructor(
     private fun loadInitialTrending() {
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null) }
-            streamRepository.searchTracks("Trending").collect { result ->
+            streamRepository.searchTracks("Trending Global Hits").collect { result ->
                 result.fold(
                     onSuccess = { tracks ->
+                        val songsOnly = tracks.filter { it.isSongOnly() }
                         _uiState.update {
                             it.copy(
                                 isSearching = false,
-                                results = tracks,
-                                error = if (tracks.isEmpty()) "No tracks found" else null
+                                results = songsOnly,
+                                error = if (songsOnly.isEmpty()) "No tracks found" else null
                             )
                         }
                     },
@@ -120,24 +121,35 @@ class SearchViewModel @Inject constructor(
         queryFlow.value = ""
     }
 
-    fun executeSearch(query: String) {
+    /**
+     * Executes track search with strict song-only filtering.
+     * @param saveToHistory When true (e.g. keyboard Search action or clicking a suggestion),
+     *                      saves the query into search history. Live debounced typing passes false
+     *                      so pausing while typing never records incomplete queries.
+     */
+    fun executeSearch(query: String, saveToHistory: Boolean = false) {
         val trimmed = query.trim()
         if (trimmed.isBlank()) return
 
-        viewModelScope.launch {
-            searchHistoryDao.recordSearchQuery(SearchHistoryEntity(trimmed))
+        if (saveToHistory) {
+            viewModelScope.launch {
+                searchHistoryDao.recordSearchQuery(SearchHistoryEntity(trimmed))
+            }
+            _uiState.update { it.copy(query = trimmed) }
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(query = trimmed, isSearching = true, error = null) }
+            _uiState.update { it.copy(isSearching = true, error = null) }
             streamRepository.searchTracks(trimmed).collect { result ->
                 result.fold(
                     onSuccess = { tracks ->
+                        val allowMashup = trimmed.contains("mashup", ignoreCase = true)
+                        val songsOnly = tracks.filter { it.isSongOnly(allowMashup = allowMashup) }
                         _uiState.update {
                             it.copy(
                                 isSearching = false,
-                                results = tracks,
-                                error = if (tracks.isEmpty()) "No tracks found" else null
+                                results = songsOnly,
+                                error = if (songsOnly.isEmpty()) "No matching songs found" else null
                             )
                         }
                     },
