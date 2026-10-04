@@ -120,7 +120,6 @@ class DownloadWorker @AssistedInject constructor(
         }
 
         val tempFile = storageManager.getTemporaryDownloadFile(trackId)
-        val targetFile = storageManager.getTrackAudioFile(trackId)
 
         val downloadClient = okHttpClient.newBuilder()
             .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
@@ -264,9 +263,14 @@ class DownloadWorker @AssistedInject constructor(
                 output.flush()
             }
 
-            // 3. Commit downloaded file to scoped storage
-            val success = storageManager.commitDownloadedFile(tempFile, targetFile)
-            if (!success) {
+            // 3. Commit downloaded file to user-selected storage destination
+            val committedFile = storageManager.commitDownloadedTrack(
+                tempFile = tempFile,
+                trackId = trackId,
+                title = title,
+                artist = artist
+            )
+            if (committedFile == null) {
                 tempFile.delete()
                 return@withContext Result.failure()
             }
@@ -281,10 +285,10 @@ class DownloadWorker @AssistedInject constructor(
                 thumbnailUrl = thumbnailUrl
             )).copy(
                 isDownloaded = true,
-                localPath = targetFile.absolutePath
+                localPath = committedFile.absolutePath
             )
             trackDao.insertTrack(updated)
-            trackDao.updateDownloadStatus(trackId, isDownloaded = true, localPath = targetFile.absolutePath)
+            trackDao.updateDownloadStatus(trackId, isDownloaded = true, localPath = committedFile.absolutePath)
 
             // 5. Show completed notification briefly
             showCompletedNotification(notificationId, title, artist)
@@ -292,7 +296,7 @@ class DownloadWorker @AssistedInject constructor(
             return@withContext Result.success(
                 workDataOf(
                     KEY_TRACK_ID to trackId,
-                    KEY_LOCAL_PATH to targetFile.absolutePath
+                    KEY_LOCAL_PATH to committedFile.absolutePath
                 )
             )
 

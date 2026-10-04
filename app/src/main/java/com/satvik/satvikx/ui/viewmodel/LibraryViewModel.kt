@@ -20,7 +20,9 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import com.satvik.satvikx.data.download.DownloadLocationManager
 import com.satvik.satvikx.data.download.DownloadQualityManager
+import com.satvik.satvikx.data.download.model.DownloadLocation
 import com.satvik.satvikx.data.download.model.DownloadQuality
 import javax.inject.Inject
 
@@ -40,7 +42,8 @@ class LibraryViewModel @Inject constructor(
     private val storageManager: StorageManager,
     private val downloadRepository: DownloadRepository,
     private val playbackConnectionManager: PlaybackConnectionManager,
-    private val downloadQualityManager: DownloadQualityManager
+    private val downloadQualityManager: DownloadQualityManager,
+    private val downloadLocationManager: DownloadLocationManager
 ) : ViewModel() {
 
     val downloadedTracks: StateFlow<List<TrackEntity>> = trackDao.getDownloadedTracks()
@@ -57,6 +60,7 @@ class LibraryViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
     val downloadQuality: StateFlow<DownloadQuality> = downloadQualityManager.currentQuality
+    val downloadLocation: StateFlow<DownloadLocation> = downloadLocationManager.currentLocation
 
     private val _storageInfo = MutableStateFlow(StorageInfo())
     val storageInfo: StateFlow<StorageInfo> = _storageInfo.asStateFlow()
@@ -81,6 +85,11 @@ class LibraryViewModel @Inject constructor(
 
     fun setDownloadQuality(quality: DownloadQuality) {
         downloadQualityManager.setQuality(quality)
+    }
+
+    fun setDownloadLocation(location: DownloadLocation) {
+        downloadLocationManager.setLocation(location)
+        refreshStorageInfo()
     }
 
     fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {

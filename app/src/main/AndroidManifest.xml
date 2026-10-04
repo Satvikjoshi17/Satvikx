@@ -19,6 +19,10 @@
     <!-- In-App Self Updater Package Installation Permission -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!-- Storage Permissions for legacy Android (API <= 28) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
     <application
         android:name=".SatvikXApp"
         android:allowBackup="true"

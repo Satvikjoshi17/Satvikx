@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.OfflinePin
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
@@ -66,9 +67,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.satvik.satvikx.data.download.model.DownloadLocation
 import com.satvik.satvikx.data.download.model.DownloadQuality
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
+import com.satvik.satvikx.ui.components.DownloadLocationDialog
 import com.satvik.satvikx.ui.components.DownloadQualityDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
@@ -94,12 +97,14 @@ fun DownloadsScreen(
     val downloadedTracks by viewModel.downloadedTracks.collectAsStateWithLifecycle()
     val storageInfo by viewModel.storageInfo.collectAsStateWithLifecycle()
     val currentQuality by viewModel.downloadQuality.collectAsStateWithLifecycle()
+    val currentLocation by viewModel.downloadLocation.collectAsStateWithLifecycle()
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") } // "All", "A-Z", "By Artist"
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
     var trackForAddToPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showLocationDialog by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Filter downloaded tracks according to search and selected sort
@@ -246,38 +251,6 @@ fun DownloadsScreen(
                             )
                         }
                     }
-
-                    // Download Quality Capsule
-                    Surface(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(20.dp))
-                            .clickable { showQualityDialog = true },
-                        shape = RoundedCornerShape(20.dp),
-                        color = StarkSurface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.5f))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = null,
-                                tint = ArcCyanBright,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = currentQuality.label.uppercase(),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ArcCyanBright
-                                )
-                            )
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -301,6 +274,107 @@ fun DownloadsScreen(
                                 )
                             )
                     )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Controls Row: Quality & Location Capsules
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Download Quality Capsule
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { showQualityDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = StarkSurface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Tune,
+                                contentDescription = null,
+                                tint = ArcCyanBright,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = currentQuality.badge,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ArcCyanBright
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "QUALITY",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    color = TextSecondary
+                                )
+                            )
+                        }
+                    }
+
+                    // Download Location Capsule
+                    val locationColor = when (currentLocation) {
+                        DownloadLocation.PUBLIC_MUSIC -> ArcCyanBright
+                        DownloadLocation.PUBLIC_DOWNLOADS -> StarkGold
+                        DownloadLocation.APP_INTERNAL -> Color.LightGray
+                    }
+
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { showLocationDialog = true },
+                        shape = RoundedCornerShape(12.dp),
+                        color = StarkSurface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, locationColor.copy(alpha = 0.4f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Folder,
+                                contentDescription = null,
+                                tint = locationColor,
+                                modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = currentLocation.badge,
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = locationColor
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "FOLDER",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    color = TextSecondary
+                                )
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -558,6 +632,19 @@ fun DownloadsScreen(
                 Toast.makeText(context, "Default download quality set to ${quality.label}", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showQualityDialog = false }
+        )
+    }
+
+    // Location Selector Dialog
+    if (showLocationDialog) {
+        DownloadLocationDialog(
+            initialLocation = currentLocation,
+            onConfirm = { location ->
+                viewModel.setDownloadLocation(location)
+                showLocationDialog = false
+                Toast.makeText(context, "Download location set to ${location.title}", Toast.LENGTH_SHORT).show()
+            },
+            onDismiss = { showLocationDialog = false }
         )
     }
 
