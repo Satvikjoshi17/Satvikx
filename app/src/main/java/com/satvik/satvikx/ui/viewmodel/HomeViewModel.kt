@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.download.DownloadRepository
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.isSongOnly
+import com.satvik.satvikx.data.repository.ArtistAffinity
 import com.satvik.satvikx.data.repository.DailyMix
 import com.satvik.satvikx.data.repository.HomeRecommendationCategories
 import com.satvik.satvikx.data.repository.RecommendationRepository
@@ -18,12 +19,15 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class HomeUiState(
-    val greeting: String = "Welcome, Tony",
-    val telemetryStatus: String = "J.A.R.V.I.S. // AFFINITY MATRIX ONLINE",
+    val greeting: String = "Good morning",
+    val telemetryStatus: String = "AFFINITY MATRIX ONLINE",
     val isLoading: Boolean = false,
     val isAutopilotEngaging: Boolean = false,
     val quickPicks: List<TrackEntity> = emptyList(),
     val dailyMixes: List<DailyMix> = emptyList(),
+    val topArtists: List<ArtistAffinity> = emptyList(),
+    val likedTracks: List<TrackEntity> = emptyList(),
+    val jumpBackInTracks: List<TrackEntity> = emptyList(),
     val becauseYouLikedTitle: String = "BECAUSE YOU LIKED",
     val becauseYouLikedSubtitle: String = "HANDPICKED FROM YOUR RECENT TASTES",
     val becauseYouLikedTracks: List<TrackEntity> = emptyList(),
@@ -71,6 +75,9 @@ class HomeViewModel @Inject constructor(
                         telemetryStatus = data.timeOfDaySubtitle,
                         quickPicks = data.quickPicks,
                         dailyMixes = data.dailyMixes,
+                        topArtists = data.topArtists,
+                        likedTracks = data.likedTracks,
+                        jumpBackInTracks = data.jumpBackInTracks,
                         becauseYouLikedTitle = data.becauseYouLikedTitle,
                         becauseYouLikedSubtitle = data.becauseYouLikedSubtitle,
                         becauseYouLikedTracks = data.becauseYouLikedTracks,
@@ -116,6 +123,24 @@ class HomeViewModel @Inject constructor(
     fun playDailyMix(mix: DailyMix) {
         if (mix.tracks.isNotEmpty()) {
             playbackConnectionManager.playTrack(mix.tracks.first(), mix.tracks)
+        }
+    }
+
+    fun playLikedSongs() {
+        val liked = _uiState.value.likedTracks
+        if (liked.isNotEmpty()) {
+            playbackConnectionManager.playTrack(liked.first(), liked)
+        }
+    }
+
+    fun playArtistRadio(artistName: String) {
+        viewModelScope.launch {
+            try {
+                val tracks = recommendationRepository.getArtistTracks(artistName)
+                if (tracks.isNotEmpty()) {
+                    playbackConnectionManager.playTrack(tracks.first(), tracks)
+                }
+            } catch (_: Exception) {}
         }
     }
 

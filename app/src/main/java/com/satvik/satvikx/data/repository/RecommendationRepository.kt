@@ -15,11 +15,17 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
+data class ArtistAffinity(
+    val name: String,
+    val imageUrl: String? = null
+)
+
 data class UserAffinities(
     val topLikedArtists: List<String> = emptyList(),
     val topRecentArtists: List<String> = emptyList(),
     val topDownloadedArtists: List<String> = emptyList(),
     val overallTopArtists: List<String> = emptyList(),
+    val topArtists: List<ArtistAffinity> = emptyList(),
     val topGenres: List<String> = emptyList(),
     val heavyRotationTracks: List<TrackEntity> = emptyList(),
     val vaultTracks: List<TrackEntity> = emptyList(),
@@ -50,6 +56,9 @@ data class HomeRecommendationCategories(
     val trendingTracks: List<TrackEntity> = emptyList(),
     val quickPicks: List<TrackEntity> = emptyList(),
     val dailyMixes: List<DailyMix> = emptyList(),
+    val topArtists: List<ArtistAffinity> = emptyList(),
+    val likedTracks: List<TrackEntity> = emptyList(),
+    val jumpBackInTracks: List<TrackEntity> = emptyList(),
     val categoryRadarTitle: String = "CATEGORY RADAR",
     val categoryRadarTracks: List<TrackEntity> = emptyList(),
     val timeOfDayTitle: String = "TIME-SHIFTED PROTOCOL",
@@ -151,11 +160,24 @@ class RecommendationRepository @Inject constructor(
         val secondaryArtist = rankedArtists.getOrNull(1) ?: likedArtists.getOrNull(1) ?: "The Weeknd"
         val primaryGenre = rankedGenres.firstOrNull() ?: "acoustic"
 
+        val artistThumbnails = mutableMapOf<String, String>()
+        (recentTracks + likedTracks + downloadedTracks).forEach { track ->
+            extractArtists(track.artist).forEach { artist ->
+                if (!artistThumbnails.containsKey(artist) && track.thumbnailUrl.isNotBlank()) {
+                    artistThumbnails[artist] = track.thumbnailUrl
+                }
+            }
+        }
+        val topArtistAffinities = rankedArtists.take(8).map { artist ->
+            ArtistAffinity(name = artist, imageUrl = artistThumbnails[artist])
+        }
+
         UserAffinities(
             topLikedArtists = likedArtists,
             topRecentArtists = recentArtists,
             topDownloadedArtists = downloadedArtists,
             overallTopArtists = rankedArtists,
+            topArtists = topArtistAffinities,
             topGenres = rankedGenres,
             heavyRotationTracks = heavyRotation,
             vaultTracks = vaultCombined,
@@ -242,39 +264,54 @@ class RecommendationRepository @Inject constructor(
             .distinctBy { it.id }
             .ifEmpty { trendingTracks.take(10) }
 
+        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+        val likedTracks = likedPlaylist?.let {
+            playlistDao.getPlaylistWithTracks(it.playlistId).firstOrNull()?.tracks
+        } ?: emptyList()
+
+        val jumpBackIn = recentPlaybackDao.getRecentTracksSync(15)
+            .distinctBy { it.id }
+            .filter { it.isSongOnly() }
+
+        val dailyMix1Artists = dailyMix1Tracks.map { it.artist }.distinct().take(3).joinToString(", ")
+        val dailyMix2Artists = dailyMix2Tracks.map { it.artist }.distinct().take(3).joinToString(", ")
+        val dailyMix3Artists = dailyMix3Tracks.map { it.artist }.distinct().take(3).joinToString(", ")
+        val dailyMix4Artists = dailyMix4Tracks.map { it.artist }.distinct().take(3).joinToString(", ")
+        val dailyMix5Artists = dailyMix5Tracks.map { it.artist }.distinct().take(3).joinToString(", ")
+
         val dailyMixes = listOf(
             DailyMix(
                 id = "mix_1",
                 title = "Daily Mix 1",
-                subtitle = "$primaryArtist, Pritam & favorites",
+                subtitle = if (dailyMix1Artists.isNotBlank()) "$dailyMix1Artists and more" else "$primaryArtist, Pritam & favorites",
                 tracks = dailyMix1Tracks,
                 gradientColors = listOf(0xFFFF416CL, 0xFFFF4B2BL)
             ),
             DailyMix(
                 id = "mix_2",
                 title = "Daily Mix 2",
-                subtitle = "$secondaryArtist, Discoveries & more",
+                subtitle = if (dailyMix2Artists.isNotBlank()) "$dailyMix2Artists and more" else "$secondaryArtist, Discoveries & more",
                 tracks = dailyMix2Tracks,
                 gradientColors = listOf(0xFF00C6FFL, 0xFF0072FFL)
             ),
             DailyMix(
                 id = "mix_3",
                 title = "Chill Mix",
-                subtitle = "Lo-Fi, Acoustic & Downtempo",
+                subtitle = if (dailyMix3Artists.isNotBlank()) "$dailyMix3Artists and more" else "Lo-Fi, Acoustic & Downtempo",
                 tracks = dailyMix3Tracks,
                 gradientColors = listOf(0xFF8A2387L, 0xFFE94057L)
             ),
             DailyMix(
                 id = "mix_4",
                 title = "Energy Mix",
-                subtitle = "Gym, Phonk & High Tempo",
+                subtitle = if (dailyMix4Artists.isNotBlank()) "$dailyMix4Artists and more" else "Gym, Phonk & High Tempo",
                 tracks = dailyMix4Tracks,
                 gradientColors = listOf(0xFF11998EL, 0xFF38EF7DL)
             ),
             DailyMix(
                 id = "mix_5",
                 title = "Focus Flow",
-                subtitle = "Ambient, Synth & Night Waves",
+                subtitle = if (dailyMix5Artists.isNotBlank()) "$dailyMix5Artists and more" else "Ambient, Synth & Night Waves",
                 tracks = dailyMix5Tracks,
                 gradientColors = listOf(0xFFFF8008L, 0xFFFFC837L)
             )
@@ -298,6 +335,9 @@ class RecommendationRepository @Inject constructor(
             trendingTracks = trendingTracks,
             quickPicks = quickPicks,
             dailyMixes = dailyMixes,
+            topArtists = affinities.topArtists,
+            likedTracks = likedTracks,
+            jumpBackInTracks = jumpBackIn,
             timeOfDayTitle = timeTitle,
             timeOfDaySubtitle = timeSubtitle,
             autopilotTargetSinger = primaryArtist.uppercase(),
@@ -511,5 +551,10 @@ class RecommendationRepository @Inject constructor(
                 "Late night lofi synthwave"
             )
         }
+    }
+
+    suspend fun getArtistTracks(artistName: String): List<TrackEntity> {
+        val results = streamRepository.searchTracks("$artistName top hits official audio").firstOrNull()?.getOrNull().orEmpty()
+        return results.filter { it.isSongOnly() }
     }
 }
