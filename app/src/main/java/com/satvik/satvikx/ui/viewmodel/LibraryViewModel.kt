@@ -24,6 +24,10 @@ import com.satvik.satvikx.data.download.DownloadLocationManager
 import com.satvik.satvikx.data.download.DownloadQualityManager
 import com.satvik.satvikx.data.download.model.DownloadLocation
 import com.satvik.satvikx.data.download.model.DownloadQuality
+import android.content.Context
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class StorageInfo(
@@ -36,6 +40,7 @@ data class StorageInfo(
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
     private val recentPlaybackDao: RecentPlaybackDao,
@@ -230,6 +235,25 @@ class LibraryViewModel @Inject constructor(
                         trackId = track.id
                     )
                 )
+            }
+        }
+    }
+
+    /**
+     * Clears temporary audio cache files and non-downloaded streaming cache.
+     * Resets stale stream URLs so fresh CDN streams are retrieved.
+     */
+    fun clearAudioCache(onComplete: () -> Unit = {}) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val tempDir = java.io.File(context.cacheDir, "audio_temp")
+                if (tempDir.exists()) {
+                    tempDir.listFiles()?.forEach { it.delete() }
+                }
+                trackDao.clearNonDownloadedCache()
+            } catch (_: Exception) {}
+            withContext(Dispatchers.Main) {
+                onComplete()
             }
         }
     }

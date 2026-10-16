@@ -46,6 +46,9 @@ class PlaybackService : MediaSessionService() {
     @Inject
     lateinit var recentPlaybackDao: RecentPlaybackDao
 
+    @Inject
+    lateinit var playbackSessionManager: PlaybackSessionManager
+
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
@@ -69,13 +72,13 @@ class PlaybackService : MediaSessionService() {
             }
         } catch (_: Exception) {}
 
-        // 1. Configure optimized buffering strategy via DefaultLoadControl
+        // 1. Configure optimized buffering strategy via DefaultLoadControl for rapid initial start
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 20000,
-                /* maxBufferMs = */ 60000,
-                /* bufferForPlaybackMs = */ 1000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2000
+                /* minBufferMs = */ 15000,
+                /* maxBufferMs = */ 50000,
+                /* bufferForPlaybackMs = */ 500,
+                /* bufferForPlaybackAfterRebufferMs = */ 1500
             )
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
@@ -130,12 +133,19 @@ class PlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         val activePlayer = player
+        if (activePlayer != null) {
+            playbackSessionManager.savePosition(activePlayer.currentPosition.coerceAtLeast(0L))
+        }
         if (activePlayer == null || !activePlayer.playWhenReady || activePlayer.playbackState == Player.STATE_IDLE) {
             stopSelf()
         }
     }
 
     override fun onDestroy() {
+        val activePlayer = player
+        if (activePlayer != null) {
+            playbackSessionManager.savePosition(activePlayer.currentPosition.coerceAtLeast(0L))
+        }
         serviceScope.cancel()
         try {
             if (wifiLock?.isHeld == true) {
@@ -178,13 +188,9 @@ class PlaybackService : MediaSessionService() {
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-            android.util.Log.e("PlaybackService", "ExoPlayer service-level error: ${error.errorCodeName} - ${error.message}", error)
-            // Auto-recovery: If network dropped or buffer timed out, auto-retry without stopping
-            val p = player ?: return
-            if (p.currentMediaItem != null) {
-                p.prepare()
-                p.play()
-            }
+            android.util.Log.e("PlaybackService", "ExoPlayer service-level error: ${error.errorCodeName} (${error.errorCode}) - ${error.message}", error)
+            // Note: Auto-recovery and fresh stream URL re-resolution is handled gracefully by
+            // PlaybackConnectionManager. Do NOT call p.prepare() here on the stale item to avoid infinite buffering loops.
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {

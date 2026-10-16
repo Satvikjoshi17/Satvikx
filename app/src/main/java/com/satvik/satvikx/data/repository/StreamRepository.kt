@@ -12,6 +12,7 @@ import com.satvik.satvikx.data.remote.model.PipedStreamResponse
 import com.satvik.satvikx.data.remote.resolver.InstanceResolver
 import com.satvik.satvikx.data.remote.newpipe.NewPipeYouTubeEngine
 import com.satvik.satvikx.data.remote.saavn.SaavnMediaEngine
+import com.satvik.satvikx.playback.StreamUrlValidator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -29,7 +30,7 @@ import javax.inject.Singleton
 
 interface StreamRepository {
     fun searchTracks(query: String): Flow<Result<List<TrackEntity>>>
-    fun resolveAudioStream(trackIdOrUrl: String, quality: String? = null): Flow<Result<AudioStreamResult>>
+    fun resolveAudioStream(trackIdOrUrl: String, quality: String? = null, forceFresh: Boolean = false): Flow<Result<AudioStreamResult>>
     fun extractVideoId(input: String): String
 }
 
@@ -229,7 +230,7 @@ class StreamRepositoryImpl @Inject constructor(
         }
     }.flowOn(Dispatchers.IO)
 
-    override fun resolveAudioStream(trackIdOrUrl: String, quality: String?): Flow<Result<AudioStreamResult>> = flow {
+    override fun resolveAudioStream(trackIdOrUrl: String, quality: String?, forceFresh: Boolean): Flow<Result<AudioStreamResult>> = flow {
         val videoId = extractVideoId(trackIdOrUrl)
         val targetQualityStr = quality ?: "high"
         val targetBitrateInt = when (targetQualityStr.lowercase()) {
@@ -241,21 +242,23 @@ class StreamRepositoryImpl @Inject constructor(
         // 1. Check if track is already downloaded locally
         if (storageManager.isAudioDownloaded(videoId)) {
             val localFile = storageManager.getTrackAudioFile(videoId)
-            val cached = trackDao.getTrackByIdSync(videoId)
-            val result = AudioStreamResult(
-                trackId = videoId,
-                title = cached?.title ?: "Local Track",
-                artist = cached?.artist ?: "SatvikX Offline",
-                durationSeconds = cached?.durationSeconds ?: 0L,
-                thumbnailUrl = cached?.thumbnailUrl.orEmpty(),
-                streamUrl = Uri.fromFile(localFile).toString(),
-                mimeType = "audio/mp4",
-                bitrate = 320000,
-                codec = "m4a",
-                resolvedNode = "local_storage"
-            )
-            emit(Result.success(result))
-            return@flow
+            if (localFile.exists() && localFile.length() > 0L) {
+                val cached = trackDao.getTrackByIdSync(videoId)
+                val result = AudioStreamResult(
+                    trackId = videoId,
+                    title = cached?.title ?: "Local Track",
+                    artist = cached?.artist ?: "SatvikX Offline",
+                    durationSeconds = cached?.durationSeconds ?: 0L,
+                    thumbnailUrl = cached?.thumbnailUrl.orEmpty(),
+                    streamUrl = Uri.fromFile(localFile).toString(),
+                    mimeType = "audio/mp4",
+                    bitrate = 320000,
+                    codec = "m4a",
+                    resolvedNode = "local_storage"
+                )
+                emit(Result.success(result))
+                return@flow
+            }
         }
 
         // 2. Check if trackIdOrUrl is already an HTTP / HTTPS direct stream URL
@@ -288,28 +291,33 @@ class StreamRepositoryImpl @Inject constructor(
         val cached = trackDao.getTrackByIdSync(videoId)
         var streamResult: AudioStreamResult? = null
 
-        // 3. Check if cached track entity already has a working streamUrl
-        if (cached != null && !cached.streamUrl.isNullOrBlank()) {
-            var streamUrl = cached.streamUrl!!
-            if (streamUrl.contains(".mp4") || streamUrl.contains(".m4a")) {
-                streamUrl = when (targetBitrateInt) {
-                    96 -> streamUrl.replace("_320.mp4", "_96.mp4").replace("_160.mp4", "_96.mp4")
-                    160 -> streamUrl.replace("_320.mp4", "_160.mp4").replace("_96.mp4", "_160.mp4")
-                    else -> streamUrl.replace("_96.mp4", "_320.mp4").replace("_160.mp4", "_320.mp4")
+        // 3. Check if cached track entity already has a working streamUrl (ONLY if forceFresh == false and NOT expired)
+        if (!forceFresh && cached != null && !cached.streamUrl.isNullOrBlank()) {
+            if (StreamUrlValidator.isExpired(cached.streamUrl)) {
+                Log.d(TAG, "Cached stream URL for $videoId has expired. Invalidating and forcing fresh resolution.")
+                trackDao.updateStreamUrl(videoId, null)
+            } else {
+                var streamUrl = cached.streamUrl!!
+                if (streamUrl.contains(".mp4") || streamUrl.contains(".m4a")) {
+                    streamUrl = when (targetBitrateInt) {
+                        96 -> streamUrl.replace("_320.mp4", "_96.mp4").replace("_160.mp4", "_96.mp4")
+                        160 -> streamUrl.replace("_320.mp4", "_160.mp4").replace("_96.mp4", "_160.mp4")
+                        else -> streamUrl.replace("_96.mp4", "_320.mp4").replace("_160.mp4", "_320.mp4")
+                    }
                 }
+                streamResult = AudioStreamResult(
+                    trackId = cached.id,
+                    title = cached.title,
+                    artist = cached.artist,
+                    durationSeconds = cached.durationSeconds,
+                    thumbnailUrl = cached.thumbnailUrl,
+                    streamUrl = streamUrl,
+                    mimeType = "audio/mp4",
+                    bitrate = targetBitrateInt * 1000,
+                    codec = "m4a",
+                    resolvedNode = "cached_stream_url"
+                )
             }
-            streamResult = AudioStreamResult(
-                trackId = cached.id,
-                title = cached.title,
-                artist = cached.artist,
-                durationSeconds = cached.durationSeconds,
-                thumbnailUrl = cached.thumbnailUrl,
-                streamUrl = streamUrl,
-                mimeType = "audio/mp4",
-                bitrate = targetBitrateInt * 1000,
-                codec = "m4a",
-                resolvedNode = "cached_stream_url"
-            )
         }
 
         val isLikelyYouTubeId = YOUTUBE_ID_REGEX.matches(videoId)

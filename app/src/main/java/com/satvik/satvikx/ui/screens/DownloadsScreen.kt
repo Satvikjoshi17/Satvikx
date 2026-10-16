@@ -25,6 +25,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CleaningServices
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.OfflinePin
@@ -278,10 +279,10 @@ fun DownloadsScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Controls Row: Quality & Location Capsules
+                // Controls Row: Quality, Location & Clear Cache Capsules
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     // Download Quality Capsule
@@ -297,7 +298,7 @@ fun DownloadsScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Tune,
@@ -305,7 +306,7 @@ fun DownloadsScreen(
                                 tint = ArcCyanBright,
                                 modifier = Modifier.size(13.dp)
                             )
-                            Spacer(modifier = Modifier.width(5.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = currentQuality.badge,
                                 style = MaterialTheme.typography.labelSmall.copy(
@@ -315,7 +316,7 @@ fun DownloadsScreen(
                                     color = ArcCyanBright
                                 )
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
                             Text(
                                 text = "QUALITY",
                                 style = MaterialTheme.typography.labelSmall.copy(
@@ -346,7 +347,7 @@ fun DownloadsScreen(
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Folder,
@@ -354,7 +355,7 @@ fun DownloadsScreen(
                                 tint = locationColor,
                                 modifier = Modifier.size(13.dp)
                             )
-                            Spacer(modifier = Modifier.width(5.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = currentLocation.badge,
                                 style = MaterialTheme.typography.labelSmall.copy(
@@ -364,9 +365,56 @@ fun DownloadsScreen(
                                     color = locationColor
                                 )
                             )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "DIR",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    color = TextSecondary
+                                )
+                            )
+                        }
+                    }
+
+                    // Clear Audio Cache Capsule
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                viewModel.clearAudioCache {
+                                    Toast.makeText(context, "Audio cache cleared & stream tokens reset", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        color = StarkSurface,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CleaningServices,
+                                contentDescription = null,
+                                tint = ArcCyan,
+                                modifier = Modifier.size(13.dp)
+                            )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "FOLDER",
+                                text = "PURGE",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = ArcCyan
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "CACHE",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 9.sp,
