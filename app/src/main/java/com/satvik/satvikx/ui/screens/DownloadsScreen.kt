@@ -64,6 +64,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -314,7 +315,10 @@ fun DownloadsScreen(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = ArcCyanBright
-                                )
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
@@ -323,7 +327,10 @@ fun DownloadsScreen(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 9.sp,
                                     color = TextSecondary
-                                )
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -363,7 +370,10 @@ fun DownloadsScreen(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = locationColor
-                                )
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
@@ -372,7 +382,10 @@ fun DownloadsScreen(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 9.sp,
                                     color = TextSecondary
-                                )
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -410,7 +423,10 @@ fun DownloadsScreen(
                                     fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = ArcCyan
-                                )
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                             Spacer(modifier = Modifier.width(3.dp))
                             Text(
@@ -419,7 +435,10 @@ fun DownloadsScreen(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 9.sp,
                                     color = TextSecondary
-                                )
+                                ),
+                                maxLines = 1,
+                                softWrap = false,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

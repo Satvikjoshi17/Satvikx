@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -127,6 +128,7 @@ fun BottomMiniPlayer(
                                 color = TextSecondary
                             ),
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
@@ -137,7 +139,9 @@ fun BottomMiniPlayer(
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = ArcCyanBright
-                            )
+                            ),
+                            maxLines = 1,
+                            softWrap = false
                         )
                     }
                 }

@@ -97,6 +97,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
@@ -335,6 +336,7 @@ fun FullPlayerSheet(
                                     fontSize = 14.sp
                                 ),
                                 maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 modifier = Modifier.weight(1f, fill = false)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -351,6 +353,8 @@ fun FullPlayerSheet(
                                         fontSize = 10.sp,
                                         color = ArcCyanBright
                                     ),
+                                    maxLines = 1,
+                                    softWrap = false,
                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 1.dp)
                                 )
                             }

@@ -145,7 +145,9 @@ fun TrackItem(
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                    )
+                    ),
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
         }

@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -400,7 +401,7 @@ fun SearchScreen(
                                     Box(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .height(96.dp)
+                                            .defaultMinSize(minHeight = 96.dp)
                                             .clip(RoundedCornerShape(16.dp))
                                             .background(category.gradient)
                                             .clickable {
@@ -428,8 +429,11 @@ fun SearchScreen(
                                                 text = category.title,
                                                 style = MaterialTheme.typography.titleMedium.copy(
                                                     fontWeight = FontWeight.Bold,
-                                                    fontSize = 17.sp
+                                                    fontSize = 17.sp,
+                                                    lineHeight = 22.sp
                                                 ),
+                                                maxLines = 2,
+                                                overflow = TextOverflow.Ellipsis,
                                                 color = Color.White
                                             )
                                         }

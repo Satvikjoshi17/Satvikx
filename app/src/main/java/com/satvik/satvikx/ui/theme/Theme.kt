@@ -8,8 +8,11 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 private val DarkColorScheme = darkColorScheme(
     primary = PrimaryNeon,
@@ -53,9 +56,20 @@ fun SatvikXTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
+    // Protect layout from text clipping, overlap, and broken wrapping when system font scale is enlarged
+    val currentDensity = LocalDensity.current
+    val clampedDensity = Density(
+        density = currentDensity.density,
+        fontScale = currentDensity.fontScale.coerceIn(0.85f, 1.15f)
     )
+
+    CompositionLocalProvider(
+        LocalDensity provides clampedDensity
+    ) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

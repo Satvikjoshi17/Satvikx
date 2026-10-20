@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -176,6 +177,8 @@ fun HomeScreen(
                                     fontWeight = FontWeight.ExtraBold,
                                     letterSpacing = (-0.6).sp
                                 ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                                 color = TextPrimary
                             )
                             Row(
@@ -197,6 +200,8 @@ fun HomeScreen(
                                         fontWeight = FontWeight.SemiBold,
                                         letterSpacing = 0.5.sp
                                     ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                     color = SpotifyGreen
                                 )
                             }
@@ -272,6 +277,8 @@ fun HomeScreen(
                                         fontSize = 12.sp
                                     ),
                                     color = if (isSelected) Color.Black else TextPrimary,
+                                    maxLines = 1,
+                                    softWrap = false,
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                                 )
                             }
@@ -790,13 +797,15 @@ private fun SpotifyQuickTile(
         shape = RoundedCornerShape(6.dp),
         color = Color(0xFF282828).copy(alpha = 0.85f),
         modifier = modifier
-            .height(56.dp)
+            .defaultMinSize(minHeight = 56.dp)
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier
+                .fillMaxWidth()
+                .defaultMinSize(minHeight = 56.dp)
         ) {
             // Left square 56x56 image
             when (tile) {
@@ -954,6 +963,8 @@ private fun SpotifySectionHeader(
                 fontSize = 20.sp,
                 letterSpacing = (-0.4).sp
             ),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
             color = Color.White
         )
         if (!subtitle.isNullOrBlank()) {
@@ -962,6 +973,8 @@ private fun SpotifySectionHeader(
                 style = MaterialTheme.typography.bodySmall.copy(
                     fontSize = 12.sp
                 ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 color = TextSecondary,
                 modifier = Modifier.padding(top = 2.dp)
             )
