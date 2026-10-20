@@ -54,7 +54,7 @@ class LibraryViewModel @Inject constructor(
     val downloadedTracks: StateFlow<List<TrackEntity>> = trackDao.getDownloadedTracks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentTracks: StateFlow<List<TrackEntity>> = recentPlaybackDao.getRecentTracks()
+    val recentTracks: StateFlow<List<TrackEntity>> = recentPlaybackDao.getRecentTracks(500)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val playlists: StateFlow<List<PlaylistWithTracks>> = playlistDao.getAllPlaylistsWithTracks()

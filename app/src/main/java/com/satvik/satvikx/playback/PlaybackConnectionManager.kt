@@ -410,15 +410,34 @@ class PlaybackConnectionManager @Inject constructor(
             if (currentTrack == null) return@launch
 
             val filteredUpcoming = newQueue.filter { it.id != currentTrack.id && it.isSongOnly() }
-            currentPlaylist = (listOf(currentTrack) + filteredUpcoming).toMutableList()
+            if (filteredUpcoming.isEmpty()) return@launch
 
-            val mediaItems = currentPlaylist.map { buildMediaItem(it) }
-            controller.setMediaItems(mediaItems, 0, controller.currentPosition)
+            // Avoid redundant player modifications if upcoming tracks are already the same
+            val existingUpcomingIds = if (currentIdx + 1 < currentPlaylist.size) {
+                currentPlaylist.subList(currentIdx + 1, currentPlaylist.size).map { it.id }
+            } else emptyList()
+
+            val newUpcomingIds = filteredUpcoming.map { it.id }
+            if (existingUpcomingIds == newUpcomingIds) {
+                return@launch
+            }
+
+            // Keep all tracks played so far including the current track, and replace only what comes next
+            val updatedPlaylist = (currentPlaylist.take(currentIdx + 1) + filteredUpcoming).toMutableList()
+            currentPlaylist = updatedPlaylist
+
+            // Remove only upcoming items from ExoPlayer and append the new ones so the playing track NEVER pauses or hitches!
+            val totalItems = controller.mediaItemCount
+            if (totalItems > currentIdx + 1) {
+                controller.removeMediaItems(currentIdx + 1, totalItems)
+            }
+            val newMediaItems = filteredUpcoming.map { buildMediaItem(it) }
+            controller.addMediaItems(newMediaItems)
 
             _playbackState.update {
                 it.copy(
                     queue = currentPlaylist.toList(),
-                    currentQueueIndex = 0
+                    currentQueueIndex = currentIdx
                 )
             }
             savePlaybackSession()

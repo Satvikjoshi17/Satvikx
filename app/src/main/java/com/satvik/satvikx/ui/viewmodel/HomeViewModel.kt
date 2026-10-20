@@ -193,14 +193,24 @@ class HomeViewModel @Inject constructor(
      */
     fun playTrackWithSuggestionQueue(track: TrackEntity, contextList: List<TrackEntity> = emptyList()) {
         val initialQueue = if (contextList.isNotEmpty()) {
-            listOf(track) + contextList.filter { it.id != track.id && it.isSongOnly() }
+            val idx = contextList.indexOfFirst { it.id == track.id }
+            if (idx != -1) {
+                val upcoming = contextList.subList(idx + 1, contextList.size).filter { it.isSongOnly() }
+                val previous = contextList.subList(0, idx).filter { it.isSongOnly() }
+                listOf(track) + upcoming + previous
+            } else {
+                listOf(track) + contextList.filter { it.id != track.id && it.isSongOnly() }
+            }
         } else {
-            listOf(track)
+            val fallback = (_uiState.value.quickPicks + _uiState.value.trendingTracks)
+                .filter { it.id != track.id && it.isSongOnly() }
+                .take(10)
+            listOf(track) + fallback
         }
 
         playbackConnectionManager.playTrack(track, initialQueue)
 
-        // Asynchronously enrich the queue with deeper algorithmic suggestions
+        // Asynchronously enrich the queue with deeper algorithmic suggestions without playback interruptions
         viewModelScope.launch {
             try {
                 val deepRecommendations = recommendationRepository.generateRecommendationQueue(track)

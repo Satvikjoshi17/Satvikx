@@ -32,7 +32,7 @@ interface RecentPlaybackDao {
         ORDER BY recent_playback.playedAtTimestamp DESC 
         LIMIT :limit
     """)
-    fun getRecentTracks(limit: Int = 50): Flow<List<TrackEntity>>
+    fun getRecentTracks(limit: Int = 500): Flow<List<TrackEntity>>
 
     @Query("""
         SELECT tracks.* FROM tracks 
@@ -40,7 +40,7 @@ interface RecentPlaybackDao {
         ORDER BY recent_playback.playedAtTimestamp DESC 
         LIMIT :limit
     """)
-    suspend fun getRecentTracksSync(limit: Int = 60): List<TrackEntity>
+    suspend fun getRecentTracksSync(limit: Int = 200): List<TrackEntity>
 
     @Query("""
         SELECT tracks.* FROM tracks 

@@ -118,7 +118,7 @@ class PlaybackSessionManager @Inject constructor(
         if (track == null) return
 
         try {
-            val queueIds = queue.map { it.id }.take(50).joinToString(",")
+            val queueIds = queue.map { it.id }.take(200).joinToString(",")
             prefs.edit()
                 .putString(KEY_TRACK_ID, track.id)
                 .putString(KEY_TRACK_TITLE, track.title)

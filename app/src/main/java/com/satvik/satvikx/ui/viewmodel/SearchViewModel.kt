@@ -179,23 +179,30 @@ class SearchViewModel @Inject constructor(
     }
 
     fun playTrack(track: TrackEntity, customQueue: List<TrackEntity>? = null) {
-        if (customQueue != null) {
-            val filtered = customQueue.filter { it.id == track.id || it.isSongOnly() }
-            playbackConnectionManager.playTrack(track, filtered)
-        } else {
-            // YouTube behavior: Selected song plays immediately as seed track,
-            // while YouTube algorithmic recommendations populate the "Up Next" queue,
-            // strictly filtering out compilation videos, listicles, and long non-song videos.
-            playbackConnectionManager.playTrack(track, listOf(track))
-            viewModelScope.launch {
-                try {
-                    val recommendations = recommendationRepository.generateRecommendationQueue(track)
-                    val filteredRecs = recommendations.filter { it.isSongOnly() }
-                    if (filteredRecs.isNotEmpty()) {
-                        playbackConnectionManager.updateUpcomingQueue(filteredRecs)
-                    }
-                } catch (_: Exception) {}
+        val initialQueue = if (!customQueue.isNullOrEmpty()) {
+            val idx = customQueue.indexOfFirst { it.id == track.id }
+            if (idx != -1) {
+                val upcoming = customQueue.subList(idx + 1, customQueue.size).filter { it.isSongOnly() }
+                val previous = customQueue.subList(0, idx).filter { it.isSongOnly() }
+                listOf(track) + upcoming + previous
+            } else {
+                listOf(track) + customQueue.filter { it.id != track.id && it.isSongOnly() }
             }
+        } else {
+            listOf(track)
+        }
+
+        playbackConnectionManager.playTrack(track, initialQueue)
+
+        // Enrich the upcoming queue with algorithmic recommendations without interrupting active playback
+        viewModelScope.launch {
+            try {
+                val recommendations = recommendationRepository.generateRecommendationQueue(track)
+                val filteredRecs = recommendations.filter { it.isSongOnly() }
+                if (filteredRecs.isNotEmpty()) {
+                    playbackConnectionManager.updateUpcomingQueue(filteredRecs)
+                }
+            } catch (_: Exception) {}
         }
     }
 
