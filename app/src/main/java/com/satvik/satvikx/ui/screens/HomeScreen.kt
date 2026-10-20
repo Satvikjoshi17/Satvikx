@@ -221,18 +221,27 @@ fun HomeScreen(
                             Spacer(modifier = Modifier.width(8.dp))
 
                             IconButton(
-                                onClick = { homeViewModel.loadHomeData() },
+                                onClick = { homeViewModel.loadHomeData(forceRefresh = true) },
+                                enabled = !uiState.isRefreshing,
                                 modifier = Modifier
                                     .size(36.dp)
                                     .border(1.dp, StarkBorder, CircleShape)
                                     .background(SurfaceElevated.copy(alpha = 0.7f), CircleShape)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Refresh,
-                                    contentDescription = "Refresh Feed",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                                if (uiState.isRefreshing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        color = SpotifyGreen,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh Feed",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -533,8 +542,8 @@ fun HomeScreen(
                 }
             }
 
-            // Loading shimmer
-            if (uiState.isLoading && uiState.trendingTracks.isEmpty()) {
+            // Loading shimmer - only when there is no data at all (first cold run)
+            if (uiState.isLoading && uiState.trendingTracks.isEmpty() && uiState.quickPicks.isEmpty()) {
                 item {
                     Spacer(modifier = Modifier.height(16.dp))
                     ShimmerTrackList(count = 4)

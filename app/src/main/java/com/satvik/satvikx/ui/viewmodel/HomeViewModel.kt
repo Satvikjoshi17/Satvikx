@@ -22,6 +22,7 @@ data class HomeUiState(
     val greeting: String = "Good morning",
     val telemetryStatus: String = "AFFINITY MATRIX ONLINE",
     val isLoading: Boolean = false,
+    val isRefreshing: Boolean = false,
     val isAutopilotEngaging: Boolean = false,
     val quickPicks: List<TrackEntity> = emptyList(),
     val dailyMixes: List<DailyMix> = emptyList(),
@@ -63,43 +64,74 @@ class HomeViewModel @Inject constructor(
         loadHomeData()
     }
 
-    fun loadHomeData() {
+    private fun HomeUiState.applyRecommendations(data: HomeRecommendationCategories): HomeUiState {
+        return this.copy(
+            greeting = data.timeOfDayTitle,
+            telemetryStatus = data.timeOfDaySubtitle,
+            quickPicks = data.quickPicks,
+            dailyMixes = data.dailyMixes,
+            topArtists = data.topArtists,
+            likedTracks = data.likedTracks,
+            jumpBackInTracks = data.jumpBackInTracks,
+            becauseYouLikedTitle = data.becauseYouLikedTitle,
+            becauseYouLikedSubtitle = data.becauseYouLikedSubtitle,
+            becauseYouLikedTracks = data.becauseYouLikedTracks,
+            similarArtistTitle = data.similarArtistTitle,
+            similarArtistSubtitle = data.similarArtistSubtitle,
+            similarArtistTracks = data.similarArtistTracks,
+            heavyRotationTracks = data.heavyRotationTracks,
+            discoveryRadarTracks = data.discoveryRadarTracks,
+            categoryRadarTitle = data.categoryRadarTitle,
+            categoryRadarTracks = data.categoryRadarTracks,
+            vaultFavoritesTracks = data.vaultFavoritesTracks,
+            trendingTracks = data.trendingTracks,
+            moodTracks = data.moodTracks,
+            autopilotTargetSinger = data.autopilotTargetSinger,
+            autopilotTargetGenre = data.autopilotTargetGenre
+        )
+    }
+
+    fun loadHomeData(forceRefresh: Boolean = false) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, error = null) }
+            val currentMood = _uiState.value.selectedMood
+
+            // 1. Instant Cache Retrieval:
+            // Paint the home screen in 0-5ms with cached feeds and real-time local counts
+            val cached = recommendationRepository.getCachedRecommendations(currentMood)
+            val hasCache = cached != null && (cached.trendingTracks.isNotEmpty() || cached.quickPicks.isNotEmpty())
+
+            if (hasCache) {
+                _uiState.update { it.applyRecommendations(cached).copy(isLoading = false, error = null) }
+            }
+
+            // 2. Check if cache is fresh and we don't need background network fetch
+            val isCacheFresh = recommendationRepository.isHomeCacheFresh(currentMood)
+            if (!forceRefresh && isCacheFresh && hasCache) {
+                return@launch
+            }
+
+            // 3. Revalidation required (initial launch without cache, expired TTL, or user pressed refresh)
+            if (hasCache) {
+                _uiState.update { it.copy(isRefreshing = true, error = null) }
+            } else {
+                _uiState.update { it.copy(isLoading = true, error = null) }
+            }
+
             try {
-                val data: HomeRecommendationCategories = recommendationRepository.loadHomeRecommendations(_uiState.value.selectedMood)
+                val freshData: HomeRecommendationCategories = recommendationRepository.loadHomeRecommendations(currentMood)
                 _uiState.update {
-                    it.copy(
+                    it.applyRecommendations(freshData).copy(
                         isLoading = false,
-                        greeting = data.timeOfDayTitle,
-                        telemetryStatus = data.timeOfDaySubtitle,
-                        quickPicks = data.quickPicks,
-                        dailyMixes = data.dailyMixes,
-                        topArtists = data.topArtists,
-                        likedTracks = data.likedTracks,
-                        jumpBackInTracks = data.jumpBackInTracks,
-                        becauseYouLikedTitle = data.becauseYouLikedTitle,
-                        becauseYouLikedSubtitle = data.becauseYouLikedSubtitle,
-                        becauseYouLikedTracks = data.becauseYouLikedTracks,
-                        similarArtistTitle = data.similarArtistTitle,
-                        similarArtistSubtitle = data.similarArtistSubtitle,
-                        similarArtistTracks = data.similarArtistTracks,
-                        heavyRotationTracks = data.heavyRotationTracks,
-                        discoveryRadarTracks = data.discoveryRadarTracks,
-                        categoryRadarTitle = data.categoryRadarTitle,
-                        categoryRadarTracks = data.categoryRadarTracks,
-                        vaultFavoritesTracks = data.vaultFavoritesTracks,
-                        trendingTracks = data.trendingTracks,
-                        moodTracks = data.moodTracks,
-                        autopilotTargetSinger = data.autopilotTargetSinger,
-                        autopilotTargetGenre = data.autopilotTargetGenre
+                        isRefreshing = false,
+                        error = null
                     )
                 }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
                         isLoading = false,
-                        error = "Telemetry sync error: ${e.localizedMessage}"
+                        isRefreshing = false,
+                        error = if (!hasCache) "Telemetry sync error: ${e.localizedMessage}" else null
                     )
                 }
             }
@@ -111,11 +143,22 @@ class HomeViewModel @Inject constructor(
 
         viewModelScope.launch {
             _uiState.update { it.copy(selectedMood = mood) }
+
+            // 1. Instant cache check for mood
+            val cached = recommendationRepository.getCachedRecommendations(mood)
+            if (cached != null && cached.moodTracks.isNotEmpty()) {
+                _uiState.update { it.copy(moodTracks = cached.moodTracks) }
+                if (recommendationRepository.isHomeCacheFresh(mood)) {
+                    return@launch
+                }
+            }
+
+            // 2. Revalidate mood feed in background
             try {
                 val updatedData = recommendationRepository.loadHomeRecommendations(mood)
                 _uiState.update { it.copy(moodTracks = updatedData.moodTracks) }
             } catch (e: Exception) {
-                // Silently ignore mood error
+                // Silently keep existing mood tracks on network failure
             }
         }
     }

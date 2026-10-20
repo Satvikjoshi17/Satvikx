@@ -10,6 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.withContext
 import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
@@ -73,7 +74,8 @@ class RecommendationRepository @Inject constructor(
     private val playlistDao: PlaylistDao,
     private val trackDao: TrackDao,
     private val streamRepository: StreamRepository,
-    private val newPipeYouTubeEngine: NewPipeYouTubeEngine
+    private val newPipeYouTubeEngine: NewPipeYouTubeEngine,
+    private val homeFeedCacheManager: HomeFeedCacheManager
 ) {
 
     private val genreKeywords = listOf(
@@ -319,7 +321,7 @@ class RecommendationRepository @Inject constructor(
 
         val hasUserAffinities = affinities.overallTopArtists.isNotEmpty() || affinities.topLikedArtists.isNotEmpty()
 
-        HomeRecommendationCategories(
+        val result = HomeRecommendationCategories(
             becauseYouLikedTitle = if (hasUserAffinities) "BECAUSE YOU LISTEN TO ${primaryArtist.uppercase()}" else "TOP PICKS // ${primaryArtist.uppercase()}",
             becauseYouLikedSubtitle = "Handpicked tracks & related soundscapes",
             becauseYouLikedTracks = becauseLikedTracks,
@@ -343,6 +345,42 @@ class RecommendationRepository @Inject constructor(
             autopilotTargetSinger = primaryArtist.uppercase(),
             autopilotTargetGenre = primaryGenre.uppercase()
         )
+        homeFeedCacheManager.saveFeed(selectedMood, result)
+        result
+    }
+
+    /**
+     * Verifies if recommendations for this mood are fresh within the cache TTL window.
+     */
+    fun isHomeCacheFresh(selectedMood: String): Boolean = homeFeedCacheManager.isCacheFresh(selectedMood)
+
+    /**
+     * Reads cached home recommendations instantaneously (0-5ms) and updates real-time
+     * local data (liked songs, recents, current time-of-day greeting) without blocking.
+     */
+    suspend fun getCachedRecommendations(selectedMood: String): HomeRecommendationCategories? = withContext(Dispatchers.IO) {
+        val cached = homeFeedCacheManager.getCachedFeed(selectedMood) ?: return@withContext null
+        try {
+            val (timeTitle, timeSubtitle, _) = computeTimeOfDayInfo(cached.autopilotTargetGenre.lowercase())
+            val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+            val likedTracks = likedPlaylist?.let {
+                playlistDao.getPlaylistWithTracks(it.playlistId).firstOrNull()?.tracks
+            } ?: cached.likedTracks
+
+            val jumpBackIn = recentPlaybackDao.getRecentTracksSync(15)
+                .distinctBy { it.id }
+                .filter { it.isSongOnly() }
+                .ifEmpty { cached.jumpBackInTracks }
+
+            cached.copy(
+                timeOfDayTitle = timeTitle,
+                timeOfDaySubtitle = timeSubtitle,
+                likedTracks = likedTracks,
+                jumpBackInTracks = jumpBackIn
+            )
+        } catch (_: Exception) {
+            cached
+        }
     }
 
     /**
