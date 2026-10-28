@@ -223,7 +223,7 @@ fun FullPlayerSheet(
                                 Spacer(modifier = Modifier.width(6.dp))
                                 val screenWidthDp = LocalConfiguration.current.screenWidthDp
                                 Text(
-                                    text = if (screenWidthDp < 360) "MK-85 CORE" else "J.A.R.V.I.S. // MK-85",
+                                    text = if (screenWidthDp < 360) "MK-85 CORE" else "J.A.R.V.I.S. MARK LXXXV",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = FontFamily.Monospace,
                                         fontWeight = FontWeight.ExtraBold,

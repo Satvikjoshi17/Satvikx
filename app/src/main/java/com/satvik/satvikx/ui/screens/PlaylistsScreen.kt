@@ -167,7 +167,7 @@ fun PlaylistsScreen(
                 }
 
                 Text(
-                    text = "// PLAYLIST BUFFER",
+                    text = "PLAYLIST ARCHIVE",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.ExtraBold,
@@ -541,7 +541,7 @@ fun PlaylistsScreen(
                         )
                         Spacer(modifier = Modifier.width(7.dp))
                         Text(
-                            text = "J.A.R.V.I.S. // STARK AUDIO DIRECTORY",
+                            text = "J.A.R.V.I.S. HUD • STARK AUDIO DIRECTORY",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.ExtraBold,
@@ -588,7 +588,7 @@ fun PlaylistsScreen(
                             }
                             Spacer(modifier = Modifier.height(14.dp))
                             Text(
-                                text = "// NO_PLAYLISTS_ALLOCATED",
+                                text = "NO PLAYLISTS INITIALIZED",
                                 color = TextPrimary,
                                 style = MaterialTheme.typography.titleMedium.copy(
                                     fontFamily = FontFamily.Monospace,
@@ -712,7 +712,7 @@ fun PlaylistsScreen(
             onDismissRequest = { showCreateDialog = false },
             title = {
                 Text(
-                    text = "// INIT_PLAYLIST",
+                    text = "INITIALIZE PLAYLIST",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
@@ -723,7 +723,7 @@ fun PlaylistsScreen(
             text = {
                 Column {
                     Text(
-                        text = "Enter an identifier for this playlist buffer:",
+                        text = "Enter a title for this playlist vault:",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
@@ -755,7 +755,7 @@ fun PlaylistsScreen(
                     }
                 ) {
                     Text(
-                        "[ EXEC_CREATE ]",
+                        "CREATE",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = PrimaryNeon
@@ -764,7 +764,7 @@ fun PlaylistsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) {
-                    Text("[ CANCEL ]", fontFamily = FontFamily.Monospace, color = Color.Gray)
+                    Text("CANCEL", fontFamily = FontFamily.Monospace, color = Color.Gray)
                 }
             },
             containerColor = SurfaceDark
@@ -777,7 +777,7 @@ fun PlaylistsScreen(
             onDismissRequest = { playlistToRename = null },
             title = {
                 Text(
-                    text = "// RENAME_PLAYLIST",
+                    text = "RENAME PLAYLIST",
                     style = MaterialTheme.typography.titleMedium.copy(
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold
@@ -788,7 +788,7 @@ fun PlaylistsScreen(
             text = {
                 Column {
                     Text(
-                        text = "Modify playlist identifier:",
+                        text = "Modify playlist title:",
                         style = MaterialTheme.typography.bodySmall,
                         color = TextSecondary
                     )
@@ -818,7 +818,7 @@ fun PlaylistsScreen(
                     }
                 ) {
                     Text(
-                        "[ UPDATE ]",
+                        "SAVE",
                         fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         color = PrimaryNeon
@@ -827,7 +827,7 @@ fun PlaylistsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { playlistToRename = null }) {
-                    Text("[ CANCEL ]", fontFamily = FontFamily.Monospace, color = Color.Gray)
+                    Text("CANCEL", fontFamily = FontFamily.Monospace, color = Color.Gray)
                 }
             },
             containerColor = SurfaceDark
@@ -840,7 +840,7 @@ fun PlaylistsScreen(
         DownloadQualityDialog(
             initialQuality = currentQuality,
             title = "Download Playlist",
-            subtitle = "// BUFFER: ${playlistToDownload!!.playlist.name.uppercase()}",
+            subtitle = "VAULT: ${playlistToDownload!!.playlist.name.uppercase()}",
             trackCount = playlistToDownload!!.tracks.size,
             confirmButtonText = "Download All",
             onConfirm = { quality, setAsDefault ->

@@ -182,7 +182,7 @@ fun StarkAuthDialog(
                                 color = TextPrimary
                             )
                             Text(
-                                text = if (user != null) "STARK MUSIC TELEMETRY // ACTIVE" else "SET UP YOUR IDENTITY TO CONTINUE",
+                                text = if (user != null) "STARK MUSIC TELEMETRY • ACTIVE" else "SET UP YOUR IDENTITY TO CONTINUE",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontFamily = FontFamily.Monospace,
                                     fontSize = 10.sp,

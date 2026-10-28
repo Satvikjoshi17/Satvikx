@@ -388,7 +388,7 @@ class RecommendationRepository @Inject constructor(
         val hasUserAffinities = affinities.overallTopArtists.isNotEmpty() || affinities.topLikedArtists.isNotEmpty()
 
         val result = HomeRecommendationCategories(
-            becauseYouLikedTitle = if (hasUserAffinities) "BECAUSE YOU LISTEN TO ${primaryArtist.uppercase()}" else "TOP PICKS // ${primaryArtist.uppercase()}",
+            becauseYouLikedTitle = if (hasUserAffinities) "BECAUSE YOU LISTEN TO ${primaryArtist.uppercase()}" else "TOP PICKS • ${primaryArtist.uppercase()}",
             becauseYouLikedSubtitle = "Handpicked tracks & related soundscapes",
             becauseYouLikedTracks = becauseLikedTracks,
             similarArtistTitle = "SIMILAR TO ${secondaryArtist.uppercase()}",
@@ -396,7 +396,7 @@ class RecommendationRepository @Inject constructor(
             similarArtistTracks = similarArtistTracks,
             heavyRotationTracks = affinities.heavyRotationTracks,
             discoveryRadarTracks = discoveryTracks,
-            categoryRadarTitle = "CATEGORY RADAR // ${primaryGenre.uppercase()}",
+            categoryRadarTitle = "CATEGORY RADAR • ${primaryGenre.uppercase()}",
             categoryRadarTracks = categoryTracks,
             vaultFavoritesTracks = affinities.vaultTracks,
             moodTracks = moodTracks,
@@ -776,22 +776,22 @@ class RecommendationRepository @Inject constructor(
         return when (hour) {
             in 5..11 -> Triple(
                 "Good morning",
-                "J.A.R.V.I.S. // MORNING ${style.uppercase()} MATRIX",
+                "MORNING ACOUSTIC MATRIX • ${style.uppercase()}",
                 "Morning uplifting $style"
             )
             in 12..16 -> Triple(
                 "Good afternoon",
-                "J.A.R.V.I.S. // FOCUS & FLOW TELEMETRY NOMINAL",
+                "FOCUS & FLOW MATRIX • OPTIMAL",
                 "Focus deep work $style"
             )
             in 17..21 -> Triple(
                 "Good evening",
-                "J.A.R.V.I.S. // SUNSET AUDIO TELEMETRY SYNCHRONIZED",
+                "SUNSET ACOUSTIC MATRIX • SYNCHRONIZED",
                 "Sunset relaxing $style"
             )
             else -> Triple(
                 "Late Night Protocol",
-                "J.A.R.V.I.S. // NIGHT DRIVE & SYNTHWAVE CORES ONLINE",
+                "NIGHT DRIVE PROTOCOL • ACTIVE",
                 "Late night lofi synthwave"
             )
         }

@@ -73,6 +73,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -104,6 +106,26 @@ fun SearchScreen(
     var isSearchFocused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
+    // Preserve search text with the cursor explicitly at the END of the query
+    var textFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = uiState.query,
+                selection = TextRange(uiState.query.length)
+            )
+        )
+    }
+
+    // Keep textFieldValue in sync whenever external query changes (e.g. cleared or changed by pills/history)
+    LaunchedEffect(uiState.query) {
+        if (textFieldValue.text != uiState.query) {
+            textFieldValue = TextFieldValue(
+                text = uiState.query,
+                selection = TextRange(uiState.query.length)
+            )
+        }
+    }
+
     // Fluid back-and-forth navigation (Spotify & YouTube inspiration):
     // Intercept back button: first close keyboard/unfocus, then clear search and return to Explore
     val hasActiveQueryOrResults = uiState.query.isNotEmpty() || uiState.results.isNotEmpty()
@@ -113,6 +135,7 @@ fun SearchScreen(
             focusManager.clearFocus()
             isSearchFocused = false
         } else if (hasActiveQueryOrResults) {
+            textFieldValue = TextFieldValue("", TextRange.Zero)
             viewModel.clearSearch()
         }
     }
@@ -121,6 +144,10 @@ fun SearchScreen(
     LaunchedEffect(Unit) {
         viewModel.focusSearchEvents.collect {
             isSearchFocused = true
+            textFieldValue = TextFieldValue(
+                text = uiState.query,
+                selection = TextRange(uiState.query.length)
+            )
             delay(150)
             try {
                 focusRequester.requestFocus()
@@ -182,7 +209,7 @@ fun SearchScreen(
                 )
                 Spacer(modifier = Modifier.width(7.dp))
                 Text(
-                    text = "J.A.R.V.I.S. // STARK AUDIO ARCHIVES",
+                    text = "J.A.R.V.I.S. HUD • STARK AUDIO ARCHIVE",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
                         fontWeight = FontWeight.ExtraBold,
@@ -195,9 +222,12 @@ fun SearchScreen(
 
         // Search Bar (Cyber Vision Style with fluid Spotify-style Back & Forth Navigation)
         OutlinedTextField(
-            value = uiState.query,
-            onValueChange = {
-                viewModel.onQueryChanged(it)
+            value = textFieldValue,
+            onValueChange = { newValue ->
+                textFieldValue = newValue
+                if (newValue.text != uiState.query) {
+                    viewModel.onQueryChanged(newValue.text)
+                }
                 isSearchFocused = true
             },
             modifier = Modifier
@@ -206,6 +236,14 @@ fun SearchScreen(
                 .focusRequester(focusRequester)
                 .onFocusChanged { focusState ->
                     isSearchFocused = focusState.isFocused
+                    if (focusState.isFocused && textFieldValue.text.isNotEmpty()) {
+                        // Position cursor at the very end of the preserved query
+                        if (textFieldValue.selection.start == 0 && textFieldValue.selection.end == 0) {
+                            textFieldValue = textFieldValue.copy(
+                                selection = TextRange(textFieldValue.text.length)
+                            )
+                        }
+                    }
                 },
             placeholder = {
                 Text(
@@ -221,6 +259,7 @@ fun SearchScreen(
                             isSearchFocused = false
                             focusManager.clearFocus()
                             keyboardController?.hide()
+                            textFieldValue = TextFieldValue("", TextRange.Zero)
                             viewModel.clearSearch()
                         }
                     ) {
@@ -240,7 +279,12 @@ fun SearchScreen(
             },
             trailingIcon = {
                 if (uiState.query.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.clearSearch() }) {
+                    IconButton(
+                        onClick = {
+                            textFieldValue = TextFieldValue("", TextRange.Zero)
+                            viewModel.clearSearch()
+                        }
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Clear search query",

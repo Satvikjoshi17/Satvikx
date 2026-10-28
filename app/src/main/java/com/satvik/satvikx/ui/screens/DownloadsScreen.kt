@@ -699,7 +699,7 @@ fun DownloadsScreen(
         DownloadQualityDialog(
             initialQuality = currentQuality,
             title = "Download Audio Quality",
-            subtitle = "// STARK ENGINE PREFERENCE",
+            subtitle = "STARK AUDIO ENGINE • PREFERENCE",
             confirmButtonText = "Save Preference",
             onConfirm = { quality, _ ->
                 viewModel.setDownloadQuality(quality)

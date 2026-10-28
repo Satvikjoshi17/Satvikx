@@ -220,7 +220,7 @@ fun HomeScreen(
                                     )
                                     Spacer(modifier = Modifier.width(5.dp))
                                     Text(
-                                        text = "J.A.R.V.I.S. HUD // AUDIO PROTOCOL",
+                                        text = "J.A.R.V.I.S. HUD • MARK LXXXV AUDIO CORE",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 9.5.sp,

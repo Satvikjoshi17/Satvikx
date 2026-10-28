@@ -119,8 +119,14 @@ fun RootNavigationHost(
                                     restoreState = true
                                 }
 
-                                if (isSearch && (isDoubleTap || isSelected)) {
-                                    searchViewModel.requestSearchFocus()
+                                if (isSearch) {
+                                    if (isDoubleTap) {
+                                        // Double-tap on Search: clear previous search query for instant fresh typing
+                                        searchViewModel.clearSearch()
+                                        searchViewModel.requestSearchFocus()
+                                    } else if (isSelected) {
+                                        searchViewModel.requestSearchFocus()
+                                    }
                                 }
                             },
                             icon = {
