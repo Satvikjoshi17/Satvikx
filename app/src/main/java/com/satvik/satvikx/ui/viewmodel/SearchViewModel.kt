@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 import com.satvik.satvikx.data.repository.RecommendationRepository
@@ -257,14 +259,16 @@ class SearchViewModel @Inject constructor(
         playbackConnectionManager.playTrack(track, initialQueue)
 
         // Enrich the upcoming queue with algorithmic recommendations without interrupting active playback
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val recommendations = recommendationRepository.generateRecommendationQueue(track)
                 val filteredRecs = recommendations
                     .filter { it.isSongOnly() && !it.isSameSong(track) }
                     .distinctSongs()
                 if (filteredRecs.isNotEmpty()) {
-                    playbackConnectionManager.updateUpcomingQueue(filteredRecs)
+                    withContext(Dispatchers.Main) {
+                        playbackConnectionManager.updateUpcomingQueue(filteredRecs)
+                    }
                 }
             } catch (_: Exception) {}
         }

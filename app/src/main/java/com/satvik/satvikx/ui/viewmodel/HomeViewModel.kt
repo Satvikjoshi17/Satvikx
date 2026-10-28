@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class HomeUiState(
@@ -220,14 +222,16 @@ class HomeViewModel @Inject constructor(
         playbackConnectionManager.playTrack(track, initialQueue)
 
         // Asynchronously enrich the queue with deeper algorithmic suggestions without playback interruptions
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
                 val deepRecommendations = recommendationRepository.generateRecommendationQueue(track)
                 val filtered = deepRecommendations
                     .filter { it.isSongOnly() && !it.isSameSong(track) }
                     .distinctSongs()
                 if (filtered.isNotEmpty()) {
-                    playbackConnectionManager.updateUpcomingQueue(filtered)
+                    withContext(Dispatchers.Main) {
+                        playbackConnectionManager.updateUpcomingQueue(filtered)
+                    }
                 }
             } catch (e: Exception) {
                 // Fail gracefully, existing context queue remains
@@ -244,7 +248,9 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isAutopilotEngaging = true) }
             try {
-                val queue = recommendationRepository.generateAutopilotQueue(35).distinctSongs()
+                val queue = withContext(Dispatchers.IO) {
+                    recommendationRepository.generateAutopilotQueue(35).distinctSongs()
+                }
                 if (queue.isNotEmpty()) {
                     val first = queue.first()
                     playbackConnectionManager.playTrack(first, queue)

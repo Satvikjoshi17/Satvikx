@@ -147,13 +147,24 @@ fun TrackEntity.canonicalSongKey(): String {
     return if (cleanT.isNotBlank()) "${cleanT}_$cleanA" else id
 }
 
+// Precompiled Static Regular Expressions (Zero Runtime Compilation Allocation -> Zero ANR)
+private val REGEX_ARTIST_NOISE = Regex("""(?i)\b(vevo|official|music|channel|records|entertainment|t-series|sony|zee|tips|audio|visualizer|production|productions|media|digital)\b""")
+private val REGEX_RECORD_LABELS = Regex("""(?i)\b(t-series|tseries|sony\s*music(\s*india)?|zee\s*music(\s*company)?|yrf|yash\s*raj\s*films|saregama|speed\s*records|tips\s*(official)?|tips\s*music|vevo|white\s*hill\s*music|geet\s*mp3|desi\s*music\s*factory|eros\s*now|times\s*music|aditya\s*music|lahari\s*music|anand\s*audio|spinnin\s*records|ultra\s*music|universal\s*music|warner\s*music|columbia\s*records|atlantic\s*records|def\s*jam)\b""")
+private val REGEX_BRACKETS_TAGS = Regex("""(?i)\s*[\(\[\{][^\)\]\}]*(?:official|audio|video|music\s*video|visualizer|lyric(?:s|al)?|full\s*(?:song|audio|video)|audio\s*song|video\s*song|hd|4k|8k|1080p|remaster(?:ed)?|live|slowed|reverb|8d|from\s+["']|with\s+|feat\.?|ft\.?|prod\.?|cover|unplugged|acoustic|dance\s*mix|remix|club\s*mix|reprise|version|edit|mix|soundtrack|ost)[^\)\]\}]*[\)\]\}]""")
+private val REGEX_SMALL_BRACKETS = Regex("""\s*[\(\[\{][^\)\]\}]{0,35}[\)\]\}]""")
+private val REGEX_SEPARATORS = Regex("""\s*[-—–|•~//]\s*|\s*:\s+""")
+private val REGEX_BUZZWORDS = Regex("""(?i)\b(dance\s*mix|club\s*mix|dj\s*mix|remix|acoustic\s*version|acoustic\s*cover|unplugged|slowed\s*reverb|slowed|reverb|sped\s*up|speed\s*up|8d\s*audio|cover|duet|lofi\s*flip|lofi\s*remix|lofi\s*mix|lofi|karaoke|instrumental|teaser|trailer|motion\s*poster|short\s*clip|official\s*(music\s*)?video|official\s*audio|official\s*visualizer|lyric(?:al)?\s*video|lyrics|audio\s*song|video\s*song|full\s*(video|audio|song)|audio|video|song)\b""")
+private val REGEX_FEAT = Regex("""(?i)\b(feat\.?|ft\.?|featuring)\b.*""")
+private val REGEX_NON_ALPHANUM = Regex("""[^a-zA-Z0-9\s]""")
+private val REGEX_WHITESPACE = Regex("""\s+""")
+
 fun cleanArtist(rawArtist: String): String {
     if (rawArtist.isBlank()) return ""
     return rawArtist
         .replace(" - Topic", "", ignoreCase = true)
-        .replace(Regex("""(?i)\b(vevo|official|music|channel|records|entertainment|t-series|sony|zee|tips|audio|visualizer|production|productions|media|digital)\b"""), " ")
-        .replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
-        .trim().lowercase().replace(Regex("""\s+"""), " ")
+        .replace(REGEX_ARTIST_NOISE, " ")
+        .replace(REGEX_NON_ALPHANUM, " ")
+        .trim().lowercase().replace(REGEX_WHITESPACE, " ")
 }
 
 fun hasArtistOverlap(artistA: String, artistB: String): Boolean {
@@ -171,21 +182,25 @@ fun hasArtistOverlap(artistA: String, artistB: String): Boolean {
 private fun levenshteinDistance(s1: String, s2: String): Int {
     val m = s1.length
     val n = s2.length
-    if (Math.abs(m - n) > 3) return 99
-    val dp = Array(m + 1) { IntArray(n + 1) }
-    for (i in 0..m) dp[i][0] = i
-    for (j in 0..n) dp[0][j] = j
+    if (Math.abs(m - n) > 2 || m > 25 || n > 25) return 99
+    if (m == 0) return n
+    if (n == 0) return m
+
+    var prev = IntArray(n + 1) { it }
+    var curr = IntArray(n + 1)
+
     for (i in 1..m) {
+        curr[0] = i
+        val c1 = s1[i - 1]
         for (j in 1..n) {
-            val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
-            dp[i][j] = minOf(
-                dp[i - 1][j] + 1,
-                dp[i][j - 1] + 1,
-                dp[i - 1][j - 1] + cost
-            )
+            val cost = if (c1 == s2[j - 1]) 0 else 1
+            curr[j] = minOf(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost)
         }
+        val temp = prev
+        prev = curr
+        curr = temp
     }
-    return dp[m][n]
+    return prev[n]
 }
 
 fun cleanTrackTitle(rawTitle: String, rawArtist: String = ""): String {
@@ -201,16 +216,14 @@ fun cleanTrackTitle(rawTitle: String, rawArtist: String = ""): String {
         .replace("&gt;", ">")
 
     // 1. Remove YouTube record labels, company, and distributor stamps
-    t = t.replace(Regex("""(?i)\b(t-series|tseries|sony\s*music(\s*india)?|zee\s*music(\s*company)?|yrf|yash\s*raj\s*films|saregama|speed\s*records|tips\s*(official)?|tips\s*music|vevo|white\s*hill\s*music|geet\s*mp3|desi\s*music\s*factory|eros\s*now|times\s*music|aditya\s*music|lahari\s*music|anand\s*audio|spinnin\s*records|ultra\s*music|universal\s*music|warner\s*music|columbia\s*records|atlantic\s*records|def\s*jam)\b"""), " ")
+    t = t.replace(REGEX_RECORD_LABELS, " ")
 
-    // 2. Remove bracketed / parenthetical tags: (Official Video), [Audio], [Lyrics], (from "movie"), (Dance Mix), etc.
-    t = t.replace(Regex("""(?i)\s*[\(\[\{][^\)\]\}]*(?:official|audio|video|music\s*video|visualizer|lyric(?:s|al)?|full\s*(?:song|audio|video)|audio\s*song|video\s*song|hd|4k|8k|1080p|remaster(?:ed)?|live|slowed|reverb|8d|from\s+["']|with\s+|feat\.?|ft\.?|prod\.?|cover|unplugged|acoustic|dance\s*mix|remix|club\s*mix|reprise|version|edit|mix|soundtrack|ost)[^\)\]\}]*[\)\]\}]"""), " ")
-    // Remove any remaining empty or small brackets up to 35 chars
-    t = t.replace(Regex("""\s*[\(\[\{][^\)\]\}]{0,35}[\)\]\}]"""), " ")
+    // 2. Remove bracketed / parenthetical tags: (Official Video), [Audio], [Lyrics], etc.
+    t = t.replace(REGEX_BRACKETS_TAGS, " ")
+    t = t.replace(REGEX_SMALL_BRACKETS, " ")
 
     // 3. Multi-segment divider parsing: extract the true song title segment
-    val separatorsRegex = Regex("""\s*[-—–|•~//]\s*|\s*:\s+""")
-    val segments = t.split(separatorsRegex).map { it.trim() }.filter { it.isNotBlank() }
+    val segments = t.split(REGEX_SEPARATORS).map { it.trim() }.filter { it.isNotBlank() }
     if (segments.size >= 2) {
         val cleanArt = cleanArtist(rawArtist)
         val s0 = segments[0]
@@ -230,14 +243,14 @@ fun cleanTrackTitle(rawTitle: String, rawArtist: String = ""): String {
     }
 
     // 5. Remove common standalone buzzwords and qualifiers
-    t = t.replace(Regex("""(?i)\b(dance\s*mix|club\s*mix|dj\s*mix|remix|acoustic\s*version|acoustic\s*cover|unplugged|slowed\s*reverb|slowed|reverb|sped\s*up|speed\s*up|8d\s*audio|cover|duet|lofi\s*flip|lofi\s*remix|lofi\s*mix|lofi|karaoke|instrumental|teaser|trailer|motion\s*poster|short\s*clip|official\s*(music\s*)?video|official\s*audio|official\s*visualizer|lyric(?:al)?\s*video|lyrics|audio\s*song|video\s*song|full\s*(video|audio|song)|audio|video|song)\b"""), " ")
-    t = t.replace(Regex("""(?i)\b(feat\.?|ft\.?|featuring)\b.*"""), " ")
+    t = t.replace(REGEX_BUZZWORDS, " ")
+    t = t.replace(REGEX_FEAT, " ")
 
     // 6. Strip non-alphanumeric, keeping standard letters & numbers
-    t = t.replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
+    t = t.replace(REGEX_NON_ALPHANUM, " ")
 
     // 7. Collapse whitespace and lowercase
-    return t.trim().lowercase().replace(Regex("""\s+"""), " ")
+    return t.trim().lowercase().replace(REGEX_WHITESPACE, " ")
 }
 
 /**
@@ -321,10 +334,35 @@ fun TrackEntity.isSameSong(other: TrackEntity): Boolean {
 /**
  * Deduplicates a list of tracks so that no two tracks represent the same underlying song,
  * keeping the first high-quality occurrence.
+ * Optimized with O(1) hash indexing to eliminate ANRs.
  */
 fun List<TrackEntity>.distinctSongs(): List<TrackEntity> {
+    if (this.size <= 1) return this
     val result = mutableListOf<TrackEntity>()
+    val seenCleanTitles = HashSet<String>(this.size * 2)
+    val seenAlphaTitles = HashSet<String>(this.size * 2)
+    val seenCoreWithArtist = HashSet<String>(this.size * 2)
+
     for (track in this) {
+        val cleanT = track.cleanSongTitle()
+        val cleanA = track.cleanArtistName()
+        val alphaT = cleanT.replace(" ", "")
+        val coreT = track.coreSongTitle()
+
+        // 1. O(1) check for exact cleaned title
+        if (cleanT.isNotEmpty() && !seenCleanTitles.add(cleanT)) continue
+
+        // 2. O(1) check for compressed alphanumeric title
+        if (alphaT.isNotEmpty() && !seenAlphaTitles.add(alphaT)) continue
+
+        // 3. O(1) check for core title + primary artist token
+        val primaryArtistToken = cleanA.split(" ").firstOrNull { it.length >= 3 } ?: ""
+        if (coreT.length >= 3 && primaryArtistToken.isNotEmpty()) {
+            val key = "${coreT}_$primaryArtistToken"
+            if (!seenCoreWithArtist.add(key)) continue
+        }
+
+        // 4. Secondary deep fuzzy check against the small filtered list
         if (result.none { it.isSameSong(track) }) {
             result.add(track)
         }

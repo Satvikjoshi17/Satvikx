@@ -37,6 +37,7 @@ import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -257,7 +258,7 @@ class PlaybackConnectionManager @Inject constructor(
 
         scope.launch {
             val controller = getOrAwaitController()
-            val playableTrack = resolveTrackForPlayback(track)
+            val playableTrack = withContext(Dispatchers.IO) { resolveTrackForPlayback(track) }
             if (playableTrack == null) {
                 _playbackState.update { it.copy(isBuffering = false, isPlaying = false) }
                 return@launch
@@ -279,8 +280,10 @@ class PlaybackConnectionManager @Inject constructor(
                 c.play()
             }
 
-            trackDao.insertTrack(playableTrack)
-            recentPlaybackDao.recordOrIncrementPlayback(playableTrack.id)
+            withContext(Dispatchers.IO) {
+                trackDao.insertTrack(playableTrack)
+                recentPlaybackDao.recordOrIncrementPlayback(playableTrack.id)
+            }
 
             if (currentPlaylist.size <= 1) {
                 extendAutoplayQueue(playableTrack, forceFresh = true)
@@ -560,12 +563,12 @@ class PlaybackConnectionManager @Inject constructor(
      * Resolves a TrackEntity to a playable destination with active stream URL validation.
      * Prevents playback failures by guaranteeing URLs are fresh and non-expired.
      */
-    private suspend fun resolveTrackForPlayback(track: TrackEntity, forceFresh: Boolean = false): TrackEntity? {
+    private suspend fun resolveTrackForPlayback(track: TrackEntity, forceFresh: Boolean = false): TrackEntity? = withContext(Dispatchers.IO) {
         // 1. Check if downloaded locally
         if (storageManager.isAudioDownloaded(track.id)) {
             val file = storageManager.getTrackAudioFile(track.id)
             if (file.exists() && file.length() > 0L) {
-                return track.copy(
+                return@withContext track.copy(
                     isDownloaded = true,
                     localPath = file.absolutePath,
                     streamUrl = Uri.fromFile(file).toString()
@@ -576,7 +579,7 @@ class PlaybackConnectionManager @Inject constructor(
         // 2. Check if cached streamUrl exists, is non-empty, and is NOT expired
         if (!forceFresh && !track.streamUrl.isNullOrBlank()) {
             if (!StreamUrlValidator.isExpired(track.streamUrl)) {
-                return track
+                return@withContext track
             } else {
                 Log.d(TAG, "Track ${track.id} has expired streamUrl. Invalidating cached URL.")
                 trackDao.updateStreamUrl(track.id, null)
@@ -585,7 +588,7 @@ class PlaybackConnectionManager @Inject constructor(
 
         // 3. Resolve stream via decentralized network engine (forcing fresh resolution if requested or expired)
         val streamResult = streamRepository.resolveAudioStream(track.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
-        return if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
+        if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
             val updated = track.copy(streamUrl = streamResult.streamUrl)
             trackDao.insertTrack(updated)
             updated
@@ -630,27 +633,10 @@ class PlaybackConnectionManager @Inject constructor(
     private fun buildMediaItem(track: TrackEntity): MediaItem {
         val uri = when {
             !track.localPath.isNullOrBlank() -> {
-                val file = if (track.localPath.startsWith("file://")) {
-                    java.io.File(Uri.parse(track.localPath).path.orEmpty())
+                if (track.localPath.startsWith("file://")) {
+                    Uri.parse(track.localPath)
                 } else {
-                    java.io.File(track.localPath)
-                }
-                if (file.exists() && file.length() > 0L) {
-                    Uri.fromFile(file)
-                } else if (!track.streamUrl.isNullOrBlank()) {
-                    Uri.parse(track.streamUrl)
-                } else {
-                    Uri.EMPTY
-                }
-            }
-            storageManager.isAudioDownloaded(track.id) -> {
-                val file = storageManager.getTrackAudioFile(track.id)
-                if (file.exists() && file.length() > 0L) {
-                    Uri.fromFile(file)
-                } else if (!track.streamUrl.isNullOrBlank()) {
-                    Uri.parse(track.streamUrl)
-                } else {
-                    Uri.EMPTY
+                    Uri.fromFile(java.io.File(track.localPath))
                 }
             }
             !track.streamUrl.isNullOrBlank() -> Uri.parse(track.streamUrl)
@@ -936,7 +922,7 @@ class PlaybackConnectionManager @Inject constructor(
         } else if (autoplayQueueJob?.isActive == true) {
             return
         }
-        autoplayQueueJob = scope.launch {
+        autoplayQueueJob = scope.launch(Dispatchers.IO) {
             try {
                 val recommendationRepo = recommendationRepositoryProvider.get()
                 val nextBatch = recommendationRepo.generateRecommendationQueue(seedTrack, 15)
@@ -949,16 +935,18 @@ class PlaybackConnectionManager @Inject constructor(
                     .distinctSongs()
 
                 if (uniqueNew.isNotEmpty()) {
-                    // Pre-resolve the first autoplay track so it never lands in ExoPlayer with Uri.EMPTY
+                    // Pre-resolve the first autoplay track on background thread so it never lands in ExoPlayer with Uri.EMPTY
                     val firstTrack = uniqueNew.first()
                     val resolvedFirst = resolveTrackForPlayback(firstTrack) ?: firstTrack
                     val finalNew = listOf(resolvedFirst) + uniqueNew.drop(1)
 
-                    currentPlaylist.addAll(finalNew)
-                    val mediaItems = finalNew.map { buildMediaItem(it) }
-                    mediaController?.addMediaItems(mediaItems)
-                    _playbackState.update { it.copy(queue = currentPlaylist.toList()) }
-                    savePlaybackSession()
+                    withContext(Dispatchers.Main) {
+                        currentPlaylist.addAll(finalNew)
+                        val mediaItems = finalNew.map { buildMediaItem(it) }
+                        mediaController?.addMediaItems(mediaItems)
+                        _playbackState.update { it.copy(queue = currentPlaylist.toList()) }
+                        savePlaybackSession()
+                    }
                 }
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
