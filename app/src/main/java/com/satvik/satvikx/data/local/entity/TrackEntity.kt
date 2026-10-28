@@ -97,6 +97,20 @@ fun TrackEntity.isSongOnly(allowMashup: Boolean = false): Boolean {
     // "best of 2020", "best of 90s", etc.
     if (Regex("\\bbest of\\s+(19|20)?\\d{2}\\b").containsMatchIn(titleLower)) return false
 
+    // 8. Non-music video filters (workouts, exercises, tutorials, vlogs, reviews, gaming, podcasts, movie trailers)
+    val nonMusicKeywords = listOf(
+        "workout routine", "gym workout", "home workout", "full body workout", "abs workout",
+        "chest workout", "bicep workout", "biceps workout", "tricep workout", "leg workout",
+        "back workout", "shoulder workout", "exercise routine", "exercises for", "warm up routine",
+        "stretching routine", "fat burn", "weight loss", "calisthenics routine", "bodybuilding routine",
+        "sets and reps", "sets & reps", "training routine", "workout for beginners", "how to build",
+        "how to get", "fitness routine", "workout plan", "tutorial", "how to", "guide for beginners",
+        "walkthrough", "step by step", "full course", "gameplay", "playthrough", "unboxing",
+        "reaction video", "reaction to", "podcast episode", "full podcast", "interview with",
+        "official trailer", "teaser trailer", "full movie", "behind the scenes"
+    )
+    if (nonMusicKeywords.any { titleLower.contains(it) }) return false
+
     return true
 }
 

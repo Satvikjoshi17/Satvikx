@@ -124,7 +124,59 @@ class SearchViewModel @Inject constructor(
     }
 
     /**
-     * Executes track search with strict song-only filtering.
+     * Resolves generic query strings or quick pick category names into high-relevance music queries,
+     * ensuring YouTube and JioSaavn APIs return actual music tracks and song streams rather than
+     * non-music video tutorials, exercise guides, or vlogs.
+     */
+    private fun resolveMusicIntentQuery(rawQuery: String): String {
+        val q = rawQuery.trim()
+        val lower = q.lowercase()
+
+        return when {
+            // Gym / Workout queries
+            lower == "gym" || lower == "workout" || lower == "gym workout" || lower == "gym & workout" || lower == "fitness" ->
+                "Gym Workout Motivation Songs"
+            lower.startsWith("gym workout") && !lower.contains("song") && !lower.contains("music") && !lower.contains("track") ->
+                "$q motivation songs"
+            (lower.startsWith("workout") || lower.endsWith("workout")) && !lower.contains("song") && !lower.contains("music") && !lower.contains("track") ->
+                "$q music songs"
+            lower.startsWith("gym") && !lower.contains("song") && !lower.contains("music") ->
+                "$q motivation songs"
+
+            // Trending queries
+            lower == "trending" || lower == "trending 50" || lower == "trending global" ->
+                "Trending Global Music Hits 2026"
+
+            // Lo-Fi queries
+            lower == "chill lofi" || lower == "lofi" || lower == "lo-fi" ->
+                "Chill Lofi Beats Songs"
+
+            // Synthwave
+            lower == "synthwave" || lower == "synthwave 2088" ->
+                "Cyberpunk Synthwave Music"
+
+            // EDM
+            lower == "edm" || lower == "edm & club" ->
+                "EDM Festival Hits Music"
+
+            // Bollywood & Regional
+            lower == "bollywood hits" ->
+                "Bollywood Hits Songs 2026"
+            lower == "punjabi beats" ->
+                "Punjabi Hits Songs 2026"
+            lower == "night drive" ->
+                "Night Drive Phonk Synthwave Songs"
+            lower == "acoustic chill" ->
+                "Acoustic Pop Chill Songs"
+            lower == "hip hop & rap" ->
+                "Best Hip Hop Rap Songs"
+
+            else -> q
+        }
+    }
+
+    /**
+     * Executes track search with strict song-only filtering and intelligent music intent resolution.
      * @param saveToHistory When true (e.g. keyboard Search action or clicking a suggestion),
      *                      saves the query into search history. Live debounced typing passes false
      *                      so pausing while typing never records incomplete queries.
@@ -137,12 +189,14 @@ class SearchViewModel @Inject constructor(
             viewModelScope.launch {
                 searchHistoryDao.recordSearchQuery(SearchHistoryEntity(trimmed))
             }
-            _uiState.update { it.copy(query = trimmed) }
         }
+        _uiState.update { it.copy(query = trimmed) }
+
+        val backendQuery = resolveMusicIntentQuery(trimmed)
 
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null) }
-            streamRepository.searchTracks(trimmed).collect { result ->
+            streamRepository.searchTracks(backendQuery).collect { result ->
                 result.fold(
                     onSuccess = { tracks ->
                         val allowMashup = trimmed.contains("mashup", ignoreCase = true)

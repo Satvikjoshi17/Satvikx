@@ -101,17 +101,18 @@ fun SearchScreen(
     var trackForAddToPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val listState = rememberLazyListState()
-    var isSearchActive by remember { mutableStateOf(false) }
+    var isSearchFocused by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
     // Fluid back-and-forth navigation (Spotify & YouTube inspiration):
-    // Intercept back button to return from search results / query / suggestions back to explore landing page
-    val canGoBack = isSearchActive || uiState.query.isNotEmpty() || uiState.results.isNotEmpty()
-    BackHandler(enabled = canGoBack) {
-        keyboardController?.hide()
-        focusManager.clearFocus()
-        isSearchActive = false
-        if (uiState.query.isNotEmpty() || uiState.results.isNotEmpty()) {
+    // Intercept back button: first close keyboard/unfocus, then clear search and return to Explore
+    val hasActiveQueryOrResults = uiState.query.isNotEmpty() || uiState.results.isNotEmpty()
+    BackHandler(enabled = isSearchFocused || hasActiveQueryOrResults) {
+        if (isSearchFocused) {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            isSearchFocused = false
+        } else if (hasActiveQueryOrResults) {
             viewModel.clearSearch()
         }
     }
@@ -119,7 +120,7 @@ fun SearchScreen(
     // Respond to bottom-bar search double-tap or re-tap by activating search and focusing text field
     LaunchedEffect(Unit) {
         viewModel.focusSearchEvents.collect {
-            isSearchActive = true
+            isSearchFocused = true
             delay(150)
             try {
                 focusRequester.requestFocus()
@@ -128,10 +129,10 @@ fun SearchScreen(
         }
     }
 
-    // Dismiss keyboard and search popup when user starts scrolling the search results
+    // Dismiss keyboard when user starts scrolling the search results
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
-            isSearchActive = false
+            isSearchFocused = false
             keyboardController?.hide()
             focusManager.clearFocus()
         }
@@ -197,16 +198,14 @@ fun SearchScreen(
             value = uiState.query,
             onValueChange = {
                 viewModel.onQueryChanged(it)
-                isSearchActive = true
+                isSearchFocused = true
             },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 4.dp)
                 .focusRequester(focusRequester)
                 .onFocusChanged { focusState ->
-                    if (focusState.isFocused) {
-                        isSearchActive = true
-                    }
+                    isSearchFocused = focusState.isFocused
                 },
             placeholder = {
                 Text(
@@ -216,15 +215,13 @@ fun SearchScreen(
                 )
             },
             leadingIcon = {
-                if (canGoBack) {
+                if (hasActiveQueryOrResults) {
                     IconButton(
                         onClick = {
-                            isSearchActive = false
+                            isSearchFocused = false
                             focusManager.clearFocus()
                             keyboardController?.hide()
-                            if (uiState.query.isNotEmpty() || uiState.results.isNotEmpty()) {
-                                viewModel.clearSearch()
-                            }
+                            viewModel.clearSearch()
                         }
                     ) {
                         Icon(
@@ -237,7 +234,7 @@ fun SearchScreen(
                     Icon(
                         imageVector = Icons.Default.Search,
                         contentDescription = "Search icon",
-                        tint = Color.White
+                        tint = ArcCyan
                     )
                 }
             },
@@ -247,7 +244,7 @@ fun SearchScreen(
                         Icon(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Clear search query",
-                            tint = Color.White
+                            tint = ArcCyanBright
                         )
                     }
                 }
@@ -259,7 +256,7 @@ fun SearchScreen(
                 onSearch = {
                     keyboardController?.hide()
                     focusManager.clearFocus()
-                    isSearchActive = false
+                    isSearchFocused = false
                     if (uiState.query.isNotBlank()) {
                         viewModel.executeSearch(uiState.query, saveToHistory = true)
                     }
@@ -268,7 +265,7 @@ fun SearchScreen(
             singleLine = true,
             shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = PrimaryNeon,
+                focusedBorderColor = ArcCyan,
                 unfocusedBorderColor = Color.Transparent,
                 focusedContainerColor = com.satvik.satvikx.ui.theme.SurfaceElevated,
                 unfocusedContainerColor = com.satvik.satvikx.ui.theme.SurfaceElevated,
@@ -279,287 +276,266 @@ fun SearchScreen(
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Content Area with YouTube-style Search History Floating Popup Overlay
-        Box(modifier = Modifier.fillMaxSize()) {
-            // Main Feed (Quick picks + Top Results OR Spotify-style Explore Categories)
-            Column(modifier = Modifier.fillMaxSize()) {
-                // Quick Pick Category Chips (Spotify Style Capsules)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    quickPicks.forEach { chipText ->
-                        val isSelected = uiState.query.equals(chipText, ignoreCase = true)
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = {
-                                keyboardController?.hide()
-                                focusManager.clearFocus()
-                                isSearchActive = false
-                                viewModel.executeSearch(chipText, saveToHistory = true)
-                            },
-                            label = {
-                                Text(
-                                    text = chipText,
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
-                                )
-                            },
-                            shape = RoundedCornerShape(20.dp),
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = PrimaryNeon,
-                                selectedLabelColor = Color.Black,
-                                containerColor = com.satvik.satvikx.ui.theme.SurfaceVariantDark,
-                                labelColor = Color.White
-                            ),
-                            border = null
-                        )
-                    }
+        // Content Area (Quick picks + Top Results OR Spotify-style Explore Categories with Recent Searches)
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Quick Pick Category Chips (Spotify Style Capsules)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                quickPicks.forEach { chipText ->
+                    val isSelected = uiState.query.equals(chipText, ignoreCase = true)
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            keyboardController?.hide()
+                            focusManager.clearFocus()
+                            isSearchFocused = false
+                            viewModel.executeSearch(chipText, saveToHistory = true)
+                        },
+                        label = {
+                            Text(
+                                text = chipText,
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
+                            )
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = ArcCyan,
+                            selectedLabelColor = Color(0xFF04121E),
+                            containerColor = com.satvik.satvikx.ui.theme.SurfaceVariantDark,
+                            labelColor = Color.White
+                        ),
+                        border = null
+                    )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
 
-                // Results / Explore Grid / Loading / Error
-                Box(modifier = Modifier.fillMaxSize()) {
-                    when {
-                        uiState.isSearching -> {
-                            ShimmerTrackList(modifier = Modifier.padding(top = 8.dp))
+            // Results / Explore Grid / Loading / Error
+            Box(modifier = Modifier.fillMaxSize()) {
+                when {
+                    uiState.isSearching -> {
+                        ShimmerTrackList(modifier = Modifier.padding(top = 8.dp))
+                    }
+                    uiState.error != null -> {
+                        Box(
+                            modifier = Modifier.fillMaxSize(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = uiState.error!!,
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
                         }
-                        uiState.error != null -> {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
+                    }
+                    uiState.results.isNotEmpty() -> {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            Text(
+                                text = "Top Results",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                            )
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize()
                             ) {
-                                Text(
-                                    text = uiState.error!!,
-                                    color = MaterialTheme.colorScheme.error,
-                                    style = MaterialTheme.typography.bodyMedium
-                                )
+                                items(
+                                    items = uiState.results,
+                                    key = { it.id }
+                                ) { track ->
+                                    TrackItem(
+                                        track = track,
+                                        onClick = {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            isSearchFocused = false
+                                            viewModel.playTrack(track, uiState.results)
+                                        },
+                                        onOptionClick = {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            isSearchFocused = false
+                                            selectedTrackForOptions = track
+                                        },
+                                        onDownloadClick = {
+                                            viewModel.downloadTrack(track)
+                                            Toast.makeText(context, "Download started for ${track.title}", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
                             }
                         }
-                        uiState.results.isNotEmpty() -> {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                Text(
-                                    text = "Top Results",
-                                    style = MaterialTheme.typography.headlineSmall,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
-                                )
-                                LazyColumn(
-                                    state = listState,
-                                    modifier = Modifier.fillMaxSize()
-                                ) {
-                                    items(
-                                        items = uiState.results,
-                                        key = { it.id }
-                                    ) { track ->
-                                        TrackItem(
-                                            track = track,
-                                            onClick = {
-                                                keyboardController?.hide()
-                                                focusManager.clearFocus()
-                                                isSearchActive = false
-                                                viewModel.playTrack(track, uiState.results)
-                                            },
-                                            onOptionClick = {
-                                                keyboardController?.hide()
-                                                focusManager.clearFocus()
-                                                isSearchActive = false
-                                                selectedTrackForOptions = track
-                                            },
-                                            onDownloadClick = {
-                                                viewModel.downloadTrack(track)
-                                                Toast.makeText(context, "Download started for ${track.title}", Toast.LENGTH_SHORT).show()
+                    }
+                    else -> {
+                        // Spotify & YouTube Style Explore & Browse Landing View with Recent Searches
+                        LazyVerticalGrid(
+                            columns = GridCells.Adaptive(minSize = 145.dp),
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            // Stark HUD Recent Searches Section
+                            if (uiState.searchHistory.isNotEmpty()) {
+                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                                    Column(modifier = Modifier.padding(top = 2.dp, bottom = 10.dp)) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Icon(
+                                                    imageVector = Icons.Default.History,
+                                                    contentDescription = null,
+                                                    tint = ArcCyanBright,
+                                                    modifier = Modifier.size(15.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "RECENT SEARCHES",
+                                                    style = MaterialTheme.typography.labelSmall.copy(
+                                                        fontFamily = FontFamily.Monospace,
+                                                        fontWeight = FontWeight.Bold,
+                                                        letterSpacing = 0.8.sp,
+                                                        color = ArcCyanBright
+                                                    )
+                                                )
                                             }
+                                            Text(
+                                                text = "Clear All",
+                                                style = MaterialTheme.typography.labelSmall.copy(
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = Color.LightGray
+                                                ),
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .clickable { viewModel.clearAllSearchHistory() }
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .horizontalScroll(rememberScrollState()),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            uiState.searchHistory.take(8).forEach { historyQuery ->
+                                                Surface(
+                                                    shape = RoundedCornerShape(16.dp),
+                                                    color = com.satvik.satvikx.ui.theme.SurfaceElevated,
+                                                    border = BorderStroke(0.8.dp, StarkBorder),
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(16.dp))
+                                                        .clickable {
+                                                            keyboardController?.hide()
+                                                            focusManager.clearFocus()
+                                                            isSearchFocused = false
+                                                            viewModel.executeSearch(historyQuery, saveToHistory = true)
+                                                        }
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.History,
+                                                            contentDescription = null,
+                                                            tint = com.satvik.satvikx.ui.theme.TextSecondary,
+                                                            modifier = Modifier.size(13.dp)
+                                                        )
+                                                        Spacer(modifier = Modifier.width(6.dp))
+                                                        Text(
+                                                            text = historyQuery,
+                                                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium),
+                                                            color = Color.White
+                                                        )
+                                                        Spacer(modifier = Modifier.width(4.dp))
+                                                        IconButton(
+                                                            onClick = { viewModel.deleteSearchQuery(historyQuery) },
+                                                            modifier = Modifier.size(20.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Close,
+                                                                contentDescription = "Remove",
+                                                                tint = com.satvik.satvikx.ui.theme.TextSecondary,
+                                                                modifier = Modifier.size(12.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                                Text(
+                                    text = "Explore Genres & Moods",
+                                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                                    color = Color.White,
+                                    modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
+                                )
+                            }
+
+                            items(exploreGenres) { category ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .defaultMinSize(minHeight = 96.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(category.gradient)
+                                        .clickable {
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                            isSearchFocused = false
+                                            viewModel.executeSearch(category.query, saveToHistory = true)
+                                        }
+                                        .padding(14.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier.fillMaxSize(),
+                                        verticalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = category.code,
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                letterSpacing = 1.sp
+                                            ),
+                                            color = Color.White.copy(alpha = 0.75f)
+                                        )
+                                        Text(
+                                            text = category.title,
+                                            style = MaterialTheme.typography.titleMedium.copy(
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 17.sp,
+                                                lineHeight = 22.sp
+                                            ),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            color = Color.White
                                         )
                                     }
                                 }
                             }
-                        }
-                        else -> {
-                            // Spotify & YouTube Style Explore & Browse Landing View
-                            LazyVerticalGrid(
-                                columns = GridCells.Adaptive(minSize = 145.dp),
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 16.dp),
-                                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                                    Text(
-                                        text = "Explore Genres & Moods",
-                                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                                        color = Color.White,
-                                        modifier = Modifier.padding(top = 4.dp, bottom = 4.dp)
-                                    )
-                                }
 
-                                items(exploreGenres) { category ->
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .defaultMinSize(minHeight = 96.dp)
-                                            .clip(RoundedCornerShape(16.dp))
-                                            .background(category.gradient)
-                                            .clickable {
-                                                keyboardController?.hide()
-                                                focusManager.clearFocus()
-                                                isSearchActive = false
-                                                viewModel.executeSearch(category.query, saveToHistory = true)
-                                            }
-                                            .padding(14.dp)
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.fillMaxSize(),
-                                            verticalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = category.code,
-                                                style = MaterialTheme.typography.labelSmall.copy(
-                                                    fontFamily = FontFamily.Monospace,
-                                                    fontWeight = FontWeight.ExtraBold,
-                                                    letterSpacing = 1.sp
-                                                ),
-                                                color = Color.White.copy(alpha = 0.75f)
-                                            )
-                                            Text(
-                                                text = category.title,
-                                                style = MaterialTheme.typography.titleMedium.copy(
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 17.sp,
-                                                    lineHeight = 22.sp
-                                                ),
-                                                maxLines = 2,
-                                                overflow = TextOverflow.Ellipsis,
-                                                color = Color.White
-                                            )
-                                        }
-                                    }
-                                }
-
-                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
-                                    Spacer(modifier = Modifier.height(32.dp))
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // YouTube-style Floating Search History Suggestions Popup (Appears strictly when going to search)
-            if (isSearchActive && uiState.searchHistory.isNotEmpty()) {
-                // Dimmed dismiss scrim
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .clickable {
-                            isSearchActive = false
-                            focusManager.clearFocus()
-                            keyboardController?.hide()
-                        }
-                )
-
-                // Elevated Floating Suggestion Panel
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 2.dp)
-                        .shadow(16.dp, RoundedCornerShape(16.dp)),
-                    shape = RoundedCornerShape(16.dp),
-                    color = com.satvik.satvikx.ui.theme.SurfaceElevated,
-                    border = BorderStroke(1.dp, StarkBorder)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 10.dp)
-                    ) {
-                        // Header: Title & Clear All
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Default.History,
-                                    contentDescription = null,
-                                    tint = ArcCyan,
-                                    modifier = Modifier.size(15.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "RECENT SEARCHES",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.6.sp,
-                                        color = ArcCyan
-                                    )
-                                )
-                            }
-                            Text(
-                                text = "Clear All",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.LightGray
-                                ),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .clickable { viewModel.clearAllSearchHistory() }
-                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        // History Suggestions
-                        uiState.searchHistory.take(6).forEach { historyQuery ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        isSearchActive = false
-                                        keyboardController?.hide()
-                                        focusManager.clearFocus()
-                                        viewModel.executeSearch(historyQuery, saveToHistory = true)
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.History,
-                                    contentDescription = null,
-                                    tint = com.satvik.satvikx.ui.theme.TextSecondary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text(
-                                    text = historyQuery,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                    color = Color.White,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(
-                                    onClick = { viewModel.deleteSearchQuery(historyQuery) },
-                                    modifier = Modifier.size(24.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Close,
-                                        contentDescription = "Remove query",
-                                        tint = com.satvik.satvikx.ui.theme.TextSecondary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
+                            item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
+                                Spacer(modifier = Modifier.height(32.dp))
                             }
                         }
                     }
