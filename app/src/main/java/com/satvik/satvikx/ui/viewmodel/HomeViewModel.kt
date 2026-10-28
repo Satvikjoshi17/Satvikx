@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.download.DownloadRepository
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.distinctSongs
+import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.repository.ArtistAffinity
 import com.satvik.satvikx.data.repository.DailyMix
@@ -58,7 +60,7 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
-    val availableMoods = listOf("All", "Relax", "Workout", "Focus", "Night Drive", "Party", "Romance")
+    val availableMoods = listOf("All", "Focus", "Workout", "Chill", "Study", "Sleep", "Travel", "Party", "Romance", "Synthwave")
 
     init {
         loadHomeData()
@@ -195,15 +197,22 @@ class HomeViewModel @Inject constructor(
         val initialQueue = if (contextList.isNotEmpty()) {
             val idx = contextList.indexOfFirst { it.id == track.id }
             if (idx != -1) {
-                val upcoming = contextList.subList(idx + 1, contextList.size).filter { it.isSongOnly() }
-                val previous = contextList.subList(0, idx).filter { it.isSongOnly() }
+                val upcoming = contextList.subList(idx + 1, contextList.size)
+                    .filter { it.isSongOnly() && !it.isSameSong(track) }
+                    .distinctSongs()
+                val previous = contextList.subList(0, idx)
+                    .filter { it.isSongOnly() && !it.isSameSong(track) }
+                    .distinctSongs()
                 listOf(track) + upcoming + previous
             } else {
-                listOf(track) + contextList.filter { it.id != track.id && it.isSongOnly() }
+                listOf(track) + contextList
+                    .filter { it.id != track.id && !it.isSameSong(track) && it.isSongOnly() }
+                    .distinctSongs()
             }
         } else {
             val fallback = (_uiState.value.quickPicks + _uiState.value.trendingTracks)
-                .filter { it.id != track.id && it.isSongOnly() }
+                .filter { it.id != track.id && !it.isSameSong(track) && it.isSongOnly() }
+                .distinctSongs()
                 .take(10)
             listOf(track) + fallback
         }
@@ -214,8 +223,11 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val deepRecommendations = recommendationRepository.generateRecommendationQueue(track)
-                if (deepRecommendations.isNotEmpty()) {
-                    playbackConnectionManager.updateUpcomingQueue(deepRecommendations)
+                val filtered = deepRecommendations
+                    .filter { it.isSongOnly() && !it.isSameSong(track) }
+                    .distinctSongs()
+                if (filtered.isNotEmpty()) {
+                    playbackConnectionManager.updateUpcomingQueue(filtered)
                 }
             } catch (e: Exception) {
                 // Fail gracefully, existing context queue remains
@@ -232,7 +244,7 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isAutopilotEngaging = true) }
             try {
-                val queue = recommendationRepository.generateAutopilotQueue(35)
+                val queue = recommendationRepository.generateAutopilotQueue(35).distinctSongs()
                 if (queue.isNotEmpty()) {
                     val first = queue.first()
                     playbackConnectionManager.playTrack(first, queue)

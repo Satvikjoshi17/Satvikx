@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
@@ -52,22 +53,25 @@ fun TrackItem(
 ) {
     val durationText = formatDuration(track.durationSeconds)
     val accessibilityLabel = "Play ${track.title} by ${track.artist}, duration $durationText${if (track.isDownloaded) ", downloaded offline" else ""}"
+    val isNarrowScreen = LocalConfiguration.current.screenWidthDp < 360
+    val thumbSize = if (isNarrowScreen) 44.dp else 52.dp
+    val actionBtnSize = if (isNarrowScreen) 38.dp else 46.dp
 
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .defaultMinSize(minHeight = 60.dp)
+            .defaultMinSize(minHeight = 58.dp)
             .clickable(
                 onClick = onClick,
                 onClickLabel = "Play track"
             )
-            .padding(horizontal = 16.dp, vertical = 6.dp),
+            .padding(horizontal = if (isNarrowScreen) 10.dp else 16.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         // Thumbnail with fallback
         Box(
             modifier = Modifier
-                .size(52.dp)
+                .size(thumbSize)
                 .clip(RoundedCornerShape(8.dp)),
             contentAlignment = Alignment.Center
         ) {
@@ -156,13 +160,13 @@ fun TrackItem(
         if (!track.isDownloaded && onDownloadClick != null) {
             IconButton(
                 onClick = onDownloadClick,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(actionBtnSize)
             ) {
                 Icon(
                     imageVector = Icons.Default.Download,
                     contentDescription = "Download ${track.title}",
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(if (isNarrowScreen) 18.dp else 22.dp)
                 )
             }
         }
@@ -171,25 +175,26 @@ fun TrackItem(
         if (onDeleteClick != null) {
             IconButton(
                 onClick = onDeleteClick,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier.size(actionBtnSize)
             ) {
                 Icon(
                     imageVector = Icons.Default.DeleteOutline,
                     contentDescription = "Delete ${track.title} from offline storage",
                     tint = Color(0xFFFF5252).copy(alpha = 0.85f),
-                    modifier = Modifier.size(22.dp)
+                    modifier = Modifier.size(if (isNarrowScreen) 18.dp else 22.dp)
                 )
             }
         }
 
         IconButton(
             onClick = onOptionClick,
-            modifier = Modifier.size(48.dp)
+            modifier = Modifier.size(actionBtnSize)
         ) {
             Icon(
                 imageVector = Icons.Default.MoreVert,
                 contentDescription = "Options for ${track.title}",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(if (isNarrowScreen) 20.dp else 24.dp)
             )
         }
     }

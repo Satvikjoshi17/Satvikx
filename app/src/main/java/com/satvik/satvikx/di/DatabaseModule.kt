@@ -33,6 +33,30 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `playback_telemetry` (
+                    `trackId` TEXT NOT NULL PRIMARY KEY,
+                    `title` TEXT NOT NULL,
+                    `artist` TEXT NOT NULL,
+                    `playCount` INTEGER NOT NULL,
+                    `completionCount` INTEGER NOT NULL,
+                    `skipCount` INTEGER NOT NULL,
+                    `totalListenTimeMs` INTEGER NOT NULL,
+                    `lastCompletionRate` REAL NOT NULL,
+                    `lastPlayedTimestamp` INTEGER NOT NULL,
+                    `isLiked` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_playback_telemetry_trackId` ON `playback_telemetry` (`trackId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_playback_telemetry_artist` ON `playback_telemetry` (`artist`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_playback_telemetry_lastPlayedTimestamp` ON `playback_telemetry` (`lastPlayedTimestamp`)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideSatvikXDatabase(
@@ -43,7 +67,7 @@ object DatabaseModule {
             SatvikXDatabase::class.java,
             SatvikXDatabase.DATABASE_NAME
         )
-        .addMigrations(MIGRATION_4_5)
+        .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
         .fallbackToDestructiveMigration()
         .build()
     }
@@ -70,5 +94,11 @@ object DatabaseModule {
     @Singleton
     fun provideSearchHistoryDao(database: SatvikXDatabase): SearchHistoryDao {
         return database.searchHistoryDao()
+    }
+
+    @Provides
+    @Singleton
+    fun providePlaybackTelemetryDao(database: SatvikXDatabase): com.satvik.satvikx.data.local.dao.PlaybackTelemetryDao {
+        return database.playbackTelemetryDao()
     }
 }

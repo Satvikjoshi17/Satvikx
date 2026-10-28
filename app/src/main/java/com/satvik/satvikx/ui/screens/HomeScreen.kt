@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -79,6 +80,7 @@ import com.satvik.satvikx.data.repository.ArtistAffinity
 import com.satvik.satvikx.data.repository.DailyMix
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.ShimmerTrackList
+import com.satvik.satvikx.ui.components.StarkAuthDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
 import com.satvik.satvikx.ui.theme.ArcCyan
@@ -94,6 +96,7 @@ import com.satvik.satvikx.ui.theme.SurfaceElevated
 import com.satvik.satvikx.ui.theme.TextPrimary
 import com.satvik.satvikx.ui.theme.TextSecondary
 import com.satvik.satvikx.ui.theme.TextTertiary
+import com.satvik.satvikx.ui.viewmodel.AuthViewModel
 import com.satvik.satvikx.ui.viewmodel.HomeViewModel
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 import com.satvik.satvikx.ui.viewmodel.PlayerViewModel
@@ -103,13 +106,19 @@ import com.satvik.satvikx.ui.viewmodel.PlayerViewModel
 fun HomeScreen(
     homeViewModel: HomeViewModel = hiltViewModel(),
     libraryViewModel: LibraryViewModel = hiltViewModel(),
-    playerViewModel: PlayerViewModel = hiltViewModel()
+    playerViewModel: PlayerViewModel = hiltViewModel(),
+    authViewModel: AuthViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val uiState by homeViewModel.uiState.collectAsStateWithLifecycle()
+    val currentUser by authViewModel.currentUser.collectAsStateWithLifecycle()
+    val isAuthLoading by authViewModel.isLoading.collectAsStateWithLifecycle()
 
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
     var trackForAddToPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
+    var showAuthDialog by remember { mutableStateOf(false) }
+    val isMandatoryOnboarding = currentUser == null && !isAuthLoading
+    val shouldShowAuthDialog = showAuthDialog || isMandatoryOnboarding
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Spotify Premium Dynamic Ambient Background Glow (adapts smoothly to time of day)
@@ -170,12 +179,21 @@ fun HomeScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(end = 10.dp)
+                        ) {
                             Text(
-                                text = uiState.greeting,
-                                style = MaterialTheme.typography.headlineMedium.copy(
+                                text = if (currentUser != null && currentUser!!.displayName.isNotBlank()) {
+                                    "${uiState.greeting}, ${currentUser!!.displayName}"
+                                } else {
+                                    uiState.greeting
+                                },
+                                style = MaterialTheme.typography.titleLarge.copy(
                                     fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = (-0.6).sp
+                                    fontSize = 20.sp,
+                                    letterSpacing = (-0.5).sp
                                 ),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -183,17 +201,21 @@ fun HomeScreen(
                             )
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(top = 4.dp)
+                                modifier = Modifier.padding(top = 3.dp)
                             ) {
                                 Box(
                                     modifier = Modifier
                                         .size(6.dp)
                                         .clip(CircleShape)
-                                        .background(SpotifyGreen)
+                                        .background(if (currentUser != null) ArcCyanBright else SpotifyGreen)
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = uiState.telemetryStatus,
+                                    text = if (currentUser != null) {
+                                        "CORES: ONLINE // ${if (currentUser!!.isGuest) "OPERATIVE" else "STARK ID"}"
+                                    } else {
+                                        uiState.telemetryStatus
+                                    },
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = FontFamily.Monospace,
                                         fontSize = 10.sp,
@@ -202,51 +224,105 @@ fun HomeScreen(
                                     ),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    color = SpotifyGreen
+                                    color = if (currentUser != null) ArcCyanBright else SpotifyGreen
                                 )
                             }
                         }
 
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(
-                                onClick = { playerViewModel.checkForUpdates(isManual = true) },
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .border(1.dp, StarkBorder, CircleShape)
-                                    .background(SurfaceElevated.copy(alpha = 0.7f), CircleShape)
+                        // Stark Arc Glassmorphic Action Capsule (Spacious, modern, perfectly aligned)
+                        Surface(
+                            shape = RoundedCornerShape(22.dp),
+                            color = SurfaceElevated.copy(alpha = 0.85f),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.SystemUpdate,
-                                    contentDescription = "Check for Updates",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(18.dp)
+                                // 1. Refresh Feed Action
+                                IconButton(
+                                    onClick = { homeViewModel.loadHomeData(forceRefresh = true) },
+                                    enabled = !uiState.isRefreshing,
+                                    modifier = Modifier.size(34.dp)
+                                ) {
+                                    if (uiState.isRefreshing) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(15.dp),
+                                            color = SpotifyGreen,
+                                            strokeWidth = 2.dp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Refresh Feed",
+                                            tint = TextSecondary,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
+
+                                // Subtle Capsule Divider
+                                Box(
+                                    modifier = Modifier
+                                        .width(1.dp)
+                                        .height(16.dp)
+                                        .background(StarkBorder)
                                 )
-                            }
 
-                            Spacer(modifier = Modifier.width(8.dp))
-
-                            IconButton(
-                                onClick = { homeViewModel.loadHomeData(forceRefresh = true) },
-                                enabled = !uiState.isRefreshing,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .border(1.dp, StarkBorder, CircleShape)
-                                    .background(SurfaceElevated.copy(alpha = 0.7f), CircleShape)
-                            ) {
-                                if (uiState.isRefreshing) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        color = SpotifyGreen,
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
+                                // 2. System Update Check Action
+                                IconButton(
+                                    onClick = { playerViewModel.checkForUpdates(isManual = true) },
+                                    modifier = Modifier.size(34.dp)
+                                ) {
                                     Icon(
-                                        imageVector = Icons.Default.Refresh,
-                                        contentDescription = "Refresh Feed",
-                                        tint = Color.White,
+                                        imageVector = Icons.Default.SystemUpdate,
+                                        contentDescription = "Check for Updates",
+                                        tint = TextSecondary,
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
+
+                                // Subtle Capsule Divider
+                                Box(
+                                    modifier = Modifier
+                                        .width(1.dp)
+                                        .height(16.dp)
+                                        .background(StarkBorder)
+                                )
+
+                                Spacer(modifier = Modifier.width(3.dp))
+
+                                // 3. Operative Avatar Profile Button
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (currentUser != null) ArcCyan.copy(alpha = 0.25f) else SurfaceElevated
+                                        )
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = if (currentUser != null) ArcCyanBright else StarkBorder,
+                                            shape = CircleShape
+                                        )
+                                        .clickable { showAuthDialog = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (currentUser != null && currentUser!!.avatarUrl.isNotBlank()) {
+                                        Text(
+                                            text = currentUser!!.avatarUrl,
+                                            fontSize = 15.sp
+                                        )
+                                    } else {
+                                        Icon(
+                                            imageVector = Icons.Default.Person,
+                                            contentDescription = "Stark ID Profile",
+                                            tint = ArcCyanBright,
+                                            modifier = Modifier.size(17.dp)
+                                        )
+                                    }
+                                }
+                                Spacer(modifier = Modifier.width(2.dp))
                             }
                         }
                     }
@@ -775,6 +851,15 @@ fun HomeScreen(
             onDismiss = { trackForAddToPlaylist = null }
         )
     }
+
+    // Stark ID & Cloud Sync Authentication Dialog (Mandatory on first launch / unauthenticated)
+    if (shouldShowAuthDialog) {
+        StarkAuthDialog(
+            authViewModel = authViewModel,
+            isMandatory = isMandatoryOnboarding,
+            onDismiss = { showAuthDialog = false }
+        )
+    }
 }
 
 // Data holder for 2x3 Quick Tiles
@@ -793,11 +878,15 @@ private fun SpotifyQuickTile(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val configuration = LocalConfiguration.current
+    val isNarrow = configuration.screenWidthDp < 360
+    val thumbSize = if (isNarrow) 48.dp else 56.dp
+
     Surface(
         shape = RoundedCornerShape(6.dp),
         color = Color(0xFF282828).copy(alpha = 0.85f),
         modifier = modifier
-            .defaultMinSize(minHeight = 56.dp)
+            .defaultMinSize(minHeight = thumbSize)
             .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
     ) {
@@ -805,14 +894,14 @@ private fun SpotifyQuickTile(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier
                 .fillMaxWidth()
-                .defaultMinSize(minHeight = 56.dp)
+                .defaultMinSize(minHeight = thumbSize)
         ) {
-            // Left square 56x56 image
+            // Left square image (adaptively sized)
             when (tile) {
                 is QuickTileItem.LikedSongs -> {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(thumbSize)
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF450AF5), Color(0xFF8E8EE5))
@@ -824,14 +913,14 @@ private fun SpotifyQuickTile(
                             imageVector = Icons.Default.Favorite,
                             contentDescription = null,
                             tint = Color.White,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(if (isNarrow) 20.dp else 24.dp)
                         )
                     }
                 }
                 is QuickTileItem.Mix -> {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(thumbSize)
                             .background(
                                 Brush.linearGradient(
                                     tile.mix.gradientColors.map { Color(it) }
@@ -852,7 +941,7 @@ private fun SpotifyQuickTile(
                                 imageVector = Icons.Default.GraphicEq,
                                 contentDescription = null,
                                 tint = Color.White,
-                                modifier = Modifier.size(24.dp)
+                                modifier = Modifier.size(if (isNarrow) 20.dp else 24.dp)
                             )
                         }
                     }
@@ -860,7 +949,7 @@ private fun SpotifyQuickTile(
                 is QuickTileItem.Track -> {
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
+                            .size(thumbSize)
                             .background(Color(0xFF1E1E1E)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -876,7 +965,7 @@ private fun SpotifyQuickTile(
                                 imageVector = Icons.Default.MusicNote,
                                 contentDescription = null,
                                 tint = TextTertiary,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(if (isNarrow) 18.dp else 20.dp)
                             )
                         }
                     }
@@ -887,7 +976,7 @@ private fun SpotifyQuickTile(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = if (isNarrow) 6.dp else 8.dp),
                 verticalArrangement = Arrangement.Center
             ) {
                 val title = when (tile) {
@@ -904,7 +993,7 @@ private fun SpotifyQuickTile(
                     text = title,
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.5.sp
+                        fontSize = if (isNarrow) 11.5.sp else 12.5.sp
                     ),
                     color = Color.White,
                     maxLines = 1,
@@ -913,7 +1002,7 @@ private fun SpotifyQuickTile(
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 10.5.sp
+                        fontSize = if (isNarrow) 9.5.sp else 10.5.sp
                     ),
                     color = TextSecondary,
                     maxLines = 1,
@@ -921,22 +1010,24 @@ private fun SpotifyQuickTile(
                 )
             }
 
-            // Spotify Signature Play Button on Right Edge
-            Box(
-                modifier = Modifier
-                    .padding(end = 8.dp)
-                    .size(28.dp)
-                    .clip(CircleShape)
-                    .background(SpotifyGreen)
-                    .clickable(onClick = onClick),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Play",
-                    tint = Color.Black,
-                    modifier = Modifier.size(16.dp)
-                )
+            // Spotify Signature Play Button on Right Edge (hidden on narrow devices to preserve full title width)
+            if (!isNarrow) {
+                Box(
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .size(26.dp)
+                        .clip(CircleShape)
+                        .background(SpotifyGreen)
+                        .clickable(onClick = onClick),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PlayArrow,
+                        contentDescription = "Play",
+                        tint = Color.Black,
+                        modifier = Modifier.size(15.dp)
+                    )
+                }
             }
         }
     }

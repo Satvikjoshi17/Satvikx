@@ -58,6 +58,9 @@ class PlayerViewModel @Inject constructor(
 
     fun cancelSleepTimer() = playbackConnectionManager.cancelSleepTimer()
 
+    fun setCrossfadeSettings(enabled: Boolean, durationSeconds: Int = 4) =
+        playbackConnectionManager.setCrossfadeSettings(enabled, durationSeconds)
+
     fun downloadCurrentTrack() {
         val currentTrack = playbackState.value.currentTrack ?: return
         downloadRepository.enqueueDownload(currentTrack)

@@ -17,6 +17,8 @@ import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.RecentPlaybackEntity
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.distinctSongs
+import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.local.storage.StorageManager
 import com.satvik.satvikx.data.repository.RecommendationRepository
@@ -52,6 +54,7 @@ class PlaybackConnectionManager @Inject constructor(
     private val streamRepository: StreamRepository,
     private val trackDao: TrackDao,
     private val recentPlaybackDao: RecentPlaybackDao,
+    private val playbackTelemetryDao: com.satvik.satvikx.data.local.dao.PlaybackTelemetryDao,
     private val storageManager: StorageManager,
     private val playbackSessionManager: PlaybackSessionManager,
     private val recommendationRepositoryProvider: Provider<RecommendationRepository>
@@ -59,6 +62,7 @@ class PlaybackConnectionManager @Inject constructor(
 
     companion object {
         private const val TAG = "PlaybackConnManager"
+        private const val DEFAULT_CROSSFADE_SECONDS = 4
     }
 
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -73,6 +77,16 @@ class PlaybackConnectionManager @Inject constructor(
     private var prefetchJob: Job? = null
     private var bufferingWatchdogJob: Job? = null
     private var lastSaveTimeMs = 0L
+
+    // Behavioral telemetry tracking fields
+    private var activeTrackId: String? = null
+    private var activeTrackStartTimeMs: Long = 0L
+    private var activeTrackTotalListenedMs: Long = 0L
+    private var lastObservedPositionMs: Long = 0L
+
+    // Crossfade volume management
+    private var isCrossfadingOut = false
+    private var isCrossfadingIn = false
 
     init {
         restoreLastSession()
@@ -142,7 +156,10 @@ class PlaybackConnectionManager @Inject constructor(
      */
     fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {
         val filteredPlaylist = if (playlist.isNotEmpty()) {
-            playlist.filter { it.id == track.id || it.isSongOnly() }
+            val clean = playlist
+                .filter { it.id == track.id || (!it.isSameSong(track) && it.isSongOnly()) }
+                .distinctSongs()
+            clean
         } else {
             emptyList()
         }
@@ -181,6 +198,7 @@ class PlaybackConnectionManager @Inject constructor(
             val mediaItems = currentPlaylist.map { buildMediaItem(it) }
 
             controller?.let { c ->
+                c.volume = 1.0f // Ensure clean nominal volume
                 c.setMediaItems(mediaItems, targetIndex, 0L)
                 c.prepare()
                 c.play()
@@ -189,6 +207,9 @@ class PlaybackConnectionManager @Inject constructor(
             // Guarantee track persistence in local database and register in playback telemetry history
             trackDao.insertTrack(playableTrack)
             recentPlaybackDao.recordOrIncrementPlayback(playableTrack.id)
+
+            // Telemetry: record start of track listening
+            recordTrackStartTelemetry(playableTrack)
 
             // If queue is single track, asynchronously load YouTube-like up next recommendations
             if (currentPlaylist.size <= 1) {
@@ -335,6 +356,7 @@ class PlaybackConnectionManager @Inject constructor(
     fun skipToNext() {
         scope.launch {
             val controller = mediaController ?: return@launch
+            finalizeActiveTrackTelemetry(isSkipped = true)
             val nextIndex = controller.currentMediaItemIndex + 1
             if (nextIndex in currentPlaylist.indices) {
                 val nextTrack = currentPlaylist[nextIndex]
@@ -354,6 +376,7 @@ class PlaybackConnectionManager @Inject constructor(
                 controller.seekTo(0L)
                 return@launch
             }
+            finalizeActiveTrackTelemetry(isSkipped = true)
             val prevIndex = controller.currentMediaItemIndex - 1
             if (prevIndex in currentPlaylist.indices) {
                 val prevTrack = currentPlaylist[prevIndex]
@@ -409,7 +432,13 @@ class PlaybackConnectionManager @Inject constructor(
             val currentTrack = if (currentIdx in currentPlaylist.indices) currentPlaylist[currentIdx] else _playbackState.value.currentTrack
             if (currentTrack == null) return@launch
 
-            val filteredUpcoming = newQueue.filter { it.id != currentTrack.id && it.isSongOnly() }
+            val filteredUpcoming = newQueue
+                .filter { candidate ->
+                    candidate.id != currentTrack.id &&
+                    !candidate.isSameSong(currentTrack) &&
+                    candidate.isSongOnly()
+                }
+                .distinctSongs()
             if (filteredUpcoming.isEmpty()) return@launch
 
             // Avoid redundant player modifications if upcoming tracks are already the same
@@ -565,10 +594,17 @@ class PlaybackConnectionManager @Inject constructor(
         }
     }
 
+    /**
+     * Smart Preloading & Caching:
+     * Pre-resolves valid audio stream URLs for the next 3–5 predicted tracks in the queue,
+     * replacing placeholder URIs in ExoPlayer ahead of time. This enables true gapless playback
+     * with 0ms silence, eliminating playback stalls and buffering interruptions.
+     */
     private fun prefetchAdjacentTracks(currentIndex: Int) {
         prefetchJob?.cancel()
         prefetchJob = scope.launch(Dispatchers.IO) {
-            for (offset in 1..2) {
+            // Pre-resolve up to 4 tracks ahead
+            for (offset in 1..4) {
                 val nextIndex = currentIndex + offset
                 if (nextIndex in currentPlaylist.indices) {
                     val nextTrack = currentPlaylist[nextIndex]
@@ -578,7 +614,11 @@ class PlaybackConnectionManager @Inject constructor(
                         if (resolved != null) {
                             currentPlaylist[nextIndex] = resolved
                             launch(Dispatchers.Main) {
-                                mediaController?.replaceMediaItem(nextIndex, buildMediaItem(resolved))
+                                mediaController?.let { controller ->
+                                    if (nextIndex < controller.mediaItemCount) {
+                                        controller.replaceMediaItem(nextIndex, buildMediaItem(resolved))
+                                    }
+                                }
                             }
                         }
                     }
@@ -688,13 +728,33 @@ class PlaybackConnectionManager @Inject constructor(
                 mediaController?.let { controller ->
                     if (controller.isPlaying) {
                         val currentPos = controller.currentPosition.coerceAtLeast(0L)
+                        val duration = controller.duration.coerceAtLeast(0L)
+                        lastObservedPositionMs = currentPos
+
                         _playbackState.update {
                             it.copy(
                                 playbackPositionMs = currentPos,
-                                durationMs = controller.duration.coerceAtLeast(0L),
+                                durationMs = duration,
                                 bufferedPositionMs = controller.bufferedPosition.coerceAtLeast(0L)
                             )
                         }
+
+                        // Crossfade Volume Modulation:
+                        // As song nears its end (remaining <= crossfadeDurationSeconds * 1000L),
+                        // smoothly ramp volume down from 1.0f -> 0.15f so the incoming track blends naturally.
+                        val crossfadeMs = _playbackState.value.crossfadeDurationSeconds * 1000L
+                        val isCrossfadeOn = _playbackState.value.isCrossfadeEnabled
+                        val remainingMs = duration - currentPos
+                        if (isCrossfadeOn && duration > 15000L && remainingMs in 0L..crossfadeMs) {
+                            val fadeFactor = (remainingMs.toFloat() / crossfadeMs.toFloat()).coerceIn(0.15f, 1.0f)
+                            isCrossfadingOut = true
+                            controller.volume = fadeFactor
+                        } else if (!isCrossfadingIn && isCrossfadingOut) {
+                            // Reset back to nominal if user scrubbed back
+                            isCrossfadingOut = false
+                            controller.volume = 1.0f
+                        }
+
                         val now = System.currentTimeMillis()
                         if (now - lastSaveTimeMs > 2500L) {
                             lastSaveTimeMs = now
@@ -702,7 +762,7 @@ class PlaybackConnectionManager @Inject constructor(
                         }
                     }
                 }
-                delay(500)
+                delay(250) // 250ms cadence for silky-smooth progress and crossfade volume transitions
             }
         }
     }
@@ -798,12 +858,28 @@ class PlaybackConnectionManager @Inject constructor(
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val controller = mediaController ?: return
             val currentIndex = controller.currentMediaItemIndex
+
+            // Complete telemetry for previous song if transitioning
+            finalizeActiveTrackTelemetry(isSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
+
             if (currentIndex in currentPlaylist.indices) {
                 val track = currentPlaylist[currentIndex]
                 scope.launch(Dispatchers.IO) {
                     trackDao.insertTrack(track)
                     recentPlaybackDao.recordOrIncrementPlayback(track.id)
                 }
+
+                // Telemetry: record start of newly active track
+                recordTrackStartTelemetry(track)
+
+                // Smooth Crossfade Fade-In:
+                // If crossfade enabled, ramp volume up smoothly from 0.2f -> 1.0f over 1500ms
+                if (_playbackState.value.isCrossfadeEnabled) {
+                    performSmoothFadeIn(controller)
+                } else {
+                    controller.volume = 1.0f
+                }
+
                 val isExpired = StreamUrlValidator.isExpired(track.streamUrl)
                 if ((track.streamUrl.isNullOrBlank() || isExpired) && !track.isDownloaded) {
                     scope.launch {
@@ -864,8 +940,13 @@ class PlaybackConnectionManager @Inject constructor(
             try {
                 val recommendationRepo = recommendationRepositoryProvider.get()
                 val nextBatch = recommendationRepo.generateRecommendationQueue(seedTrack, 15)
-                val existingIds = currentPlaylist.map { it.id }.toSet()
-                val uniqueNew = nextBatch.filter { it.id !in existingIds && it.isSongOnly() }
+                val uniqueNew = nextBatch
+                    .filter { candidate ->
+                        candidate.isSongOnly() &&
+                        !candidate.isSameSong(seedTrack) &&
+                        currentPlaylist.none { existing -> candidate.isSameSong(existing) }
+                    }
+                    .distinctSongs()
 
                 if (uniqueNew.isNotEmpty()) {
                     // Pre-resolve the first autoplay track so it never lands in ExoPlayer with Uri.EMPTY
@@ -884,6 +965,89 @@ class PlaybackConnectionManager @Inject constructor(
                     Log.w(TAG, "Autoplay extension non-fatal: ${e.message}")
                 }
             }
+        }
+    }
+
+    private var fadeInJob: Job? = null
+
+    private fun performSmoothFadeIn(controller: MediaController) {
+        fadeInJob?.cancel()
+        fadeInJob = scope.launch {
+            isCrossfadingIn = true
+            val totalSteps = 10
+            val delayPerStep = 150L // 1.5 seconds total
+            controller.volume = 0.2f
+            for (step in 1..totalSteps) {
+                delay(delayPerStep)
+                val targetVol = 0.2f + (0.8f * (step.toFloat() / totalSteps))
+                controller.volume = targetVol.coerceIn(0.2f, 1.0f)
+            }
+            controller.volume = 1.0f
+            isCrossfadingIn = false
+            isCrossfadingOut = false
+        }
+    }
+
+    private fun recordTrackStartTelemetry(track: TrackEntity) {
+        activeTrackId = track.id
+        activeTrackStartTimeMs = System.currentTimeMillis()
+        activeTrackTotalListenedMs = 0L
+        lastObservedPositionMs = 0L
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                playbackTelemetryDao.recordPlayStart(
+                    trackId = track.id,
+                    title = track.title,
+                    artist = track.artist
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Telemetry start non-fatal: ${e.message}")
+            }
+        }
+    }
+
+    private fun finalizeActiveTrackTelemetry(isSkipped: Boolean) {
+        val trackId = activeTrackId ?: return
+        val currentTrack = currentPlaylist.find { it.id == trackId } ?: return
+        val durationMs = currentTrack.durationSeconds * 1000L
+        val listenedMs = lastObservedPositionMs.coerceAtLeast(0L)
+        val completionRate = if (durationMs > 0) (listenedMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
+
+        val isCompleted = completionRate >= 0.70f || (durationMs > 0 && listenedMs >= (durationMs - 5000L))
+        val isQuickSkip = isSkipped && listenedMs < 20000L && completionRate < 0.25f
+
+        scope.launch(Dispatchers.IO) {
+            try {
+                playbackTelemetryDao.updateTrackEngagement(
+                    trackId = trackId,
+                    listenTimeMs = listenedMs,
+                    completionRate = completionRate,
+                    completed = if (isCompleted) 1 else 0,
+                    skipped = if (isQuickSkip) 1 else 0
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "Telemetry finalize non-fatal: ${e.message}")
+            }
+        }
+
+        activeTrackId = null
+    }
+
+    fun setCrossfadeSettings(enabled: Boolean, durationSeconds: Int = 4) {
+        _playbackState.update {
+            it.copy(
+                isCrossfadeEnabled = enabled,
+                crossfadeDurationSeconds = durationSeconds.coerceIn(2, 10)
+            )
+        }
+    }
+
+    fun updateTrackLikeStatusInTelemetry(trackId: String, isLiked: Boolean) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                playbackTelemetryDao.updateLikedStatus(trackId, isLiked)
+            } catch (_: Exception) {}
         }
     }
 }

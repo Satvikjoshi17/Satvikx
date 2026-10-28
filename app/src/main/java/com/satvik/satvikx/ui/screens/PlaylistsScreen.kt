@@ -21,6 +21,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -326,8 +329,11 @@ fun PlaylistsScreen(
 
                 // Prominent Action Buttons Bar (Spotify & YouTube Music style)
                 if (activePlaylist.tracks.isNotEmpty()) {
+                    val isNarrowScreen = LocalConfiguration.current.screenWidthDp < 360
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -342,14 +348,14 @@ fun PlaylistsScreen(
                                 contentColor = StarkCarbon
                             ),
                             shape = RoundedCornerShape(24.dp),
-                            contentPadding = PaddingValues(horizontal = 22.dp, vertical = 9.dp)
+                            contentPadding = PaddingValues(horizontal = if (isNarrowScreen) 14.dp else 22.dp, vertical = 9.dp)
                         ) {
                             Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Play", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
 
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         // Shuffle Button
                         OutlinedButton(
@@ -362,14 +368,14 @@ fun PlaylistsScreen(
                             ),
                             border = BorderStroke(1.dp, ArcCyanBright),
                             shape = RoundedCornerShape(24.dp),
-                            contentPadding = PaddingValues(horizontal = 18.dp, vertical = 9.dp)
+                            contentPadding = PaddingValues(horizontal = if (isNarrowScreen) 12.dp else 18.dp, vertical = 9.dp)
                         ) {
                             Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Shuffle", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         }
 
-                        Spacer(modifier = Modifier.width(10.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         // Download All Button
                         IconButton(

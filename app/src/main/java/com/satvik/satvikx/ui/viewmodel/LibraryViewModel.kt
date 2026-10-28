@@ -48,7 +48,8 @@ class LibraryViewModel @Inject constructor(
     private val downloadRepository: DownloadRepository,
     private val playbackConnectionManager: PlaybackConnectionManager,
     private val downloadQualityManager: DownloadQualityManager,
-    private val downloadLocationManager: DownloadLocationManager
+    private val downloadLocationManager: DownloadLocationManager,
+    private val cloudSyncRepository: com.satvik.satvikx.data.repository.CloudSyncRepository
 ) : ViewModel() {
 
     val downloadedTracks: StateFlow<List<TrackEntity>> = trackDao.getDownloadedTracks()
@@ -236,6 +237,7 @@ class LibraryViewModel @Inject constructor(
                     )
                 )
             }
+            cloudSyncRepository.onFavoriteChanged(track, !isAlreadyLiked)
         }
     }
 

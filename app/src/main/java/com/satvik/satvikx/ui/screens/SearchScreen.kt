@@ -381,14 +381,14 @@ fun SearchScreen(
                         else -> {
                             // Spotify & YouTube Style Explore & Browse Landing View
                             LazyVerticalGrid(
-                                columns = GridCells.Fixed(2),
+                                columns = GridCells.Adaptive(minSize = 145.dp),
                                 modifier = Modifier
                                     .fillMaxSize()
                                     .padding(horizontal = 16.dp),
                                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                                     Text(
                                         text = "Explore Genres & Moods",
                                         style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
@@ -440,7 +440,7 @@ fun SearchScreen(
                                     }
                                 }
 
-                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(2) }) {
+                                item(span = { androidx.compose.foundation.lazy.grid.GridItemSpan(maxLineSpan) }) {
                                     Spacer(modifier = Modifier.height(32.dp))
                                 }
                             }

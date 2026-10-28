@@ -8,6 +8,8 @@ import com.satvik.satvikx.data.local.dao.SearchHistoryDao
 import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
 import com.satvik.satvikx.data.local.entity.SearchHistoryEntity
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.distinctSongs
+import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.playback.PlaybackConnectionManager
@@ -182,11 +184,17 @@ class SearchViewModel @Inject constructor(
         val initialQueue = if (!customQueue.isNullOrEmpty()) {
             val idx = customQueue.indexOfFirst { it.id == track.id }
             if (idx != -1) {
-                val upcoming = customQueue.subList(idx + 1, customQueue.size).filter { it.isSongOnly() }
-                val previous = customQueue.subList(0, idx).filter { it.isSongOnly() }
+                val upcoming = customQueue.subList(idx + 1, customQueue.size)
+                    .filter { it.isSongOnly() && !it.isSameSong(track) }
+                    .distinctSongs()
+                val previous = customQueue.subList(0, idx)
+                    .filter { it.isSongOnly() && !it.isSameSong(track) }
+                    .distinctSongs()
                 listOf(track) + upcoming + previous
             } else {
-                listOf(track) + customQueue.filter { it.id != track.id && it.isSongOnly() }
+                listOf(track) + customQueue
+                    .filter { it.id != track.id && !it.isSameSong(track) && it.isSongOnly() }
+                    .distinctSongs()
             }
         } else {
             listOf(track)
@@ -198,7 +206,9 @@ class SearchViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val recommendations = recommendationRepository.generateRecommendationQueue(track)
-                val filteredRecs = recommendations.filter { it.isSongOnly() }
+                val filteredRecs = recommendations
+                    .filter { it.isSongOnly() && !it.isSameSong(track) }
+                    .distinctSongs()
                 if (filteredRecs.isNotEmpty()) {
                     playbackConnectionManager.updateUpcomingQueue(filteredRecs)
                 }

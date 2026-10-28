@@ -1,10 +1,24 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.serialization)
 }
+
+val localProperties = Properties().apply {
+    val localPropertiesFile = rootProject.file("local.properties")
+    if (localPropertiesFile.exists()) {
+        load(FileInputStream(localPropertiesFile))
+    }
+}
+
+val supabaseUrl = localProperties.getProperty("supabase.url") ?: "https://uasxilmqszpmzxzorgbh.supabase.co"
+val supabaseAnonKey = localProperties.getProperty("supabase.anon.key") ?: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVhc3hpbG1xc3pwbXp4em9yZ2JoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMxMDI0MTYsImV4cCI6MjEwODY3ODQxNn0.yWo2S9j5jfdnHfsJNBRgVWdwXw2p3v0KT2RB7WWa1jg"
 
 android {
     namespace = "com.satvik.satvikx"
@@ -14,8 +28,11 @@ android {
         applicationId = "com.satvik.satvikx"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.0.11"
+        versionCode = 14
+        versionName = "1.0.13"
+
+        buildConfigField("String", "SUPABASE_URL", "\"${supabaseUrl}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${supabaseAnonKey}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -130,6 +147,13 @@ dependencies {
 
     // Kotlin Coroutines
     implementation(libs.kotlinx.coroutines.android)
+
+    // Supabase & Serialization
+    implementation(platform(libs.supabase.bom))
+    implementation(libs.supabase.postgrest)
+    implementation(libs.supabase.auth)
+    implementation(libs.ktor.client.okhttp)
+    implementation(libs.kotlinx.serialization.json)
 
     // Testing
     testImplementation(libs.junit)

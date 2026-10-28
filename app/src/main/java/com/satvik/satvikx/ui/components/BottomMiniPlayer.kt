@@ -62,10 +62,14 @@ fun BottomMiniPlayer(
 ) {
     val track = playbackState.currentTrack ?: return
 
+    val isNarrow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360
+    val thumbSize = if (isNarrow) 40.dp else 46.dp
+    val actionBtnSize = if (isNarrow) 40.dp else 48.dp
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .padding(horizontal = if (isNarrow) 6.dp else 10.dp, vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
             .border(1.dp, StarkBorder, RoundedCornerShape(12.dp))
             .clickable(
@@ -79,14 +83,14 @@ fun BottomMiniPlayer(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .defaultMinSize(minHeight = 58.dp)
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                    .defaultMinSize(minHeight = 56.dp)
+                    .padding(horizontal = if (isNarrow) 8.dp else 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 // Arc Reactor Album Thumbnail
                 Box(
                     modifier = Modifier
-                        .size(46.dp)
+                        .size(thumbSize)
                         .clip(CircleShape)
                         .border(1.5.dp, if (playbackState.isPlaying) ArcCyan else StarkBorder, CircleShape),
                     contentAlignment = Alignment.Center
@@ -99,7 +103,7 @@ fun BottomMiniPlayer(
                     )
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(if (isNarrow) 8.dp else 12.dp))
 
                 // Track Title & Artist
                 Column(
@@ -114,7 +118,7 @@ fun BottomMiniPlayer(
                         text = track.title,
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                            fontSize = if (isNarrow) 13.sp else 14.sp
                         ),
                         maxLines = 1,
                         color = Color.White,
@@ -124,7 +128,7 @@ fun BottomMiniPlayer(
                         Text(
                             text = track.artist,
                             style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp,
+                                fontSize = if (isNarrow) 11.sp else 12.sp,
                                 color = TextSecondary
                             ),
                             maxLines = 1,
@@ -148,25 +152,25 @@ fun BottomMiniPlayer(
 
                 // Play / Pause / Buffering Action
                 Box(
-                    modifier = Modifier.size(48.dp),
+                    modifier = Modifier.size(actionBtnSize),
                     contentAlignment = Alignment.Center
                 ) {
                     if (playbackState.isBuffering) {
                         CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
+                            modifier = Modifier.size(20.dp),
                             color = ArcCyanBright,
-                            strokeWidth = 2.5.dp
+                            strokeWidth = 2.dp
                         )
                     } else {
                         IconButton(
                             onClick = onPlayPause,
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier.size(actionBtnSize)
                         ) {
                             Icon(
                                 imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                 contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
                                 tint = ArcCyanBright,
-                                modifier = Modifier.size(30.dp)
+                                modifier = Modifier.size(if (isNarrow) 24.dp else 30.dp)
                             )
                         }
                     }
@@ -175,13 +179,13 @@ fun BottomMiniPlayer(
                 // Skip Next
                 IconButton(
                     onClick = onSkipNext,
-                    modifier = Modifier.size(48.dp)
+                    modifier = Modifier.size(actionBtnSize)
                 ) {
                     Icon(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Skip next",
                         tint = Color.White,
-                        modifier = Modifier.size(28.dp)
+                        modifier = Modifier.size(if (isNarrow) 22.dp else 28.dp)
                     )
                 }
             }

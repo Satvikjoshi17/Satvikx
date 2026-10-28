@@ -29,9 +29,11 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -41,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.zIndex
 import androidx.compose.material.icons.Icons
@@ -167,110 +170,134 @@ fun FullPlayerSheet(
                 )
                 .statusBarsPadding()
                 .navigationBarsPadding()
-                .padding(horizontal = 20.dp, vertical = 8.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Column(
                 modifier = Modifier.fillMaxSize(),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
-                // Top Bar: Collapse, J.A.R.V.I.S. Arc Badge, Actions
+                // Top Bar: Collapse, Flexible J.A.R.V.I.S. Arc Badge, Adaptive Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(
                         onClick = onDismiss,
-                        modifier = Modifier.size(44.dp)
+                        modifier = Modifier.size(38.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.KeyboardArrowDown,
                             contentDescription = "Collapse full player",
                             tint = ArcCyanBright,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(28.dp)
                         )
                     }
 
-                    // Stark Industries / J.A.R.V.I.S. Holographic Badge
-                    Surface(
-                        color = StarkSurface.copy(alpha = 0.9f),
-                        shape = RoundedCornerShape(20.dp),
-                        modifier = Modifier.border(
-                            1.dp,
-                            Brush.horizontalGradient(listOf(ArcCyan, StarkGold)),
-                            RoundedCornerShape(20.dp)
-                        )
+                    // Flexible Stark Industries / J.A.R.V.I.S. Holographic Badge
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 4.dp),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
+                        Surface(
+                            color = StarkSurface.copy(alpha = 0.9f),
+                            shape = RoundedCornerShape(20.dp),
+                            modifier = Modifier.border(
+                                1.dp,
+                                Brush.horizontalGradient(listOf(ArcCyan, StarkGold)),
+                                RoundedCornerShape(20.dp)
+                            )
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(7.dp)
-                                    .clip(CircleShape)
-                                    .background(ArcCyanBright)
-                            )
-                            Spacer(modifier = Modifier.width(7.dp))
-                            Text(
-                                text = "J.A.R.V.I.S. // MK-85 CORE",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    letterSpacing = 0.8.sp,
-                                    color = ArcCyanBright
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(ArcCyanBright)
                                 )
-                            )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                                Text(
+                                    text = if (screenWidthDp < 360) "MK-85 CORE" else "J.A.R.V.I.S. // MK-85",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        letterSpacing = 0.6.sp,
+                                        color = ArcCyanBright
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Top Bar Action Buttons - Protected from screen overflow and tight bounds
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(0.dp)
+                    ) {
                         // Sleep Timer Button
                         IconButton(
                             onClick = { showSleepTimerDialog = true },
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Timer,
                                 contentDescription = "Sleep Timer",
-                                tint = if (playbackState.sleepTimerRemainingSeconds != null) StarkGold else Color.White
+                                tint = if (playbackState.sleepTimerRemainingSeconds != null) StarkGold else Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
                         // Up Next Queue Button
                         IconButton(
                             onClick = { showQueueSheet = true },
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                                 contentDescription = "View Queue",
-                                tint = Color.White
+                                tint = if (showQueueSheet) ArcCyanBright else Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
                         // Add to Playlist Button
                         IconButton(
                             onClick = onAddToPlaylist,
-                            modifier = Modifier.size(38.dp)
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
                                 contentDescription = "Add to playlist",
-                                tint = Color.White
+                                tint = Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
 
                         // Download Button
                         IconButton(
-                            onClick = onDownload,
-                            modifier = Modifier.size(38.dp)
+                            onClick = {
+                                onDownload()
+                                Toast.makeText(
+                                    context,
+                                    if (track.isDownloaded) "Track is already downloaded" else "Download started for ${track.title}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Download,
+                                imageVector = if (track.isDownloaded) Icons.Default.CheckCircle else Icons.Default.Download,
                                 contentDescription = if (track.isDownloaded) "Downloaded" else "Download",
-                                tint = if (track.isDownloaded) ArcCyan else Color.White
+                                tint = if (track.isDownloaded) ArcCyan else Color.White,
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -300,13 +327,20 @@ fun FullPlayerSheet(
                 // ==========================================
                 // TONY STARK HOLOGRAPHIC ARC REACTOR HOUSING
                 // ==========================================
-                ArcReactorHousing(
-                    thumbnailUrl = track.thumbnailUrl,
-                    title = track.title,
-                    isPlaying = playbackState.isPlaying,
-                    showDiagnostics = showDiagnostics,
-                    onToggleDiagnostics = { showDiagnostics = !showDiagnostics }
-                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ArcReactorHousing(
+                        thumbnailUrl = track.thumbnailUrl,
+                        title = track.title,
+                        isPlaying = playbackState.isPlaying,
+                        showDiagnostics = showDiagnostics,
+                        onToggleDiagnostics = { showDiagnostics = !showDiagnostics }
+                    )
+                }
 
                 // Track Metadata + Favorite Heart
                 Row(
@@ -417,62 +451,64 @@ fun FullPlayerSheet(
                 )
 
                 // Playback Control Cluster (Stark Arc Controls)
+                val isCompactScreen = LocalConfiguration.current.screenWidthDp < 360
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
+                        .padding(horizontal = if (isCompactScreen) 4.dp else 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     // Shuffle
                     IconButton(
                         onClick = onToggleShuffle,
-                        modifier = Modifier.size(46.dp)
+                        modifier = Modifier.size(if (isCompactScreen) 38.dp else 46.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Shuffle,
                             contentDescription = "Shuffle",
                             tint = if (playbackState.shuffleModeEnabled) ArcCyanBright else Color.Gray,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(if (isCompactScreen) 20.dp else 24.dp)
                         )
                     }
 
                     // Skip Previous
                     IconButton(
                         onClick = onSkipPrevious,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(if (isCompactScreen) 40.dp else 48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
                             contentDescription = "Previous song",
                             tint = Color.White,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(if (isCompactScreen) 28.dp else 34.dp)
                         )
                     }
 
                     // Arc Reactor Center Play / Pause Disc
                     ArcReactorPlayButton(
                         isPlaying = playbackState.isPlaying,
-                        onClick = onPlayPause
+                        onClick = onPlayPause,
+                        modifier = if (isCompactScreen) Modifier.size(60.dp) else Modifier.size(72.dp)
                     )
 
                     // Skip Next
                     IconButton(
                         onClick = onSkipNext,
-                        modifier = Modifier.size(48.dp)
+                        modifier = Modifier.size(if (isCompactScreen) 40.dp else 48.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next song",
                             tint = Color.White,
-                            modifier = Modifier.size(34.dp)
+                            modifier = Modifier.size(if (isCompactScreen) 28.dp else 34.dp)
                         )
                     }
 
                     // Repeat
                     IconButton(
                         onClick = onToggleRepeat,
-                        modifier = Modifier.size(46.dp)
+                        modifier = Modifier.size(if (isCompactScreen) 38.dp else 46.dp)
                     ) {
                         val (icon, tint) = when (playbackState.repeatMode) {
                             Player.REPEAT_MODE_ONE -> Pair(Icons.Default.RepeatOne, ArcCyanBright)
@@ -483,7 +519,7 @@ fun FullPlayerSheet(
                             imageVector = icon,
                             contentDescription = "Repeat",
                             tint = tint,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(if (isCompactScreen) 20.dp else 24.dp)
                         )
                     }
                 }
@@ -505,32 +541,38 @@ fun FullPlayerSheet(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 32.dp)
-                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(bottom = 16.dp)
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "J.A.R.V.I.S. UP-NEXT SEQUENCE",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold
                             ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
                             color = ArcCyanBright
                         )
                         Text(
                             text = "ACTIVE QUEUE CORES: ${playbackState.queue.size}",
                             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                            maxLines = 1,
                             color = StarkGold
                         )
                     }
-                    IconButton(onClick = { showQueueSheet = false }) {
+                    IconButton(
+                        onClick = { showQueueSheet = false },
+                        modifier = Modifier.size(36.dp)
+                    ) {
                         Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                     }
                 }
@@ -551,9 +593,13 @@ fun FullPlayerSheet(
                     var dragOffsetY by remember { mutableFloatStateOf(0f) }
                     val haptic = LocalHapticFeedback.current
                     val density = LocalDensity.current
-                    val itemHeightPx = with(density) { 68.dp.toPx() }
+                    val itemHeightPx = with(density) { 64.dp.toPx() }
 
-                    LazyColumn(modifier = Modifier.fillMaxWidth().height(420.dp)) {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 180.dp, max = 460.dp)
+                    ) {
                         itemsIndexed(
                             items = playbackState.queue,
                             key = { index, item -> "${item.id}_$index" }
@@ -579,7 +625,7 @@ fun FullPlayerSheet(
                                         }
                                     )
                                     .clickable { onPlayTrackAtIndex(index) }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 // Track Index / Playing Status
@@ -592,14 +638,14 @@ fun FullPlayerSheet(
                                     color = if (isCurrentlyPlaying) ArcCyanBright else TextSecondary
                                 )
 
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
 
                                 // Music Thumbnail
                                 Surface(
                                     shape = RoundedCornerShape(8.dp),
                                     color = StarkSurface,
                                     modifier = Modifier
-                                        .size(46.dp)
+                                        .size(44.dp)
                                         .border(
                                             width = if (isCurrentlyPlaying) 1.dp else 0.5.dp,
                                             color = if (isCurrentlyPlaying) ArcCyanBright else StarkBorder,
@@ -834,8 +880,9 @@ private fun ArcReactorHousing(
 
     Box(
         modifier = modifier
-            .fillMaxWidth(0.85f)
-            .aspectRatio(1f)
+            .fillMaxWidth(0.80f)
+            .sizeIn(maxWidth = 300.dp, maxHeight = 300.dp)
+            .aspectRatio(1f, matchHeightConstraintsFirst = true)
             .clickable(onClick = onToggleDiagnostics),
         contentAlignment = Alignment.Center
     ) {
@@ -994,13 +1041,17 @@ private fun ArcReactorPlayButton(
     )
 
     Box(
-        modifier = modifier.size(72.dp),
+        modifier = modifier.sizeIn(minWidth = 58.dp, minHeight = 58.dp),
         contentAlignment = Alignment.Center
     ) {
         if (isPlaying) {
             Box(
                 modifier = Modifier
-                    .size(72.dp * pulseScale)
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = pulseScale
+                        scaleY = pulseScale
+                    }
                     .clip(CircleShape)
                     .border(1.5.dp, ArcCyan.copy(alpha = 0.5f), CircleShape)
                     .background(ArcCyan.copy(alpha = 0.12f))
@@ -1012,7 +1063,7 @@ private fun ArcReactorPlayButton(
             shape = CircleShape,
             color = ArcCyan,
             modifier = Modifier
-                .size(60.dp)
+                .fillMaxSize(0.83f)
                 .shadow(16.dp, CircleShape, spotColor = ArcCyanBright)
                 .border(2.dp, Color.White.copy(alpha = 0.8f), CircleShape)
         ) {
@@ -1030,7 +1081,7 @@ private fun ArcReactorPlayButton(
                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                     contentDescription = if (isPlaying) "Pause" else "Play",
                     tint = StarkCarbon,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier.fillMaxSize(0.55f)
                 )
             }
         }
@@ -1286,14 +1337,17 @@ private fun InteractiveArcTimeline(
                     )
                 }
 
-                Text(
-                    text = "ARC 320K DIRECT",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 9.sp,
-                        color = StarkGold.copy(alpha = 0.8f)
+                val screenWidthDp = LocalConfiguration.current.screenWidthDp
+                if (screenWidthDp >= 360) {
+                    Text(
+                        text = "ARC 320K DIRECT",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            color = StarkGold.copy(alpha = 0.8f)
+                        )
                     )
-                )
+                }
 
                 Surface(
                     shape = RoundedCornerShape(4.dp),
