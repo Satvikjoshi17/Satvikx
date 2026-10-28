@@ -2,8 +2,15 @@ package com.satvik.satvikx.ui.screens
 
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -63,6 +70,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -121,27 +130,27 @@ fun HomeScreen(
     val shouldShowAuthDialog = showAuthDialog || isMandatoryOnboarding
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
-    // Spotify Premium Dynamic Ambient Background Glow (adapts smoothly to time of day)
+    // J.A.R.V.I.S. Holographic Ambient Background Glow
     val ambientGradient = remember(uiState.greeting) {
         when {
             uiState.greeting.contains("morning", ignoreCase = true) -> listOf(
-                Color(0xFF382314).copy(alpha = 0.75f),
-                Color(0xFF1E1710).copy(alpha = 0.45f),
+                Color(0xFF042436).copy(alpha = 0.75f),
+                Color(0xFF061521).copy(alpha = 0.45f),
                 BackgroundDark
             )
             uiState.greeting.contains("afternoon", ignoreCase = true) -> listOf(
-                Color(0xFF0F3622).copy(alpha = 0.75f),
-                Color(0xFF0C2216).copy(alpha = 0.45f),
+                Color(0xFF052B3E).copy(alpha = 0.75f),
+                Color(0xFF071926).copy(alpha = 0.45f),
                 BackgroundDark
             )
             uiState.greeting.contains("evening", ignoreCase = true) -> listOf(
-                Color(0xFF2C1338).copy(alpha = 0.75f),
-                Color(0xFF191122).copy(alpha = 0.45f),
+                Color(0xFF0A223B).copy(alpha = 0.75f),
+                Color(0xFF071424).copy(alpha = 0.45f),
                 BackgroundDark
             )
             else -> listOf(
-                Color(0xFF10273B).copy(alpha = 0.75f),
-                Color(0xFF0F1722).copy(alpha = 0.45f),
+                Color(0xFF021D2E).copy(alpha = 0.85f),
+                Color(0xFF04111D).copy(alpha = 0.5f),
                 BackgroundDark
             )
         }
@@ -167,73 +176,105 @@ fun HomeScreen(
                 .padding(top = 8.dp),
             contentPadding = PaddingValues(bottom = 120.dp)
         ) {
-            // 1. Spotify Premium Command Header
+            // 1. J.A.R.V.I.S. Holographic Command Header
             item {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
+                    val resolvedUserName = remember(currentUser) {
+                        currentUser?.displayName?.trim()?.takeIf { it.isNotBlank() } ?: "Sir"
+                    }
+                    val greetingTime = remember(uiState.greeting) {
+                        uiState.greeting.replace(", Tony", "").trim()
+                    }
+                    val greetingTitle = remember(greetingTime, resolvedUserName) {
+                        "$greetingTime, $resolvedUserName"
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .weight(1f)
-                                .padding(end = 10.dp)
+                                .padding(end = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = if (currentUser != null && currentUser!!.displayName.isNotBlank()) {
-                                    "${uiState.greeting}, ${currentUser!!.displayName}"
-                                } else {
-                                    uiState.greeting
-                                },
-                                style = MaterialTheme.typography.titleLarge.copy(
-                                    fontWeight = FontWeight.ExtraBold,
-                                    fontSize = 20.sp,
-                                    letterSpacing = (-0.5).sp
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                color = TextPrimary
-                            )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(top = 3.dp)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(6.dp)
-                                        .clip(CircleShape)
-                                        .background(if (currentUser != null) ArcCyanBright else SpotifyGreen)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
+                            // Animated J.A.R.V.I.S. Holographic Arc Reactor
+                            JarvisHologramReactor(sizeDp = 42)
+
+                            Spacer(modifier = Modifier.width(10.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                // J.A.R.V.I.S. HUD Status Badge
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(5.dp)
+                                            .clip(CircleShape)
+                                            .background(ArcCyanBright)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "J.A.R.V.I.S. HUD // AUDIO PROTOCOL",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.1.sp
+                                        ),
+                                        color = ArcCyanBright,
+                                        maxLines = 1
+                                    )
+                                }
+
+                                // User Personalized Greeting
                                 Text(
-                                    text = if (currentUser != null) {
-                                        "CORES: ONLINE // ${if (currentUser!!.isGuest) "OPERATIVE" else "STARK ID"}"
+                                    text = greetingTitle,
+                                    style = MaterialTheme.typography.titleLarge.copy(
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 19.sp,
+                                        letterSpacing = (-0.4).sp
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = TextPrimary
+                                )
+
+                                // Telemetry Subtitle
+                                Text(
+                                    text = if (currentUser != null && !currentUser!!.isGuest) {
+                                        "STARK ID: VERIFIED • 48.2 kHz ARC CORES"
                                     } else {
-                                        uiState.telemetryStatus
+                                        "NEURAL CORES NOMINAL • ACOUSTIC MATRIX"
                                     },
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontFamily = FontFamily.Monospace,
-                                        fontSize = 10.sp,
+                                        fontSize = 9.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         letterSpacing = 0.5.sp
                                     ),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    color = if (currentUser != null) ArcCyanBright else SpotifyGreen
+                                    color = ArcCyan.copy(alpha = 0.75f)
                                 )
                             }
                         }
 
-                        // Stark Arc Glassmorphic Action Capsule (Spacious, modern, perfectly aligned)
+                        // Stark Arc Glassmorphic Action Capsule
                         Surface(
                             shape = RoundedCornerShape(22.dp),
-                            color = SurfaceElevated.copy(alpha = 0.85f),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder)
+                            color = StarkSurface.copy(alpha = 0.85f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                Brush.horizontalGradient(
+                                    listOf(ArcCyan.copy(alpha = 0.45f), StarkBorder)
+                                )
+                            )
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -248,14 +289,14 @@ fun HomeScreen(
                                     if (uiState.isRefreshing) {
                                         CircularProgressIndicator(
                                             modifier = Modifier.size(15.dp),
-                                            color = SpotifyGreen,
+                                            color = ArcCyanBright,
                                             strokeWidth = 2.dp
                                         )
                                     } else {
                                         Icon(
                                             imageVector = Icons.Default.Refresh,
                                             contentDescription = "Refresh Feed",
-                                            tint = TextSecondary,
+                                            tint = ArcCyan.copy(alpha = 0.85f),
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
@@ -277,7 +318,7 @@ fun HomeScreen(
                                     Icon(
                                         imageVector = Icons.Default.SystemUpdate,
                                         contentDescription = "Check for Updates",
-                                        tint = TextSecondary,
+                                        tint = ArcCyan.copy(alpha = 0.85f),
                                         modifier = Modifier.size(18.dp)
                                     )
                                 }
@@ -297,12 +338,10 @@ fun HomeScreen(
                                     modifier = Modifier
                                         .size(32.dp)
                                         .clip(CircleShape)
-                                        .background(
-                                            if (currentUser != null) ArcCyan.copy(alpha = 0.25f) else SurfaceElevated
-                                        )
+                                        .background(ArcCyan.copy(alpha = 0.2f))
                                         .border(
                                             width = 1.5.dp,
-                                            color = if (currentUser != null) ArcCyanBright else StarkBorder,
+                                            color = ArcCyanBright,
                                             shape = CircleShape
                                         )
                                         .clickable { showAuthDialog = true },
@@ -329,7 +368,7 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Spotify Premium Style Pill Filter Row
+                    // J.A.R.V.I.S. Hologram Pill Filter Row
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -340,19 +379,21 @@ fun HomeScreen(
                             val isSelected = uiState.selectedMood == mood
                             Surface(
                                 shape = RoundedCornerShape(20.dp),
-                                color = if (isSelected) SpotifyGreen else SurfaceElevated.copy(alpha = 0.85f),
-                                border = if (isSelected) null else androidx.compose.foundation.BorderStroke(1.dp, StarkBorder),
+                                color = if (isSelected) ArcCyan else StarkSurface.copy(alpha = 0.8f),
+                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, ArcCyanBright) else androidx.compose.foundation.BorderStroke(1.dp, StarkBorder),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(20.dp))
                                     .clickable { homeViewModel.selectMood(mood) }
                             ) {
                                 Text(
-                                    text = mood,
+                                    text = mood.uppercase(),
                                     style = MaterialTheme.typography.labelSmall.copy(
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        fontSize = 12.sp
+                                        fontFamily = if (isSelected) FontFamily.Monospace else FontFamily.Default,
+                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
+                                        fontSize = 11.5.sp,
+                                        letterSpacing = if (isSelected) 0.8.sp else 0.sp
                                     ),
-                                    color = if (isSelected) Color.Black else TextPrimary,
+                                    color = if (isSelected) Color(0xFF04121E) else TextSecondary,
                                     maxLines = 1,
                                     softWrap = false,
                                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
@@ -408,16 +449,22 @@ fun HomeScreen(
                 }
             }
 
-            // 3. AI DJ / J.A.R.V.I.S. Smart Autopilot Banner
+            // 3. J.A.R.V.I.S. Smart Mix / Autopilot Banner
             item {
                 Spacer(modifier = Modifier.height(16.dp))
                 Surface(
                     shape = RoundedCornerShape(16.dp),
-                    color = SurfaceDark,
+                    color = StarkSurface,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
-                        .border(1.dp, StarkBorder, RoundedCornerShape(16.dp))
+                        .border(
+                            1.dp,
+                            Brush.horizontalGradient(
+                                listOf(ArcCyan.copy(alpha = 0.5f), StarkBorder, ArcCyan.copy(alpha = 0.25f))
+                            ),
+                            RoundedCornerShape(16.dp)
+                        )
                         .clickable { homeViewModel.playAutopilotMix() }
                 ) {
                     Box(
@@ -426,9 +473,9 @@ fun HomeScreen(
                             .background(
                                 Brush.horizontalGradient(
                                     colors = listOf(
-                                        Color(0xFF0F1E28),
-                                        Color(0xFF142C38),
-                                        Color(0xFF0B141E)
+                                        Color(0xFF071B28),
+                                        Color(0xFF0B2B3D),
+                                        Color(0xFF05121D)
                                     )
                                 )
                             )
@@ -445,18 +492,13 @@ fun HomeScreen(
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .size(42.dp)
+                                        .size(44.dp)
                                         .clip(CircleShape)
-                                        .background(SpotifyGreen.copy(alpha = 0.2f))
-                                        .border(1.dp, SpotifyGreen, CircleShape),
+                                        .background(ArcCyan.copy(alpha = 0.15f))
+                                        .border(1.dp, ArcCyanBright, CircleShape),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.AutoAwesome,
-                                        contentDescription = null,
-                                        tint = SpotifyGreen,
-                                        modifier = Modifier.size(22.dp)
-                                    )
+                                    JarvisHologramReactor(sizeDp = 34)
                                 }
 
                                 Spacer(modifier = Modifier.width(12.dp))
@@ -464,20 +506,20 @@ fun HomeScreen(
                                 Column {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            text = "AI DJ • AUTOPILOT",
+                                            text = "J.A.R.V.I.S. AUTOPILOT",
                                             style = MaterialTheme.typography.labelSmall.copy(
                                                 fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.Bold,
-                                                letterSpacing = 1.sp
+                                                fontWeight = FontWeight.ExtraBold,
+                                                letterSpacing = 1.2.sp
                                             ),
-                                            color = SpotifyGreen
+                                            color = ArcCyanBright
                                         )
                                     }
                                     Text(
-                                        text = "Continuous mix based on your taste",
+                                        text = "Autonomous Acoustic Stream",
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp
+                                            fontSize = 13.5.sp
                                         ),
                                         color = TextPrimary,
                                         modifier = Modifier.padding(top = 1.dp)
@@ -488,7 +530,7 @@ fun HomeScreen(
                                             fontFamily = FontFamily.Monospace,
                                             fontSize = 10.sp
                                         ),
-                                        color = TextSecondary,
+                                        color = ArcCyan.copy(alpha = 0.8f),
                                         modifier = Modifier.padding(top = 1.dp)
                                     )
                                 }
@@ -497,8 +539,8 @@ fun HomeScreen(
                             Button(
                                 onClick = { homeViewModel.playAutopilotMix() },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = SpotifyGreen,
-                                    contentColor = Color.Black
+                                    containerColor = ArcCyan,
+                                    contentColor = Color(0xFF05101A)
                                 ),
                                 shape = RoundedCornerShape(20.dp),
                                 contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
@@ -506,22 +548,23 @@ fun HomeScreen(
                             ) {
                                 if (uiState.isAutopilotEngaging) {
                                     CircularProgressIndicator(
-                                        modifier = Modifier.size(16.dp),
-                                        color = Color.Black,
+                                        modifier = Modifier.size(14.dp),
+                                        color = Color(0xFF05101A),
                                         strokeWidth = 2.dp
                                     )
                                 } else {
                                     Icon(
                                         imageVector = Icons.Default.PlayArrow,
                                         contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "SPIN",
+                                        text = "ENGAGE",
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            fontFamily = FontFamily.Monospace
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            letterSpacing = 0.6.sp
                                         )
                                     )
                                 }
@@ -883,11 +926,12 @@ private fun SpotifyQuickTile(
     val thumbSize = if (isNarrow) 48.dp else 56.dp
 
     Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = Color(0xFF282828).copy(alpha = 0.85f),
+        shape = RoundedCornerShape(8.dp),
+        color = StarkSurface.copy(alpha = 0.85f),
+        border = androidx.compose.foundation.BorderStroke(0.8.dp, StarkBorder),
         modifier = modifier
             .defaultMinSize(minHeight = thumbSize)
-            .clip(RoundedCornerShape(6.dp))
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
     ) {
         Row(
@@ -1379,6 +1423,90 @@ private fun SpotifyArtistCard(
             color = TextSecondary,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(top = 1.dp)
+        )
+    }
+}
+
+/**
+ * Minimalist Animated J.A.R.V.I.S. Hologram Arc Reactor Core.
+ * Pure vector canvas drawing with counter-rotating HUD brackets and breathing cyan glow.
+ */
+@Composable
+fun JarvisHologramReactor(
+    modifier: Modifier = Modifier,
+    sizeDp: Int = 42
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "jarvisHologram")
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 8000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rotation"
+    )
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.85f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseAlpha"
+    )
+
+    Canvas(modifier = modifier.size(sizeDp.dp)) {
+        val radius = size.minDimension / 2f
+        val center = this.center
+
+        // 1. Ambient outer glow circle
+        drawCircle(
+            color = ArcCyan.copy(alpha = pulseAlpha * 0.25f),
+            radius = radius * 0.95f,
+            center = center
+        )
+
+        // 2. Outer segmented HUD brackets (slow rotating)
+        rotate(rotation) {
+            val strokeWidth = 1.5.dp.toPx()
+            for (i in 0 until 3) {
+                val startAngle = i * 120f + 15f
+                drawArc(
+                    color = ArcCyanBright,
+                    startAngle = startAngle,
+                    sweepAngle = 90f,
+                    useCenter = false,
+                    style = Stroke(width = strokeWidth)
+                )
+            }
+        }
+
+        // 3. Counter-rotating inner dashed ring
+        rotate(-rotation * 0.6f) {
+            val innerStroke = 1.dp.toPx()
+            for (i in 0 until 6) {
+                val startAngle = i * 60f + 10f
+                drawArc(
+                    color = ArcCyan.copy(alpha = 0.7f),
+                    startAngle = startAngle,
+                    sweepAngle = 40f,
+                    useCenter = false,
+                    style = Stroke(width = innerStroke)
+                )
+            }
+        }
+
+        // 4. Center pulsing Arc Core
+        drawCircle(
+            color = ArcCyanBright,
+            radius = radius * 0.28f,
+            center = center
+        )
+        drawCircle(
+            color = Color.White,
+            radius = radius * 0.15f,
+            center = center
         )
     }
 }

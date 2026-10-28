@@ -698,22 +698,22 @@ class RecommendationRepository @Inject constructor(
         val style = favGenre ?: "acoustic"
         return when (hour) {
             in 5..11 -> Triple(
-                "Good morning, Tony",
+                "Good morning",
                 "J.A.R.V.I.S. // MORNING ${style.uppercase()} MATRIX",
                 "Morning uplifting $style"
             )
             in 12..16 -> Triple(
-                "Good afternoon, Tony",
+                "Good afternoon",
                 "J.A.R.V.I.S. // FOCUS & FLOW TELEMETRY NOMINAL",
                 "Focus deep work $style"
             )
             in 17..21 -> Triple(
-                "Good evening, Tony",
+                "Good evening",
                 "J.A.R.V.I.S. // SUNSET AUDIO TELEMETRY SYNCHRONIZED",
                 "Sunset relaxing $style"
             )
             else -> Triple(
-                "Late Night Protocol, Tony",
+                "Late Night Protocol",
                 "J.A.R.V.I.S. // NIGHT DRIVE & SYNTHWAVE CORES ONLINE",
                 "Late night lofi synthwave"
             )
