@@ -22,9 +22,11 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
         PlaylistTrackCrossRef::class,
         RecentPlaybackEntity::class,
         SearchHistoryEntity::class,
-        com.satvik.satvikx.data.local.entity.PlaybackTelemetryEntity::class
+        com.satvik.satvikx.data.local.entity.PlaybackTelemetryEntity::class,
+        com.satvik.satvikx.data.local.entity.BlendEntity::class,
+        com.satvik.satvikx.data.local.entity.BlendTrackCrossRef::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = false
 )
 abstract class SatvikXDatabase : RoomDatabase() {
@@ -38,6 +40,8 @@ abstract class SatvikXDatabase : RoomDatabase() {
     abstract fun searchHistoryDao(): SearchHistoryDao
 
     abstract fun playbackTelemetryDao(): com.satvik.satvikx.data.local.dao.PlaybackTelemetryDao
+
+    abstract fun blendDao(): com.satvik.satvikx.data.local.dao.BlendDao
 
     companion object {
         const val DATABASE_NAME = "satvikx_music.db"

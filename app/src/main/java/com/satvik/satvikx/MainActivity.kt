@@ -27,10 +27,30 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         checkAndRequestNotificationPermission()
+        handleBlendIntent(intent)
 
         setContent {
             SatvikXTheme {
                 RootNavigationHost()
+            }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleBlendIntent(intent)
+    }
+
+    private fun handleBlendIntent(intent: android.content.Intent?) {
+        val uri = intent?.data
+        if (uri != null && uri.scheme == "satvikx" && uri.host == "blend") {
+            val token = uri.getQueryParameter("data")
+            if (!token.isNullOrBlank()) {
+                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                val clip = android.content.ClipData.newPlainText("Stark Blend Token", token)
+                clipboard.setPrimaryClip(clip)
+                android.widget.Toast.makeText(this, "Stark Blend invite detected! Open Playlists > Join Code to fuse.", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }

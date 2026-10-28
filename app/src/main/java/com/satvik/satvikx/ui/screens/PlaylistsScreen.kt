@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.horizontalScroll
@@ -33,8 +34,18 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Stars
+import com.satvik.satvikx.data.local.entity.BlendEntity
+import com.satvik.satvikx.ui.components.CreateBlendDialog
+import com.satvik.satvikx.ui.components.CuratedArtistBlendSheet
 import com.satvik.satvikx.ui.components.DownloadQualityDialog
+import com.satvik.satvikx.ui.components.JoinBlendDialog
+import com.satvik.satvikx.ui.screens.BlendDetailScreen
+import com.satvik.satvikx.ui.viewmodel.BlendViewModel
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Shuffle
@@ -100,11 +111,22 @@ import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PlaylistsScreen(
-    viewModel: LibraryViewModel = hiltViewModel()
+    viewModel: LibraryViewModel = hiltViewModel(),
+    blendViewModel: BlendViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val blends by blendViewModel.blends.collectAsStateWithLifecycle()
+    val blendUiState by blendViewModel.uiState.collectAsStateWithLifecycle()
+
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
+    var selectedBlendId by remember { mutableStateOf<String?>(null) }
+
+    // Stark Blend Dialog & Sheet States
+    var showCreateBlendDialog by remember { mutableStateOf(false) }
+    var showJoinBlendDialog by remember { mutableStateOf(false) }
+    var showArtistBlendSheet by remember { mutableStateOf(false) }
+    val artistSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Dialog & Sheet States
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -120,12 +142,21 @@ fun PlaylistsScreen(
 
     val activePlaylist = playlists.find { it.playlist.playlistId == selectedPlaylistId }
 
-    // Fluid back navigation: Back button in playlist detail takes user back to playlists overview
-    BackHandler(enabled = selectedPlaylistId != null) {
-        selectedPlaylistId = null
+    // Fluid back navigation: Back button in blend detail or playlist detail takes user back to overview
+    BackHandler(enabled = selectedBlendId != null || selectedPlaylistId != null) {
+        if (selectedBlendId != null) {
+            selectedBlendId = null
+        } else {
+            selectedPlaylistId = null
+        }
     }
 
-    if (activePlaylist != null) {
+    if (selectedBlendId != null) {
+        BlendDetailScreen(
+            blendId = selectedBlendId!!,
+            onBack = { selectedBlendId = null }
+        )
+    } else if (activePlaylist != null) {
         // ==========================================
         // PLAYLIST DETAIL VIEW (SPOTIFY & CYBER VISION)
         // ==========================================
@@ -525,7 +556,7 @@ fun PlaylistsScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = "Playlists",
+                        text = "Playlists & Blends",
                         style = MaterialTheme.typography.displayMedium,
                         color = TextPrimary
                     )
@@ -564,47 +595,105 @@ fun PlaylistsScreen(
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
 
-                if (playlists.isEmpty()) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = SurfaceElevated,
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 84.dp)
+                ) {
+                    // Item 1: Stark Blend Taste Fusion Matrix
+                    item {
+                        StarkBlendSection(
+                            blends = blends,
+                            onInviteClick = { showCreateBlendDialog = true },
+                            onJoinClick = { showJoinBlendDialog = true },
+                            onArtistBlendClick = { showArtistBlendSheet = true },
+                            onBlendClick = { blendId -> selectedBlendId = blendId }
+                        )
+                    }
+
+                    // Item 2: Playlists Header Divider
+                    item {
+                        Spacer(modifier = Modifier.height(18.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                    contentDescription = null,
+                                    tint = PrimaryNeon,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "PLAYLIST VAULTS",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontFamily = FontFamily.Monospace,
+                                        fontWeight = FontWeight.Bold,
+                                        letterSpacing = 0.8.sp,
+                                        color = TextPrimary
+                                    )
+                                )
+                            }
+                            Text(
+                                text = "${playlists.size} VAULTS",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontFamily = FontFamily.Monospace,
+                                    color = TextSecondary
+                                )
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+
+                    if (playlists.isEmpty()) {
+                        item {
+                            Box(
                                 modifier = Modifier
-                                    .size(72.dp)
-                                    .border(1.dp, SurfaceVariantDark, RoundedCornerShape(14.dp))
+                                    .fillMaxWidth()
+                                    .padding(vertical = 32.dp, horizontal = 24.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                        contentDescription = null,
-                                        tint = PrimaryNeon,
-                                        modifier = Modifier.size(36.dp)
+                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                    Surface(
+                                        shape = RoundedCornerShape(14.dp),
+                                        color = SurfaceElevated,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .border(1.dp, SurfaceVariantDark, RoundedCornerShape(14.dp))
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Icon(
+                                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                                contentDescription = null,
+                                                tint = PrimaryNeon,
+                                                modifier = Modifier.size(28.dp)
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    Text(
+                                        text = "NO PLAYLISTS INITIALIZED",
+                                        color = TextPrimary,
+                                        style = MaterialTheme.typography.titleSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Create custom playlists with the + NEW PLAYLIST button below.",
+                                        color = TextSecondary,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
                                 }
                             }
-                            Spacer(modifier = Modifier.height(14.dp))
-                            Text(
-                                text = "NO PLAYLISTS INITIALIZED",
-                                color = TextPrimary,
-                                style = MaterialTheme.typography.titleMedium.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                text = "Create custom playlists with the + NEW_PLAYLIST button below.",
-                                color = TextSecondary,
-                                style = MaterialTheme.typography.bodySmall
-                            )
                         }
-                    }
-                } else {
-                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                    } else {
                         items(
                             items = playlists,
                             key = { it.playlist.playlistId }
@@ -858,6 +947,38 @@ fun PlaylistsScreen(
             onDismiss = { playlistToDownload = null }
         )
     }
+
+    // Stark Blend Dialogs & Sheets
+    if (showCreateBlendDialog) {
+        CreateBlendDialog(
+            viewModel = blendViewModel,
+            userName = blendUiState.currentUserName,
+            onDismiss = { showCreateBlendDialog = false }
+        )
+    }
+
+    if (showJoinBlendDialog) {
+        JoinBlendDialog(
+            viewModel = blendViewModel,
+            onBlendCreated = { newBlendId ->
+                selectedBlendId = newBlendId
+                showJoinBlendDialog = false
+            },
+            onDismiss = { showJoinBlendDialog = false }
+        )
+    }
+
+    if (showArtistBlendSheet) {
+        CuratedArtistBlendSheet(
+            viewModel = blendViewModel,
+            sheetState = artistSheetState,
+            onBlendCreated = { newBlendId ->
+                selectedBlendId = newBlendId
+                showArtistBlendSheet = false
+            },
+            onDismiss = { showArtistBlendSheet = false }
+        )
+    }
 }
 
 @Composable
@@ -1019,6 +1140,436 @@ private fun PlaylistCyberRow(
                     text = { Text("Delete", fontFamily = FontFamily.Monospace, color = Color(0xFFFF5252)) },
                     leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252)) },
                     onClick = onDelete
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarkBlendSection(
+    blends: List<BlendEntity>,
+    onInviteClick: () -> Unit,
+    onJoinClick: () -> Unit,
+    onArtistBlendClick: () -> Unit,
+    onBlendClick: (String) -> Unit
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // Section Header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = CircleShape,
+                    color = ArcCyan.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, ArcCyanBright),
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.ElectricBolt,
+                            contentDescription = null,
+                            tint = ArcCyanBright,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "STARK BLEND",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.sp,
+                        color = TextPrimary
+                    )
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = ArcCyan.copy(alpha = 0.15f),
+                    border = BorderStroke(0.5.dp, ArcCyanBright.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        text = "TASTE FUSION",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = ArcCyanBright
+                        ),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            if (blends.isNotEmpty()) {
+                Text(
+                    text = "${blends.size} BLENDS",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        color = StarkGold
+                    )
+                )
+            }
+        }
+
+        Text(
+            text = "Synthesize shared music taste with friends & flagship artists.",
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = TextSecondary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Quick Actions Row
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Invite Friend Button
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = ArcCyan.copy(alpha = 0.1f),
+                border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.6f)),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onInviteClick)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GroupAdd,
+                        contentDescription = null,
+                        tint = ArcCyanBright,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "INVITE",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = ArcCyanBright
+                        ),
+                        maxLines = 1
+                    )
+                }
+            }
+
+            // Join with Code Button
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = PrimaryNeon.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, PrimaryNeon.copy(alpha = 0.6f)),
+                modifier = Modifier
+                    .weight(1f)
+                    .clickable(onClick = onJoinClick)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Hub,
+                        contentDescription = null,
+                        tint = PrimaryNeon,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "JOIN CODE",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = PrimaryNeon
+                        ),
+                        maxLines = 1
+                    )
+                }
+            }
+
+            // Artist Blend Button
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = StarkGold.copy(alpha = 0.08f),
+                border = BorderStroke(1.dp, StarkGold.copy(alpha = 0.6f)),
+                modifier = Modifier
+                    .weight(1.15f)
+                    .clickable(onClick = onArtistBlendClick)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Stars,
+                        contentDescription = null,
+                        tint = StarkGold,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    Text(
+                        text = "ARTIST BLEND",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = StarkGold
+                        ),
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Existing Blends Horizontal Carousel or Holographic Starter Banner
+        if (blends.isNotEmpty()) {
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(blends, key = { it.blendId }) { blend ->
+                    StarkBlendCard(
+                        blend = blend,
+                        onClick = { onBlendClick(blend.blendId) }
+                    )
+                }
+            }
+        } else {
+            // Minimal Empty State Card
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = SurfaceElevated,
+                border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.25f)),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .clickable(onClick = onArtistBlendClick)
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = ArcCyan.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, ArcCyanBright),
+                        modifier = Modifier.size(44.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Stars,
+                                contentDescription = null,
+                                tint = ArcCyanBright,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "START YOUR FIRST BLEND",
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.Bold,
+                                color = ArcCyanBright
+                            )
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "Pick 1-3 flagship artists across Bollywood, Pop, Punjabi, Hip-Hop, Rock, or Sufi to calculate your match score.",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                            color = TextSecondary,
+                            lineHeight = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StarkBlendCard(
+    blend: BlendEntity,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = SurfaceElevated,
+        border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.45f)),
+        modifier = Modifier
+            .width(240.dp)
+            .clickable(onClick = onClick)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp)
+        ) {
+            // Top Row: Match Gauge Pill & Type Badge
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = PrimaryNeon.copy(alpha = 0.15f),
+                    border = BorderStroke(0.5.dp, PrimaryNeon)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ElectricBolt,
+                            contentDescription = null,
+                            tint = PrimaryNeon,
+                            modifier = Modifier.size(10.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = "${blend.matchScore}% MATCH",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 10.sp,
+                                color = PrimaryNeon
+                            )
+                        )
+                    }
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(6.dp),
+                    color = SurfaceVariantDark
+                ) {
+                    Text(
+                        text = if (blend.isArtistBlend) "ARTIST" else "FRIEND",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = StarkGold
+                        ),
+                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Middle: Overlapping Avatar Circles + Names
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Dual Avatar Overlap
+                Box(modifier = Modifier.size(width = 44.dp, height = 30.dp)) {
+                    Surface(
+                        shape = CircleShape,
+                        color = ArcCyanBright,
+                        border = BorderStroke(1.dp, SurfaceElevated),
+                        modifier = Modifier
+                            .size(28.dp)
+                            .align(Alignment.CenterStart)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = blend.creatorName.take(1).uppercase(),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = StarkCarbon,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
+                    Surface(
+                        shape = CircleShape,
+                        color = StarkGold,
+                        border = BorderStroke(1.dp, SurfaceElevated),
+                        modifier = Modifier
+                            .size(28.dp)
+                            .align(Alignment.CenterEnd)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = blend.partnerName.take(1).uppercase(),
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = StarkCarbon,
+                                    fontSize = 11.sp
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = blend.title,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = TextPrimary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${blend.creatorName} & ${blend.partnerName}",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            color = TextSecondary,
+                            fontSize = 10.sp
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Bottom: Tracks Count and Shared Anthem info
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "35 tracks",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        color = ArcCyan
+                    )
+                )
+
+                Text(
+                    text = blend.topSharedGenre.ifBlank { "Fusion" },
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        color = TextSecondary,
+                        fontSize = 9.sp
+                    ),
+                    maxLines = 1
                 )
             }
         }

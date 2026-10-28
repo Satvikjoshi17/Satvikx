@@ -57,6 +57,46 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_6_7 = object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `blends` (
+                    `blendId` TEXT NOT NULL PRIMARY KEY,
+                    `title` TEXT NOT NULL,
+                    `creatorName` TEXT NOT NULL,
+                    `creatorAvatar` TEXT NOT NULL,
+                    `partnerName` TEXT NOT NULL,
+                    `partnerAvatar` TEXT NOT NULL,
+                    `matchScore` INTEGER NOT NULL,
+                    `sharedAnthemTitle` TEXT NOT NULL,
+                    `sharedAnthemArtist` TEXT NOT NULL,
+                    `sharedAnthemThumbnail` TEXT NOT NULL,
+                    `topSharedGenre` TEXT NOT NULL,
+                    `inviteCode` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL,
+                    `isArtistBlend` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `blend_tracks` (
+                    `blendId` TEXT NOT NULL,
+                    `trackId` TEXT NOT NULL,
+                    `position` INTEGER NOT NULL,
+                    `broughtBy` TEXT NOT NULL,
+                    `broughtByName` TEXT NOT NULL,
+                    PRIMARY KEY(`blendId`, `trackId`),
+                    FOREIGN KEY(`blendId`) REFERENCES `blends`(`blendId`) ON UPDATE NO ACTION ON DELETE CASCADE
+                )
+                """.trimIndent()
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_blend_tracks_blendId` ON `blend_tracks` (`blendId`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_blend_tracks_trackId` ON `blend_tracks` (`trackId`)")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideSatvikXDatabase(
@@ -67,7 +107,7 @@ object DatabaseModule {
             SatvikXDatabase::class.java,
             SatvikXDatabase.DATABASE_NAME
         )
-        .addMigrations(MIGRATION_4_5, MIGRATION_5_6)
+        .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
         .fallbackToDestructiveMigration()
         .build()
     }
@@ -100,5 +140,11 @@ object DatabaseModule {
     @Singleton
     fun providePlaybackTelemetryDao(database: SatvikXDatabase): com.satvik.satvikx.data.local.dao.PlaybackTelemetryDao {
         return database.playbackTelemetryDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideBlendDao(database: SatvikXDatabase): com.satvik.satvikx.data.local.dao.BlendDao {
+        return database.blendDao()
     }
 }
