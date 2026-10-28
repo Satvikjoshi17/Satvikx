@@ -4,6 +4,7 @@ import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.cleanArtist
 import com.satvik.satvikx.data.local.entity.cleanArtistName
 import com.satvik.satvikx.data.local.entity.cleanSongTitle
 import com.satvik.satvikx.data.local.entity.distinctSongs
@@ -80,6 +81,7 @@ class RecommendationRepository @Inject constructor(
     private val trackDao: TrackDao,
     private val streamRepository: StreamRepository,
     private val newPipeYouTubeEngine: NewPipeYouTubeEngine,
+    private val saavnMediaEngine: com.satvik.satvikx.data.remote.saavn.SaavnMediaEngine,
     private val homeFeedCacheManager: HomeFeedCacheManager
 ) {
 
@@ -528,24 +530,51 @@ class RecommendationRepository @Inject constructor(
         val affinities = analyzeUserAffinities()
         val cleanArtist = baseTrack.cleanArtistName()
         val seedCleanTitle = baseTrack.cleanSongTitle()
+        val isYouTubeId = baseTrack.id.length == 11 && !baseTrack.id.all { it.isDigit() }
 
-        // 1. YouTube Algorithmic "Up Next" / Related items for the seed track
-        val ytRelatedDeferred = async(Dispatchers.IO) {
+        // 1. Dual-Engine Recommendation Pipelines:
+        // A. JioSaavn Native Recommendation Engine (pristine 320kbps CD-quality acoustic similarity)
+        val saavnRecoDeferred = async(Dispatchers.IO) {
             try {
-                newPipeYouTubeEngine.getRelatedTracks(baseTrack.id)
+                if (!isYouTubeId) {
+                    saavnMediaEngine.getSongRecommendations(baseTrack.id)
+                } else {
+                    val searchResults = saavnMediaEngine.searchTracks("$seedCleanTitle $cleanArtist")
+                    val match = searchResults.firstOrNull { it.isSameSong(baseTrack) } ?: searchResults.firstOrNull()
+                    if (match != null) {
+                        saavnMediaEngine.getSongRecommendations(match.id)
+                    } else emptyList()
+                }
             } catch (e: Exception) {
                 emptyList()
             }
         }
 
-        // 2. Artist Top Hits (distinct hits by the seed artist to keep listening momentum)
+        // B. YouTube Algorithmic "Up Next" / Related stream graph
+        val ytRelatedDeferred = async(Dispatchers.IO) {
+            try {
+                if (isYouTubeId) {
+                    newPipeYouTubeEngine.getRelatedTracks(baseTrack.id)
+                } else {
+                    val ytSearch = streamRepository.searchTracks("$cleanArtist $seedCleanTitle official audio").firstOrNull()?.getOrNull().orEmpty()
+                    val ytMatch = ytSearch.firstOrNull { it.id.length == 11 && !it.id.all { c -> c.isDigit() } }
+                    if (ytMatch != null) {
+                        newPipeYouTubeEngine.getRelatedTracks(ytMatch.id)
+                    } else emptyList()
+                }
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
+
+        // C. Artist Top Hits (distinct hits by seed artist to maintain momentum)
         val artistRadioDeferred = async(Dispatchers.IO) {
             if (cleanArtist.isNotBlank() && cleanArtist != "unknown artist") {
                 streamRepository.searchTracks("$cleanArtist top hits audio").firstOrNull()?.getOrNull().orEmpty()
             } else emptyList()
         }
 
-        // 3. Similar / Radio Mix (discovering related artists that match this song's vibe & soundscape)
+        // D. Similar / Radio Mix (discovering related artists matching this vibe & soundscape)
         val similarRadioDeferred = async(Dispatchers.IO) {
             if (cleanArtist.isNotBlank() && cleanArtist != "unknown artist") {
                 val query = if (seedCleanTitle.isNotBlank()) "$cleanArtist $seedCleanTitle radio mix" else "$cleanArtist radio mix"
@@ -553,8 +582,7 @@ class RecommendationRepository @Inject constructor(
             } else emptyList()
         }
 
-        // 4. User History Affinity Match:
-        // What artists or genres does this user frequently listen to alongside this artist?
+        // E. User History Affinity Match (complementary artist / favorite genre)
         val userTopArtists = affinities.overallTopArtists.take(4)
         val userAffinityDeferred = async(Dispatchers.IO) {
             val complementaryArtist = userTopArtists.firstOrNull { !it.equals(cleanArtist, ignoreCase = true) }
@@ -566,76 +594,125 @@ class RecommendationRepository @Inject constructor(
             }
         }
 
+        val saavnRecos = saavnRecoDeferred.await()
         val ytRelated = ytRelatedDeferred.await()
         val artistRadio = artistRadioDeferred.await()
         val similarRadioTracks = similarRadioDeferred.await()
         val userAffinityTracks = userAffinityDeferred.await()
 
-        // 5. Load frequently skipped tracks to suppress them from the auto-queue
+        // 2. Anti-Repetition Shield: Fetch user recent playback history & telemetry
+        val recentHistory = try {
+            recentPlaybackDao.getRecentTracksSync(50)
+        } catch (_: Exception) {
+            emptyList()
+        }
         val skippedTrackIds = try {
             playbackTelemetryDao.getFrequentlySkippedTrackIds().toSet()
         } catch (_: Exception) {
             emptySet()
         }
+        val telemetryList = try {
+            playbackTelemetryDao.getRecentTelemetry(100)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val telemetryByArtist = telemetryList.groupBy { cleanArtist(it.artist) }
 
-        // 6. Strict Anti-Duplicate & Anti-Repetition Candidate Filtering:
+        // 3. Strict Candidate Filtering:
         // - MUST NOT be the base track (neither by video ID nor by fuzzy song identity from another channel!)
         // - MUST NOT be a long mix or compilation (isSongOnly)
         // - MUST NOT be in skipped tracks list
-        // - MUST NOT be in recent session buffer
-        val rawCandidates = (ytRelated + similarRadioTracks + artistRadio + userAffinityTracks)
-        val candidates = rawCandidates
+        // - MUST NOT be in recent session exclusion buffer
+        // - MUST NOT have been played recently in the user's last 50 songs
+        val rawCandidates = (saavnRecos + ytRelated + similarRadioTracks + artistRadio + userAffinityTracks)
+
+        // Strict pass (excludes recent history)
+        var candidates = rawCandidates
             .filter { candidate ->
                 candidate.id != baseTrack.id &&
-                !candidate.isSameSong(baseTrack) && // <- ELIMINATES ALTERNATE CHANNEL/UPLOAD DUPLICATES!
+                !candidate.isSameSong(baseTrack) &&
                 candidate.isSongOnly() &&
                 candidate.id !in skippedTrackIds &&
-                !isExcludedFromSession(candidate)
+                !isExcludedFromSession(candidate) &&
+                recentHistory.none { it.isSameSong(candidate) }
             }
-            .distinctSongs() // <- DEDUPLICATES ALTERNATE UPLOADS OF CANDIDATE SONGS TOO!
+            .distinctSongs()
+
+        // Resilient fallback: If strict filter removed too many candidates, relax recent history exclusion
+        if (candidates.size < 8) {
+            val relaxedRecent = recentHistory.take(8)
+            candidates = rawCandidates
+                .filter { candidate ->
+                    candidate.id != baseTrack.id &&
+                    !candidate.isSameSong(baseTrack) &&
+                    candidate.isSongOnly() &&
+                    candidate.id !in skippedTrackIds &&
+                    !isExcludedFromSession(candidate) &&
+                    relaxedRecent.none { it.isSameSong(candidate) }
+                }
+                .distinctSongs()
+        }
 
         val scoredTracks = candidates.map { track ->
             var score = 10f
 
-            // YouTube recommendation index score (higher in YouTube's related items = higher relevance)
+            // JioSaavn Acoustic Recommendation Bonus (pristine 320kbps CD-quality native stream)
+            val saavnIndex = saavnRecos.indexOfFirst { it.id == track.id }
+            if (saavnIndex != -1) {
+                score += (22f - (saavnIndex * 0.8f)).coerceAtLeast(6f)
+            }
+
+            // YouTube recommendation index score (relevance in global watch graph)
             val ytIndex = ytRelated.indexOfFirst { it.id == track.id }
             if (ytIndex != -1) {
-                score += (25f - (ytIndex * 1.0f)).coerceAtLeast(0f)
+                score += (20f - (ytIndex * 0.8f)).coerceAtLeast(4f)
+            }
+
+            // High-fidelity pre-resolved streamUrl bonus
+            if (!track.streamUrl.isNullOrBlank()) {
+                score += 5f
             }
 
             // Seed Artist Match Boost (hits by the same artist)
             val trackArtist = track.cleanArtistName()
             if (cleanArtist.isNotBlank() && trackArtist.contains(cleanArtist)) {
-                score += 14f
+                score += 12f
             }
 
             // User History Affinity Boost
             if (affinities.overallTopArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
-                score += 12f
-            }
-            if (affinities.topLikedArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
                 score += 10f
             }
-            if (affinities.topRecentArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
+            if (affinities.topLikedArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
                 score += 8f
+            }
+            if (affinities.topRecentArtists.any { trackArtist.contains(it.lowercase(Locale.ROOT)) }) {
+                score += 6f
             }
 
             // Category / Genre Alignment Boost
             val trackGenres = detectGenres(track.title + " " + track.artist)
             if (affinities.topGenres.any { trackGenres.contains(it) }) {
-                score += 6f
+                score += 5f
             }
 
+            // Telemetry Bonus / Penalty
+            val artistTelem = telemetryByArtist[trackArtist].orEmpty()
+            val completions = artistTelem.sumOf { it.completionCount }
+            val skips = artistTelem.sumOf { it.skipCount }
+            if (completions > 0) score += (minOf(completions, 4) * 2.5f)
+            if (skips > 0) score -= (minOf(skips, 3) * 4.0f)
+
             // Controlled stochastic exploration
-            val explorationFactor = (Math.random() * 3.0).toFloat()
+            val explorationFactor = (Math.random() * 2.5).toFloat()
 
             Pair(track, score + explorationFactor)
         }
 
         val rankedList = scoredTracks.sortedByDescending { it.second }.map { it.first }
 
-        // 7. Dynamic Artist Spacing & Diversity Sequencing
-        // Spotify / Apple Music style: prevent more than 2 consecutive songs by the exact same artist
+        // 4. Dynamic Artist Spacing & Diversity Sequencing (Spotify / Apple Music algorithm)
+        // Prevent more than 2 consecutive songs by the exact same artist
         val diversifiedQueue = mutableListOf<TrackEntity>()
         val pool = rankedList.toMutableList()
 

@@ -58,35 +58,7 @@ class SaavnMediaEngine @Inject constructor(
             val tracks = mutableListOf<TrackEntity>()
             for (i in 0 until resultsArray.length()) {
                 val item = resultsArray.getJSONObject(i)
-                val id = item.optString("id")
-                if (id.isBlank()) continue
-
-                val title = SaavnCryptoUtils.unescapeHtml(item.optString("song", "Unknown Title"))
-                val artist = SaavnCryptoUtils.unescapeHtml(
-                    item.optString("primary_artists").ifBlank {
-                        item.optString("singers").ifBlank {
-                            item.optString("music", "Unknown Artist")
-                        }
-                    }
-                )
-                val duration = item.optLong("duration", 0L)
-                val rawImage = item.optString("image", "")
-                val albumArt = SaavnCryptoUtils.cleanAlbumArt(rawImage)
-                val encryptedMediaUrl = item.optString("encrypted_media_url", "")
-                val directStreamUrl = SaavnCryptoUtils.decryptMediaUrl(encryptedMediaUrl, 320)
-
-                tracks.add(
-                    TrackEntity(
-                        id = id,
-                        title = title,
-                        artist = artist,
-                        durationSeconds = duration,
-                        thumbnailUrl = albumArt,
-                        streamUrl = directStreamUrl,
-                        localPath = null,
-                        isDownloaded = false
-                    )
-                )
+                parseSaavnTrackItem(item)?.let { tracks.add(it) }
             }
 
             tracks
@@ -94,6 +66,83 @@ class SaavnMediaEngine @Inject constructor(
             Log.e(TAG, "Exception during native search: ${e.message}", e)
             emptyList()
         }
+    }
+
+    /**
+     * Retrieves algorithmic song recommendations directly from the JioSaavn recommendation network.
+     * Returns pristine 320kbps audio streams matching the acoustic profile of the seed song.
+     */
+    fun getSongRecommendations(trackId: String): List<TrackEntity> {
+        val trimmed = trackId.trim()
+        if (trimmed.isEmpty()) return emptyList()
+
+        return try {
+            val url = "$BASE_API?__call=reco.getreco&_format=json&_marker=0&ctx=android&pid=$trimmed"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", USER_AGENT)
+                .addHeader("Accept", "application/json")
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful || response.body == null) {
+                return emptyList()
+            }
+
+            val bodyString = response.body!!.string().trim()
+            val tracks = mutableListOf<TrackEntity>()
+
+            if (bodyString.startsWith("[")) {
+                val array = org.json.JSONArray(bodyString)
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    parseSaavnTrackItem(item)?.let { tracks.add(it) }
+                }
+            } else if (bodyString.startsWith("{")) {
+                val json = JSONObject(bodyString)
+                val resultsArray = json.optJSONArray("results") ?: json.optJSONArray("songs")
+                if (resultsArray != null) {
+                    for (i in 0 until resultsArray.length()) {
+                        val item = resultsArray.optJSONObject(i) ?: continue
+                        parseSaavnTrackItem(item)?.let { tracks.add(it) }
+                    }
+                }
+            }
+            tracks
+        } catch (e: Exception) {
+            Log.w(TAG, "Saavn recommendation error for $trackId: ${e.message}")
+            emptyList()
+        }
+    }
+
+    private fun parseSaavnTrackItem(item: JSONObject): TrackEntity? {
+        val id = item.optString("id")
+        if (id.isBlank()) return null
+
+        val title = SaavnCryptoUtils.unescapeHtml(item.optString("song", item.optString("title", "Unknown Title")))
+        val artist = SaavnCryptoUtils.unescapeHtml(
+            item.optString("primary_artists").ifBlank {
+                item.optString("singers").ifBlank {
+                    item.optString("music", "Unknown Artist")
+                }
+            }
+        )
+        val duration = item.optLong("duration", 0L)
+        val rawImage = item.optString("image", "")
+        val albumArt = SaavnCryptoUtils.cleanAlbumArt(rawImage)
+        val encryptedMediaUrl = item.optString("encrypted_media_url", "")
+        val directStreamUrl = if (encryptedMediaUrl.isNotBlank()) SaavnCryptoUtils.decryptMediaUrl(encryptedMediaUrl, 320) else null
+
+        return TrackEntity(
+            id = id,
+            title = title,
+            artist = artist,
+            durationSeconds = duration,
+            thumbnailUrl = albumArt,
+            streamUrl = directStreamUrl,
+            localPath = null,
+            isDownloaded = false
+        )
     }
 
     /**

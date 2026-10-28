@@ -129,6 +129,18 @@ fun TrackEntity.cleanArtistName(): String {
     return cleanArtist(artist)
 }
 
+fun TrackEntity.coreSongTitle(): String {
+    val clean = cleanSongTitle()
+    if (clean.isBlank()) return ""
+    val words = clean.split(" ").filter { it.isNotBlank() }
+    return when {
+        words.isEmpty() -> ""
+        words.size == 1 -> words[0]
+        words.size in 2..3 -> words.joinToString(" ")
+        else -> words.take(2).joinToString(" ")
+    }
+}
+
 fun TrackEntity.canonicalSongKey(): String {
     val cleanT = cleanSongTitle().replace(" ", "")
     val cleanA = cleanArtistName().replace(" ", "")
@@ -139,59 +151,99 @@ fun cleanArtist(rawArtist: String): String {
     if (rawArtist.isBlank()) return ""
     return rawArtist
         .replace(" - Topic", "", ignoreCase = true)
-        .replace(Regex("""(?i)\b(vevo|official|music|channel|records|entertainment|t-series|sony|zee|tips)\b"""), " ")
+        .replace(Regex("""(?i)\b(vevo|official|music|channel|records|entertainment|t-series|sony|zee|tips|audio|visualizer|production|productions|media|digital)\b"""), " ")
         .replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
         .trim().lowercase().replace(Regex("""\s+"""), " ")
+}
+
+fun hasArtistOverlap(artistA: String, artistB: String): Boolean {
+    val cleanA = cleanArtist(artistA)
+    val cleanB = cleanArtist(artistB)
+    if (cleanA.isBlank() || cleanB.isBlank()) return false
+    if (cleanA == cleanB) return true
+    if (cleanA.contains(cleanB) || cleanB.contains(cleanA)) return true
+
+    val tokensA = cleanA.split(" ").filter { it.length >= 3 }
+    val tokensB = cleanB.split(" ").filter { it.length >= 3 }
+    return tokensA.any { a -> tokensB.contains(a) }
+}
+
+private fun levenshteinDistance(s1: String, s2: String): Int {
+    val m = s1.length
+    val n = s2.length
+    if (Math.abs(m - n) > 3) return 99
+    val dp = Array(m + 1) { IntArray(n + 1) }
+    for (i in 0..m) dp[i][0] = i
+    for (j in 0..n) dp[0][j] = j
+    for (i in 1..m) {
+        for (j in 1..n) {
+            val cost = if (s1[i - 1] == s2[j - 1]) 0 else 1
+            dp[i][j] = minOf(
+                dp[i - 1][j] + 1,
+                dp[i][j - 1] + 1,
+                dp[i - 1][j - 1] + cost
+            )
+        }
+    }
+    return dp[m][n]
 }
 
 fun cleanTrackTitle(rawTitle: String, rawArtist: String = ""): String {
     if (rawTitle.isBlank()) return ""
     var t = rawTitle
 
-    // 1. Remove bracketed / parenthetical tags: (Official Video), [Audio], [Lyrics], (from "movie"), etc.
-    t = t.replace(Regex("""(?i)\s*[\(\[\{][^\)\]\}]*(?:official|audio|video|music\s*video|visualizer|lyric(?:s)?|full\s*song|full\s*audio|full\s*video|audio\s*song|video\s*song|hd|4k|1080p|remaster(?:ed)?|live|slowed|8d|from\s+["']|with\s+)[^\)\]\}]*[\)\]\}]"""), " ")
-    // Remove any remaining empty or small brackets
-    t = t.replace(Regex("""\s*[\(\[\{][^\)\]\}]{0,25}[\)\]\}]"""), " ")
+    // 0. Manual HTML entity decoding
+    t = t.replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
 
-    // 2. If title contains dividers like " - ", " | ", " : ", " ~ ", determine which side is the song title
-    val separators = listOf(" - ", " — ", " – ", " | ", " : ", " ~ ")
-    for (sep in separators) {
-        if (t.contains(sep)) {
-            val parts = t.split(sep).map { it.trim() }.filter { it.isNotBlank() }
-            if (parts.size >= 2) {
-                val cleanArt = cleanArtist(rawArtist)
-                val p0 = parts[0].lowercase()
-                val p1 = parts[1].lowercase()
+    // 1. Remove YouTube record labels, company, and distributor stamps
+    t = t.replace(Regex("""(?i)\b(t-series|tseries|sony\s*music(\s*india)?|zee\s*music(\s*company)?|yrf|yash\s*raj\s*films|saregama|speed\s*records|tips\s*(official)?|tips\s*music|vevo|white\s*hill\s*music|geet\s*mp3|desi\s*music\s*factory|eros\s*now|times\s*music|aditya\s*music|lahari\s*music|anand\s*audio|spinnin\s*records|ultra\s*music|universal\s*music|warner\s*music|columbia\s*records|atlantic\s*records|def\s*jam)\b"""), " ")
 
-                if (cleanArt.isNotBlank() && (p0.contains(cleanArt) || cleanArt.contains(p0))) {
-                    t = parts.subList(1, parts.size).joinToString(" ")
-                    break
-                } else if (cleanArt.isNotBlank() && (p1.contains(cleanArt) || cleanArt.contains(p1))) {
-                    t = parts[0]
-                    break
-                } else {
-                    t = if (parts[0].split(" ").size <= 2 && parts[1].split(" ").size > 1) parts[1] else parts[0]
-                    break
-                }
-            }
-        }
+    // 2. Remove bracketed / parenthetical tags: (Official Video), [Audio], [Lyrics], (from "movie"), (Dance Mix), etc.
+    t = t.replace(Regex("""(?i)\s*[\(\[\{][^\)\]\}]*(?:official|audio|video|music\s*video|visualizer|lyric(?:s|al)?|full\s*(?:song|audio|video)|audio\s*song|video\s*song|hd|4k|8k|1080p|remaster(?:ed)?|live|slowed|reverb|8d|from\s+["']|with\s+|feat\.?|ft\.?|prod\.?|cover|unplugged|acoustic|dance\s*mix|remix|club\s*mix|reprise|version|edit|mix|soundtrack|ost)[^\)\]\}]*[\)\]\}]"""), " ")
+    // Remove any remaining empty or small brackets up to 35 chars
+    t = t.replace(Regex("""\s*[\(\[\{][^\)\]\}]{0,35}[\)\]\}]"""), " ")
+
+    // 3. Multi-segment divider parsing: extract the true song title segment
+    val separatorsRegex = Regex("""\s*[-—–|•~//]\s*|\s*:\s+""")
+    val segments = t.split(separatorsRegex).map { it.trim() }.filter { it.isNotBlank() }
+    if (segments.size >= 2) {
+        val cleanArt = cleanArtist(rawArtist)
+        val s0 = segments[0]
+        val s1 = segments[1]
+        val isS0Artist = cleanArt.isNotBlank() && (
+            s0.equals(cleanArt, ignoreCase = true) ||
+            s0.replace(" ", "").equals(cleanArt.replace(" ", ""), ignoreCase = true) ||
+            (cleanArt.contains(s0.lowercase()) && s0.length >= 4)
+        )
+        t = if (isS0Artist) s1 else s0
     }
 
-    // 3. Remove common standalone buzzwords and featuring artists
-    t = t.replace(Regex("""(?i)\b(official\s*(music\s*)?video|official\s*audio|official\s*visualizer|lyric\s*video|lyrics|audio\s*song|video\s*song|full\s*(video|audio|song)|audio|video)\b"""), " ")
-    t = t.replace(Regex("""(?i)\b(feat\.?|ft\.?|featuring)\s+[^,\-\|\(\)]+"""), " ")
+    // 4. If title begins with artist followed by colon or dash (e.g. "Arijit Singh: Kesariya")
+    val cleanArt = cleanArtist(rawArtist)
+    if (cleanArt.isNotBlank() && t.lowercase().startsWith(cleanArt)) {
+        t = t.substring(cleanArt.length).trim().removePrefix(":").removePrefix("-").trim()
+    }
 
-    // 4. Strip non-alphanumeric, keeping standard letters & numbers
+    // 5. Remove common standalone buzzwords and qualifiers
+    t = t.replace(Regex("""(?i)\b(dance\s*mix|club\s*mix|dj\s*mix|remix|acoustic\s*version|acoustic\s*cover|unplugged|slowed\s*reverb|slowed|reverb|sped\s*up|speed\s*up|8d\s*audio|cover|duet|lofi\s*flip|lofi\s*remix|lofi\s*mix|lofi|karaoke|instrumental|teaser|trailer|motion\s*poster|short\s*clip|official\s*(music\s*)?video|official\s*audio|official\s*visualizer|lyric(?:al)?\s*video|lyrics|audio\s*song|video\s*song|full\s*(video|audio|song)|audio|video|song)\b"""), " ")
+    t = t.replace(Regex("""(?i)\b(feat\.?|ft\.?|featuring)\b.*"""), " ")
+
+    // 6. Strip non-alphanumeric, keeping standard letters & numbers
     t = t.replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
 
-    // 5. Collapse whitespace and lowercase
+    // 7. Collapse whitespace and lowercase
     return t.trim().lowercase().replace(Regex("""\s+"""), " ")
 }
 
 /**
  * Determines whether two TrackEntity objects represent the SAME underlying song,
- * effectively catching duplicates across different YouTube channels, uploaders,
- * lyric videos, audio-only tracks, and video clips.
+ * catching duplicates across different YouTube channels, uploaders, lyric videos,
+ * audio-only tracks, and video clips.
  */
 fun TrackEntity.isSameSong(other: TrackEntity): Boolean {
     if (this.id == other.id) return true
@@ -203,51 +255,64 @@ fun TrackEntity.isSameSong(other: TrackEntity): Boolean {
         return this.title.equals(other.title, ignoreCase = true)
     }
 
-    // 1. Exact cleaned title match (e.g. "blinding lights" == "blinding lights")
+    // 1. Exact cleaned title match (e.g. "kesariya" == "kesariya")
     if (cleanA == cleanB) {
-        if (this.durationSeconds > 0 && other.durationSeconds > 0) {
-            val diff = Math.abs(this.durationSeconds - other.durationSeconds)
-            if (diff <= 55) return true
-            return diff <= 90
-        }
         return true
     }
 
-    // 2. Compressed alphanumeric match (e.g. "die with a smile" -> "diewithasmile")
+    // 2. Compressed alphanumeric match (e.g. "blinding lights" -> "blindinglights")
     val alphaA = cleanA.replace(" ", "")
     val alphaB = cleanB.replace(" ", "")
     if (alphaA.isNotEmpty() && alphaA == alphaB) {
         return true
     }
 
-    // 3. Substring / Prefix match with high overlap
-    val minLen = minOf(alphaA.length, alphaB.length)
-    val maxLen = maxOf(alphaA.length, alphaB.length)
-    if (minLen >= 5 && maxLen > 0) {
-        val ratio = minLen.toFloat() / maxLen.toFloat()
-        if (ratio >= 0.75f && (alphaA.contains(alphaB) || alphaB.contains(alphaA))) {
+    val coreA = this.coreSongTitle()
+    val coreB = other.coreSongTitle()
+    val artistOverlap = hasArtistOverlap(this.artist, other.artist) ||
+        (this.cleanArtistName().isNotBlank() && other.title.contains(this.cleanArtistName(), ignoreCase = true)) ||
+        (other.cleanArtistName().isNotBlank() && this.title.contains(other.cleanArtistName(), ignoreCase = true))
+
+    // 3. Core title match (e.g. both core titles are "kesariya" or "starboy" or "deva deva")
+    if (coreA.isNotBlank() && coreB.isNotBlank() && coreA == coreB && coreA.length >= 3) {
+        if (artistOverlap) return true
+        val durDiff = if (this.durationSeconds > 0 && other.durationSeconds > 0) {
+            Math.abs(this.durationSeconds - other.durationSeconds)
+        } else 0
+        if (durDiff <= 120) return true
+    }
+
+    // 4. Substring containment (e.g. "kesariya" is contained in "kesariya brahmastra")
+    if (alphaA.length >= 4 && alphaB.length >= 4) {
+        if (alphaA.startsWith(alphaB) || alphaB.startsWith(alphaA) || alphaA.contains(alphaB) || alphaB.contains(alphaA)) {
+            if (artistOverlap) return true
             val durDiff = if (this.durationSeconds > 0 && other.durationSeconds > 0) {
                 Math.abs(this.durationSeconds - other.durationSeconds)
             } else 0
-            if (durDiff <= 45) {
-                return true
-            }
+            if (durDiff <= 90) return true
         }
     }
 
-    // 4. Token overlap match (Jaccard similarity on significant words >= 3 chars)
+    // 5. Token overlap match (Jaccard similarity on significant words >= 3 chars)
     val wordsA = cleanA.split(" ").filter { it.length >= 3 }.toSet()
     val wordsB = cleanB.split(" ").filter { it.length >= 3 }.toSet()
     if (wordsA.isNotEmpty() && wordsB.isNotEmpty()) {
         val intersection = wordsA.intersect(wordsB).size
         val union = wordsA.union(wordsB).size
         val jaccard = intersection.toFloat() / union.toFloat()
-        if (jaccard >= 0.8f) {
+        if (jaccard >= 0.50f) {
+            if (artistOverlap) return true
             val durDiff = if (this.durationSeconds > 0 && other.durationSeconds > 0) {
                 Math.abs(this.durationSeconds - other.durationSeconds)
             } else 0
-            if (durDiff <= 45) return true
+            if (durDiff <= 90) return true
         }
+    }
+
+    // 6. Transliteration / Levenshtein match for titles >= 5 chars by the same artist
+    if (artistOverlap && alphaA.length >= 5 && alphaB.length >= 5) {
+        val dist = levenshteinDistance(alphaA, alphaB)
+        if (dist <= 2) return true
     }
 
     return false
