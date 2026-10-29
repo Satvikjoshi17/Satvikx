@@ -15,6 +15,7 @@ import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.playback.PlaybackConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -30,6 +31,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import javax.inject.Inject
 
 import com.satvik.satvikx.data.repository.RecommendationRepository
@@ -64,13 +66,21 @@ class SearchViewModel @Inject constructor(
     }
 
     private val queryFlow = MutableStateFlow("")
+    private var searchJob: Job? = null
+
+    // High-performance LRU cache for instantaneous 0ms search recall
+    private val searchCache = object : LinkedHashMap<String, List<TrackEntity>>(40, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<TrackEntity>>?): Boolean {
+            return size > 40
+        }
+    }
 
     init {
-        // Debounce query input to eliminate unnecessary API requests
+        // Debounce query input to eliminate unnecessary API requests and preserve typing cadence
         queryFlow
-            .debounce(450)
+            .debounce(650)
             .distinctUntilChanged()
-            .filter { it.isNotBlank() }
+            .filter { it.trim().length >= 2 }
             .onEach { query ->
                 executeSearch(query, saveToHistory = false)
             }
@@ -85,7 +95,8 @@ class SearchViewModel @Inject constructor(
     }
 
     private fun loadInitialTrending() {
-        viewModelScope.launch {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null) }
             streamRepository.searchTracks("Trending Global Hits").collect { result ->
                 result.fold(
@@ -113,14 +124,17 @@ class SearchViewModel @Inject constructor(
     }
 
     fun onQueryChanged(newQuery: String) {
+        // Keep the exact input with all spaces and characters intact
         _uiState.update { it.copy(query = newQuery) }
         queryFlow.value = newQuery
         if (newQuery.isBlank()) {
+            searchJob?.cancel()
             _uiState.update { it.copy(results = emptyList(), isSearching = false, error = null) }
         }
     }
 
     fun clearSearch() {
+        searchJob?.cancel()
         _uiState.update { it.copy(query = "", results = emptyList(), isSearching = false, error = null) }
         queryFlow.value = ""
     }
@@ -181,28 +195,56 @@ class SearchViewModel @Inject constructor(
      * Executes track search with strict song-only filtering and intelligent music intent resolution.
      * @param saveToHistory When true (e.g. keyboard Search action or clicking a suggestion),
      *                      saves the query into search history. Live debounced typing passes false
-     *                      so pausing while typing never records incomplete queries.
+     *                      so pausing while typing never records incomplete queries or strips user typing spaces.
      */
     fun executeSearch(query: String, saveToHistory: Boolean = false) {
         val trimmed = query.trim()
-        if (trimmed.isBlank()) return
+        if (trimmed.isBlank()) {
+            searchJob?.cancel()
+            _uiState.update { it.copy(isSearching = false, results = emptyList(), error = null) }
+            return
+        }
 
         if (saveToHistory) {
             viewModelScope.launch {
                 searchHistoryDao.recordSearchQuery(SearchHistoryEntity(trimmed))
             }
+            // Explicit user action (chip click or history click): update query to trimmed
+            _uiState.update { it.copy(query = trimmed) }
+        } else {
+            // Live typing debounce: PRESERVE user query exactly as typed so pauses and spaces are never stripped!
+            _uiState.update { it.copy(query = query) }
         }
-        _uiState.update { it.copy(query = trimmed) }
 
         val backendQuery = resolveMusicIntentQuery(trimmed)
+        val cacheKey = backendQuery.lowercase(Locale.ROOT)
 
-        viewModelScope.launch {
+        // Instant LRU cache recall: immediate 0ms response for repeat or refined queries
+        val cachedResults = searchCache[cacheKey]
+        if (cachedResults != null && cachedResults.isNotEmpty()) {
+            searchJob?.cancel()
+            _uiState.update {
+                it.copy(
+                    isSearching = false,
+                    results = cachedResults,
+                    error = null
+                )
+            }
+            return
+        }
+
+        // Cancel previous search job to prevent race conditions when typing quickly
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null) }
             streamRepository.searchTracks(backendQuery).collect { result ->
                 result.fold(
                     onSuccess = { tracks ->
                         val allowMashup = trimmed.contains("mashup", ignoreCase = true)
                         val songsOnly = tracks.filter { it.isSongOnly(allowMashup = allowMashup) }
+                        if (songsOnly.isNotEmpty()) {
+                            searchCache[cacheKey] = songsOnly
+                        }
                         _uiState.update {
                             it.copy(
                                 isSearching = false,

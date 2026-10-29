@@ -45,12 +45,13 @@ class MainActivity : ComponentActivity() {
     private fun handleBlendIntent(intent: android.content.Intent?) {
         val uri = intent?.data
         if (uri != null && uri.scheme == "satvikx" && uri.host == "blend") {
-            val token = uri.getQueryParameter("data")
+            val token = uri.getQueryParameter("data") ?: uri.getQueryParameter("token") ?: uri.getQueryParameter("code")
             if (!token.isNullOrBlank()) {
+                val cleanCode = if (token.startsWith("STKBLD:")) token else "STKBLD:$token"
                 val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip = android.content.ClipData.newPlainText("Stark Blend Token", token)
+                val clip = android.content.ClipData.newPlainText("Stark Blend Code", cleanCode)
                 clipboard.setPrimaryClip(clip)
-                android.widget.Toast.makeText(this, "Stark Blend invite detected! Open Playlists > Join Code to fuse.", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(this, "Stark Blend code detected! Open Playlists > Join Code to fuse.", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }

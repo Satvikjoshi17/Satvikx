@@ -1,5 +1,8 @@
 package com.satvik.satvikx.ui.screens
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
@@ -29,6 +32,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
@@ -174,6 +179,30 @@ fun BlendDetailScreen(
                     expanded = showMenu,
                     onDismissRequest = { showMenu = false }
                 ) {
+                    DropdownMenuItem(
+                        text = { Text("Save as Playlist", fontFamily = FontFamily.Monospace) },
+                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, tint = ArcCyanBright) },
+                        onClick = {
+                            showMenu = false
+                            viewModel.saveBlendAsPlaylist(blendWithTracks) {
+                                Toast.makeText(context, "Saved '${blend.title}' to Playlists", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Copy Match Summary", fontFamily = FontFamily.Monospace) },
+                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, tint = ArcCyanBright) },
+                        onClick = {
+                            showMenu = false
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = ClipData.newPlainText(
+                                "Stark Blend Match",
+                                "${blend.title} • ${blend.matchScore}% Match • Top Genre: ${blend.topSharedGenre}"
+                            )
+                            clipboard.setPrimaryClip(clip)
+                            Toast.makeText(context, "Blend match summary copied", Toast.LENGTH_SHORT).show()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text("Share Match Card", fontFamily = FontFamily.Monospace) },
                         leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = ArcCyanBright) },

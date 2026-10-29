@@ -15,6 +15,8 @@ import com.satvik.satvikx.data.remote.saavn.SaavnMediaEngine
 import com.satvik.satvikx.playback.StreamUrlValidator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -94,36 +96,47 @@ class StreamRepositoryImpl @Inject constructor(
             }
         }
 
-        // DEEP FUSED SEARCH: Combine YouTube Engine & Studio Master Engine
+        // DEEP FUSED SEARCH: Concurrently Query YouTube Engine & Studio Master Engine
         val combinedTracks = mutableListOf<TrackEntity>()
         val seenTrackIds = mutableSetOf<String>()
 
-        // 1. YouTube Deep Multi-Page Search via NewPipeExtractor
-        try {
-            val ytTracks = newPipeYouTubeEngine.search(trimmed, deepSearch = true)
-            for (track in ytTracks) {
-                if (seenTrackIds.add(track.id)) {
-                    combinedTracks.add(track)
+        coroutineScope {
+            val ytDeferred = async {
+                try {
+                    newPipeYouTubeEngine.search(trimmed, deepSearch = true)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "NewPipe YouTube deep search non-fatal: ${e.message}")
+                    emptyList()
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "NewPipe YouTube deep search non-fatal: ${e.message}")
-        }
 
-        // 2. High-fidelity studio masters from JioSaavn 320kbps CDN
-        try {
-            val saavnTracks = saavnMediaEngine.searchTracks(trimmed)
+            val saavnDeferred = async {
+                try {
+                    saavnMediaEngine.searchTracks(trimmed)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Native Saavn search non-fatal: ${e.message}")
+                    emptyList()
+                }
+            }
+
+            val ytTracks = ytDeferred.await()
+            val saavnTracks = saavnDeferred.await()
+
+            // Prioritize studio master tracks first, then YouTube tracks
             for (track in saavnTracks) {
                 if (seenTrackIds.add(track.id)) {
                     combinedTracks.add(track)
                 }
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Native Saavn search non-fatal: ${e.message}")
+            for (track in ytTracks) {
+                if (seenTrackIds.add(track.id)) {
+                    combinedTracks.add(track)
+                }
+            }
         }
 
         if (combinedTracks.isNotEmpty()) {

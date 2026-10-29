@@ -2,11 +2,14 @@ package com.satvik.satvikx.data.repository
 
 import android.util.Base64
 import com.satvik.satvikx.data.local.dao.BlendDao
+import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.AttributedTrack
 import com.satvik.satvikx.data.local.entity.BlendEntity
 import com.satvik.satvikx.data.local.entity.BlendTrackCrossRef
 import com.satvik.satvikx.data.local.entity.BlendWithTracks
+import com.satvik.satvikx.data.local.entity.PlaylistEntity
+import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.cleanArtistName
 import com.satvik.satvikx.data.local.entity.cleanSongTitle
@@ -19,8 +22,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
+import java.net.URLDecoder
 import java.util.Locale
 import java.util.UUID
+import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -48,6 +56,7 @@ data class CuratedBlendArtist(
 class BlendRepository @Inject constructor(
     private val blendDao: BlendDao,
     private val trackDao: TrackDao,
+    private val playlistDao: PlaylistDao,
     private val recommendationRepository: RecommendationRepository,
     private val streamRepository: StreamRepository,
     private val authRepository: AuthRepository,
@@ -163,34 +172,122 @@ class BlendRepository @Inject constructor(
     }
 
     /**
+     * Extracts strictly the clean Blend code (e.g. "STKBLD:...") from any input string,
+     * stripping any surrounding chat text, explanations, or deep link wrappers.
+     */
+    fun extractCleanCode(rawInput: String): String {
+        if (rawInput.isBlank()) return ""
+        val trimmed = rawInput.trim()
+
+        // 1. If it's a URL or deep link (e.g. satvikx://blend?data=...)
+        val fromQuery = when {
+            trimmed.contains("data=") -> trimmed.substringAfter("data=").substringBefore("&").substringBefore(" ").substringBefore("\n")
+            trimmed.contains("token=") -> trimmed.substringAfter("token=").substringBefore("&").substringBefore(" ").substringBefore("\n")
+            trimmed.contains("code=") -> trimmed.substringAfter("code=").substringBefore("&").substringBefore(" ").substringBefore("\n")
+            else -> null
+        }
+
+        var candidate = (fromQuery ?: trimmed).trim()
+
+        // Handle URL decoding if encoded (e.g. %3A for :)
+        try {
+            candidate = URLDecoder.decode(candidate, "UTF-8")
+        } catch (_: Exception) {}
+
+        // 2. If it contains STKBLD:
+        if (candidate.contains("STKBLD:")) {
+            val afterPrefix = candidate.substringAfter("STKBLD:")
+                .substringBefore(" ")
+                .substringBefore("\n")
+                .substringBefore("\"")
+                .substringBefore("'")
+                .trim()
+            val cleanToken = afterPrefix.replace("\\s+".toRegex(), "").trim('"', '\'', '`', '<', '>', '(', ')')
+            return "STKBLD:$cleanToken"
+        }
+
+        // 3. Otherwise clean whitespace/quotes
+        val cleanCandidate = candidate.replace("\\s+".toRegex(), "").trim('"', '\'', '`', '<', '>', '(', ')')
+        return if (cleanCandidate.startsWith("STKBLD:")) cleanCandidate else cleanCandidate
+    }
+
+    /**
      * Encodes a Blend invite payload into a portable URL-safe token.
+     * Uses GZIP compression to keep the code ultra-compact and easy to copy.
      */
     fun encodeInviteToken(payload: BlendInvitePayload): String {
         val json = payloadAdapter.toJson(payload)
-        val base64 = Base64.encodeToString(json.toByteArray(Charsets.UTF_8), Base64.NO_WRAP or Base64.URL_SAFE)
+        val byteStream = ByteArrayOutputStream()
+        GZIPOutputStream(byteStream).use { it.write(json.toByteArray(Charsets.UTF_8)) }
+        val compressed = byteStream.toByteArray()
+        val base64 = Base64.encodeToString(compressed, Base64.NO_WRAP or Base64.URL_SAFE)
         return "STKBLD:$base64"
     }
 
     /**
      * Decodes a portable invite token back into a BlendInvitePayload.
+     * Supports GZIP-compressed tokens, uncompressed legacy tokens, deep link URLs,
+     * and auto-extracts the code even if pasted inside surrounding chat text.
      */
     fun decodeInviteToken(rawToken: String): BlendInvitePayload? {
-        val token = rawToken.trim()
-        val cleanBase64 = when {
-            token.startsWith("STKBLD:") -> token.removePrefix("STKBLD:")
-            token.contains("blend?data=") -> token.substringAfter("blend?data=")
-            token.contains("blend?token=") -> token.substringAfter("blend?token=")
-            token.contains("code=") -> token.substringAfter("code=")
-            else -> token
+        if (rawToken.isBlank()) return null
+
+        val cleanCode = extractCleanCode(rawToken)
+        val cleanBase64 = if (cleanCode.startsWith("STKBLD:")) {
+            cleanCode.removePrefix("STKBLD:")
+        } else {
+            cleanCode
+        }
+
+        if (cleanBase64.isBlank()) return null
+
+        val bytes = try {
+            Base64.decode(cleanBase64, Base64.NO_WRAP or Base64.URL_SAFE)
+        } catch (_: Exception) {
+            try {
+                Base64.decode(cleanBase64, Base64.DEFAULT)
+            } catch (_: Exception) {
+                return null
+            }
+        }
+
+        val json = try {
+            if (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()) {
+                GZIPInputStream(ByteArrayInputStream(bytes)).bufferedReader(Charsets.UTF_8).use { it.readText() }
+            } else {
+                String(bytes, Charsets.UTF_8)
+            }
+        } catch (_: Exception) {
+            return null
         }
 
         return try {
-            val bytes = Base64.decode(cleanBase64, Base64.NO_WRAP or Base64.URL_SAFE)
-            val json = String(bytes, Charsets.UTF_8)
             payloadAdapter.fromJson(json)
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Saves a synthesized Stark Blend as a permanent custom playlist in the user's library.
+     */
+    suspend fun saveBlendAsPlaylist(blendWithTracks: BlendWithTracks): Long = withContext(Dispatchers.IO) {
+        val playlist = PlaylistEntity(
+            name = blendWithTracks.blend.title,
+            createdAtTimestamp = System.currentTimeMillis(),
+            isCustom = true
+        )
+        val playlistId = playlistDao.insertPlaylist(playlist)
+        val refs = blendWithTracks.attributedTracks.mapIndexed { idx, item ->
+            PlaylistTrackCrossRef(
+                playlistId = playlistId,
+                trackId = item.track.id,
+                position = idx,
+                addedAtTimestamp = System.currentTimeMillis()
+            )
+        }
+        playlistDao.insertPlaylistTrackCrossRefs(refs)
+        playlistId
     }
 
     /**

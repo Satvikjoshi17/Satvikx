@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.local.entity.BlendEntity
 import com.satvik.satvikx.data.local.entity.BlendWithTracks
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.repository.BlendInvitePayload
 import com.satvik.satvikx.data.repository.BlendRepository
 import com.satvik.satvikx.data.repository.CuratedBlendArtist
 import com.satvik.satvikx.playback.PlaybackConnectionManager
@@ -19,6 +20,12 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+
+data class BlendInviteInfo(
+    val code: String,
+    val payload: BlendInvitePayload,
+    val shareText: String
+)
 
 data class BlendUiState(
     val activeBlend: BlendWithTracks? = null,
@@ -94,19 +101,42 @@ class BlendViewModel @Inject constructor(
         }
     }
 
-    suspend fun getInviteShareText(): String = withContext(Dispatchers.IO) {
+    suspend fun generateInviteInfo(): BlendInviteInfo = withContext(Dispatchers.IO) {
         val payload = blendRepository.generateInvitePayload()
         val token = blendRepository.encodeInviteToken(payload)
-        val userName = payload.userName
+        BlendInviteInfo(
+            code = token,
+            payload = payload,
+            shareText = token
+        )
+    }
 
-        """
-        🎧 Blend with $userName on Stark Blend!
-        I've generated a shared music taste blend with you. Tap the link or paste this token in SatvikX to see our Taste Match:
+    suspend fun getInviteCode(): String = withContext(Dispatchers.IO) {
+        val payload = blendRepository.generateInvitePayload()
+        blendRepository.encodeInviteToken(payload)
+    }
 
-        $token
+    suspend fun getInviteShareText(): String = withContext(Dispatchers.IO) {
+        getInviteCode()
+    }
 
-        satvikx://blend?data=$token
-        """.trimIndent()
+    fun extractCleanCode(rawToken: String): String {
+        return blendRepository.extractCleanCode(rawToken)
+    }
+
+    fun peekInvitePayload(rawToken: String): BlendInvitePayload? {
+        return blendRepository.decodeInviteToken(rawToken)
+    }
+
+    fun saveBlendAsPlaylist(blendWithTracks: BlendWithTracks, onComplete: (Long) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val playlistId = blendRepository.saveBlendAsPlaylist(blendWithTracks)
+                onComplete(playlistId)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Could not save playlist: ${e.message}") }
+            }
+        }
     }
 
     fun joinBlendWithToken(rawToken: String, onComplete: (String) -> Unit) {

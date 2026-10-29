@@ -116,9 +116,10 @@ fun SearchScreen(
         )
     }
 
-    // Keep textFieldValue in sync whenever external query changes (e.g. cleared or changed by pills/history)
+    // Keep textFieldValue in sync only when external query changes (e.g. cleared, quick pick pill, or history tap)
+    // Never overwrite while the user is actively typing with matching base query so pauses and spaces are preserved
     LaunchedEffect(uiState.query) {
-        if (textFieldValue.text != uiState.query) {
+        if (textFieldValue.text.trim() != uiState.query.trim() || uiState.query.isEmpty()) {
             textFieldValue = TextFieldValue(
                 text = uiState.query,
                 selection = TextRange(uiState.query.length)
@@ -363,10 +364,12 @@ fun SearchScreen(
             // Results / Explore Grid / Loading / Error
             Box(modifier = Modifier.fillMaxSize()) {
                 when {
-                    uiState.isSearching -> {
+                    // Initial search loading when no results exist yet
+                    uiState.isSearching && uiState.results.isEmpty() -> {
                         ShimmerTrackList(modifier = Modifier.padding(top = 8.dp))
                     }
-                    uiState.error != null -> {
+                    // Error when no results exist
+                    uiState.error != null && uiState.results.isEmpty() -> {
                         Box(
                             modifier = Modifier.fillMaxSize(),
                             contentAlignment = Alignment.Center
@@ -378,8 +381,18 @@ fun SearchScreen(
                             )
                         }
                     }
+                    // Results exist (display them stably, showing a slim top progress indicator if background refining)
                     uiState.results.isNotEmpty() -> {
                         Column(modifier = Modifier.fillMaxSize()) {
+                            if (uiState.isSearching) {
+                                androidx.compose.material3.LinearProgressIndicator(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(2.dp),
+                                    color = ArcCyanBright,
+                                    trackColor = Color.Transparent
+                                )
+                            }
                             Text(
                                 text = "Top Results",
                                 style = MaterialTheme.typography.headlineSmall,
