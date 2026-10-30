@@ -19,9 +19,13 @@ import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.net.URLDecoder
@@ -148,17 +152,59 @@ class BlendRepository @Inject constructor(
     }
 
     /**
-     * Generates a decentralized Taste Token containing the user's name and taste vector.
+     * Generates a decentralized Taste Token containing the user's name and comprehensive taste vector.
+     * Gathers up to 18 authentic tracks across Heavy Rotation, Vault, Liked Songs, Downloads, and Library.
      */
     suspend fun generateInvitePayload(): BlendInvitePayload = withContext(Dispatchers.IO) {
         val affinities = recommendationRepository.analyzeUserAffinities()
         val userName = getCurrentUserName()
         val topArtists = affinities.overallTopArtists.take(6)
         val topGenres = affinities.topGenres.take(4)
-        val anchorTracks = (affinities.heavyRotationTracks + affinities.vaultTracks)
-            .filter { it.isSongOnly() }
-            .distinctSongs()
-            .take(6)
+
+        val candidateTracks = mutableListOf<TrackEntity>()
+        candidateTracks.addAll(affinities.heavyRotationTracks.filter { it.isSongOnly() })
+        candidateTracks.addAll(affinities.vaultTracks.filter { it.isSongOnly() })
+
+        // 1. Liked Songs
+        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+        if (likedPlaylist != null) {
+            val liked = playlistDao.getPlaylistWithTracks(likedPlaylist.playlistId).firstOrNull()?.tracks.orEmpty()
+            candidateTracks.addAll(liked.filter { it.isSongOnly() })
+        }
+
+        // 2. Downloaded Songs
+        val downloaded = trackDao.getDownloadedTracks().firstOrNull().orEmpty()
+        candidateTracks.addAll(downloaded.filter { it.isSongOnly() })
+
+        // 3. Local Library
+        val allLocal = trackDao.getAllTracks().firstOrNull().orEmpty()
+        candidateTracks.addAll(allLocal.filter { it.isSongOnly() })
+
+        var anchorTracks = candidateTracks.distinctSongs().take(18)
+
+        // If library has few tracks (new user), augment with top hits for their top artists
+        if (anchorTracks.size < 10 && topArtists.isNotEmpty()) {
+            val extraHits = try {
+                withTimeoutOrNull(3000L) {
+                    coroutineScope {
+                        topArtists.take(3).map { artist ->
+                            async {
+                                streamRepository.searchTracks("$artist songs official audio")
+                                    .firstOrNull()?.getOrNull().orEmpty()
+                                    .filter { it.isSongOnly() }
+                                    .take(4)
+                            }
+                        }.awaitAll().flatten()
+                    }
+                }
+            } catch (_: Exception) {
+                null
+            }
+            if (!extraHits.isNullOrEmpty()) {
+                candidateTracks.addAll(extraHits)
+                anchorTracks = candidateTracks.distinctSongs().take(18)
+            }
+        }
 
         BlendInvitePayload(
             userName = userName,
@@ -330,6 +376,12 @@ class BlendRepository @Inject constructor(
 
     /**
      * Synthesizes a Stark Blend between the current user and a friend from an invite token.
+     * Crafts the perfect song mashup:
+     * - Pinpoints the true Shared Anthem (exact song match or top shared artist bridge)
+     * - Resolves partner anchor tracks instantly without blocking network lag
+     * - Enriches User B's vault with up to 18 authentic tracks across liked, downloaded, and rotation
+     * - Seamlessly pulls complementary discovery tracks for shared tastes in parallel
+     * - Curates an authentic, balanced 35-track mashup with vivid color-coded attribution
      */
     suspend fun synthesizeFriendBlend(partnerPayload: BlendInvitePayload): BlendWithTracks = withContext(Dispatchers.IO) {
         val affinities = recommendationRepository.analyzeUserAffinities()
@@ -343,74 +395,173 @@ class BlendRepository @Inject constructor(
             partnerGenres = partnerPayload.topGenres
         )
 
-        // 1. Gather User A's Top Anchor Tracks
-        val userVault = (affinities.heavyRotationTracks + affinities.vaultTracks)
-            .filter { it.isSongOnly() }
-            .distinctSongs()
+        // 1. Gather User B's Deep Library (Up to 18 authentic tracks)
+        val userCandidates = mutableListOf<TrackEntity>()
+        userCandidates.addAll(affinities.heavyRotationTracks.filter { it.isSongOnly() })
+        userCandidates.addAll(affinities.vaultTracks.filter { it.isSongOnly() })
 
-        // 2. Resolve Partner's Anchor Tracks
+        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+        if (likedPlaylist != null) {
+            val liked = playlistDao.getPlaylistWithTracks(likedPlaylist.playlistId).firstOrNull()?.tracks.orEmpty()
+            userCandidates.addAll(liked.filter { it.isSongOnly() })
+        }
+        val downloaded = trackDao.getDownloadedTracks().firstOrNull().orEmpty()
+        userCandidates.addAll(downloaded.filter { it.isSongOnly() })
+        val allLocal = trackDao.getAllTracks().firstOrNull().orEmpty()
+        userCandidates.addAll(allLocal.filter { it.isSongOnly() })
+
+        var userVault = userCandidates.distinctSongs().take(18).toMutableList()
+
+        // If User B has few local tracks, augment concurrently with top artist tracks
+        if (userVault.size < 8 && affinities.overallTopArtists.isNotEmpty()) {
+            val userExtra = try {
+                withTimeoutOrNull(3000L) {
+                    coroutineScope {
+                        affinities.overallTopArtists.take(2).map { artist ->
+                            async {
+                                streamRepository.searchTracks("$artist songs official audio")
+                                    .firstOrNull()?.getOrNull().orEmpty()
+                                    .filter { it.isSongOnly() }
+                                    .take(4)
+                            }
+                        }.awaitAll().flatten()
+                    }
+                }
+            } catch (_: Exception) {
+                null
+            }
+            if (!userExtra.isNullOrEmpty()) {
+                userCandidates.addAll(userExtra)
+                userVault = userCandidates.distinctSongs().take(18).toMutableList()
+            }
+        }
+
+        // 2. Resolve Partner's Anchor Tracks directly from payload with zero network delay
         val partnerAnchorTracks = mutableListOf<TrackEntity>()
         partnerPayload.anchorTitles.forEachIndexed { i, title ->
             val artist = partnerPayload.anchorArtists.getOrNull(i).orEmpty()
+            val trackId = partnerPayload.anchorTrackIds.getOrNull(i).orEmpty()
             if (title.isNotBlank()) {
-                val searchResult = streamRepository.searchTracks("$title $artist official audio")
-                    .firstOrNull()?.getOrNull().orEmpty()
-                val match = searchResult.firstOrNull { it.isSongOnly() }
-                if (match != null) partnerAnchorTracks.add(match)
+                val cached = if (trackId.isNotBlank()) trackDao.getTrackByIdSync(trackId) else null
+                val resolvedTrack = cached ?: TrackEntity(
+                    id = if (trackId.isNotBlank()) trackId else "partner_${UUID.randomUUID().toString().take(11)}",
+                    title = title,
+                    artist = artist.ifBlank { "Featured Artist" },
+                    durationSeconds = 195L,
+                    thumbnailUrl = if (trackId.length == 11 && !trackId.contains("saavn")) {
+                        "https://i.ytimg.com/vi/$trackId/hqdefault.jpg"
+                    } else ""
+                )
+                partnerAnchorTracks.add(resolvedTrack)
             }
         }
 
-        // If partner had few anchor tracks, fetch top hits for their top artists
+        // If partner had few anchor tracks, quickly query partner's top artists concurrently
         if (partnerAnchorTracks.size < 6 && partnerPayload.topArtists.isNotEmpty()) {
-            partnerPayload.topArtists.take(3).forEach { artist ->
-                val artistHits = streamRepository.searchTracks("$artist top hits official audio")
-                    .firstOrNull()?.getOrNull().orEmpty()
-                partnerAnchorTracks.addAll(artistHits.filter { it.isSongOnly() }.take(3))
+            try {
+                withTimeoutOrNull(3000L) {
+                    coroutineScope {
+                        val artistDeferreds = partnerPayload.topArtists.take(2).map { artist ->
+                            async {
+                                streamRepository.searchTracks("$artist top hits official audio")
+                                    .firstOrNull()?.getOrNull().orEmpty()
+                                    .filter { it.isSongOnly() }
+                                    .take(4)
+                            }
+                        }
+                        val hits = artistDeferreds.awaitAll().flatten()
+                        partnerAnchorTracks.addAll(hits)
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. Identify Shared Artists
+        val sharedArtists = affinities.overallTopArtists.filter { uA ->
+            partnerPayload.topArtists.any { pA ->
+                uA.contains(pA, ignoreCase = true) || pA.contains(uA, ignoreCase = true)
             }
         }
 
-        // 3. Identify Shared Anthem
+        // 4. Identify Shared Anthem
+        // Priority 1: Exact song both users have in their vault / anchors
         var sharedAnthem = userVault.firstOrNull { uTrack ->
             partnerAnchorTracks.any { pTrack -> uTrack.isSameSong(pTrack) }
         }
 
-        // If no direct song overlap in anchors, find a track by a shared artist or top partner artist that user loves
-        if (sharedAnthem == null) {
-            val commonArtist = affinities.overallTopArtists.firstOrNull { uA ->
-                partnerPayload.topArtists.any { pA -> uA.equals(pA, ignoreCase = true) }
-            } ?: partnerPayload.topArtists.firstOrNull() ?: affinities.primaryArtist ?: "Arijit Singh"
-
-            val queryHits = streamRepository.searchTracks("$commonArtist top songs audio").firstOrNull()?.getOrNull().orEmpty()
-            sharedAnthem = queryHits.firstOrNull { it.isSongOnly() } ?: userVault.firstOrNull()
-        }
-
-        // 4. Complementary Discoveries (Mutual Discovery)
-        val discoveryGenre = partnerPayload.topGenres.firstOrNull() ?: affinities.primaryGenre ?: "acoustic chill"
-        val mutualDiscoveryTracks = streamRepository.searchTracks("$discoveryGenre songs official audio")
-            .firstOrNull()?.getOrNull().orEmpty()
-            .filter { it.isSongOnly() }
-            .distinctSongs()
-
-        // 5. Interleaving Algorithm with Attribution
-        val attributedList = mutableListOf<AttributedTrack>()
-        val seenTrackKeys = HashSet<String>()
-
-        fun addTrack(track: TrackEntity, broughtBy: String, broughtByName: String) {
-            val key = track.cleanSongTitle().replace(" ", "")
-            if (key.isNotBlank() && seenTrackKeys.add(key)) {
-                attributedList.add(AttributedTrack(track, broughtBy, broughtByName))
+        // Priority 2: Song by a shared artist both users love
+        if (sharedAnthem == null && sharedArtists.isNotEmpty()) {
+            sharedAnthem = userVault.firstOrNull { uTrack ->
+                sharedArtists.any { a -> uTrack.artist.contains(a, ignoreCase = true) }
+            } ?: partnerAnchorTracks.firstOrNull { pTrack ->
+                sharedArtists.any { a -> pTrack.artist.contains(a, ignoreCase = true) }
             }
         }
 
-        // Add Shared Anthem first as the iconic anchor
+        // Priority 3: Top anchor from partner or user
+        if (sharedAnthem == null) {
+            sharedAnthem = partnerAnchorTracks.firstOrNull() ?: userVault.firstOrNull()
+        }
+
+        // 5. Complementary Mutual Discoveries: Fetch in parallel under safety timeout
+        val discoveryGenre = partnerPayload.topGenres.firstOrNull() ?: affinities.primaryGenre ?: "acoustic chill"
+        val mutualDiscoveryTracks = try {
+            withTimeoutOrNull(3500L) {
+                coroutineScope {
+                    val genreJob = async {
+                        streamRepository.searchTracks("$discoveryGenre songs official audio")
+                            .firstOrNull()?.getOrNull().orEmpty()
+                            .filter { it.isSongOnly() }
+                            .distinctSongs()
+                            .take(6)
+                    }
+                    val sharedArtistJob = async {
+                        val seedArtist = sharedArtists.firstOrNull()
+                            ?: partnerPayload.topArtists.firstOrNull()
+                            ?: affinities.overallTopArtists.firstOrNull()
+                        if (seedArtist != null) {
+                            streamRepository.searchTracks("$seedArtist top songs audio")
+                                .firstOrNull()?.getOrNull().orEmpty()
+                                .filter { it.isSongOnly() }
+                                .distinctSongs()
+                                .take(6)
+                        } else emptyList()
+                    }
+                    (genreJob.await() + sharedArtistJob.await()).distinctSongs()
+                }
+            } ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+        // 6. Intelligent Curation & Interleaving (Target: 35 tracks)
+        val attributedList = mutableListOf<AttributedTrack>()
+        val seenTrackKeys = HashSet<String>()
+
+        fun addTrack(track: TrackEntity, broughtBy: String, broughtByName: String): Boolean {
+            val key = track.cleanSongTitle().replace(" ", "").lowercase(Locale.ROOT)
+            if (key.isNotBlank() && seenTrackKeys.add(key)) {
+                attributedList.add(AttributedTrack(track, broughtBy, broughtByName))
+                return true
+            }
+            return false
+        }
+
+        // 1st Track: The Shared Anthem ("Both")
         if (sharedAnthem != null) {
             addTrack(sharedAnthem, "both", "Both")
         }
 
-        val uIter = userVault.iterator()
-        val pIter = partnerAnchorTracks.distinctSongs().iterator()
-        val dIter = mutualDiscoveryTracks.iterator()
+        // Separate user and partner tracks into distinct iterators
+        val uTracks = userVault.filter { sharedAnthem?.isSameSong(it) != true }
+        val pTracks = partnerAnchorTracks.filter { sharedAnthem?.isSameSong(it) != true }
+        val dTracks = mutualDiscoveryTracks.filter { sharedAnthem?.isSameSong(it) != true }
 
+        val uIter = uTracks.iterator()
+        val pIter = pTracks.iterator()
+        val dIter = dTracks.iterator()
+
+        // Interleave in a studio-quality mashup pattern
         while (attributedList.size < 35 && (uIter.hasNext() || pIter.hasNext() || dIter.hasNext())) {
             if (uIter.hasNext() && attributedList.size < 35) {
                 addTrack(uIter.next(), "creator", creatorName)
@@ -418,9 +569,22 @@ class BlendRepository @Inject constructor(
             if (pIter.hasNext() && attributedList.size < 35) {
                 addTrack(pIter.next(), "partner", partnerName)
             }
-            if (dIter.hasNext() && attributedList.size < 35 && attributedList.size % 4 == 0) {
+            // Insert a shared/discovery song every 4 tracks
+            if (dIter.hasNext() && attributedList.size < 35 && (attributedList.size % 4 == 0)) {
                 addTrack(dIter.next(), "both", "Both")
             }
+        }
+
+        // If still under 35 tracks, fill remaining slots with any unused tracks
+        val allRemaining = (dTracks + pTracks + uTracks)
+        for (track in allRemaining) {
+            if (attributedList.size >= 35) break
+            val brought = when {
+                pTracks.any { it.isSameSong(track) } -> Pair("partner", partnerName)
+                uTracks.any { it.isSameSong(track) } -> Pair("creator", creatorName)
+                else -> Pair("both", "Both")
+            }
+            addTrack(track, brought.first, brought.second)
         }
 
         val blendId = "bld_" + UUID.randomUUID().toString().take(8)
@@ -443,9 +607,8 @@ class BlendRepository @Inject constructor(
             isArtistBlend = false
         )
 
-        for (item in attributedList) {
-            trackDao.insertTrack(item.track)
-        }
+        // Batch insert tracks in room database
+        trackDao.insertTracks(attributedList.map { it.track })
 
         blendDao.insertBlend(blendEntity)
 
@@ -476,13 +639,22 @@ class BlendRepository @Inject constructor(
             .filter { it.isSongOnly() }
             .distinctSongs()
 
-        // Fetch signature hits for each selected artist
-        val artistTracksMap = mutableMapOf<String, List<TrackEntity>>()
-        selectedArtists.forEach { artist ->
-            val tracks = streamRepository.searchTracks(artist.signatureQuery).firstOrNull()?.getOrNull().orEmpty()
-                .filter { it.isSongOnly() }
-                .distinctSongs()
-            artistTracksMap[artist.name] = tracks
+        // Fetch signature hits for each selected artist concurrently with safety timeout
+        val artistTracksMap = coroutineScope {
+            selectedArtists.map { artist ->
+                async {
+                    val tracks = try {
+                        withTimeoutOrNull(4000L) {
+                            streamRepository.searchTracks(artist.signatureQuery).firstOrNull()?.getOrNull().orEmpty()
+                                .filter { it.isSongOnly() }
+                                .distinctSongs()
+                        } ?: emptyList()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    artist.name to tracks
+                }
+            }.awaitAll().toMap()
         }
 
         // Calculate realistic affinity score

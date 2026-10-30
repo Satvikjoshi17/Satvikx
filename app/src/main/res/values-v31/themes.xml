@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.SatvikX" parent="android:Theme.Material.Light.NoActionBar">
+        <!-- Android 12+ (API 31+) Native Splash Screen -->
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_satvikx_logo</item>
+        <item name="android:windowSplashScreenBackground">#010810</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">#010810</item>
+
+        <!-- Seamless Dark System Navigation and Status Bars -->
+        <item name="android:statusBarColor">#010810</item>
+        <item name="android:navigationBarColor">#010810</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
+

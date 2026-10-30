@@ -71,21 +71,7 @@ fun UpdateDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = PrimaryNeon.copy(alpha = 0.15f),
-                            border = BorderStroke(1.dp, PrimaryNeon),
-                            modifier = Modifier.size(42.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Default.SystemUpdate,
-                                    contentDescription = null,
-                                    tint = PrimaryNeon,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            }
-                        }
+                        SatvikXLogo(sizeDp = 42.dp, showGlow = false)
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
                             Row(verticalAlignment = Alignment.CenterVertically) {

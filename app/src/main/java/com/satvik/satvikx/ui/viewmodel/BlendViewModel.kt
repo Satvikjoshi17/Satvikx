@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import javax.inject.Inject
 
 data class BlendInviteInfo(
@@ -139,6 +140,10 @@ class BlendViewModel @Inject constructor(
         }
     }
 
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+
     fun joinBlendWithToken(rawToken: String, onComplete: (String) -> Unit) {
         val payload = blendRepository.decodeInviteToken(rawToken)
         if (payload == null) {
@@ -149,11 +154,14 @@ class BlendViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isGenerating = true, error = null) }
             try {
-                val created = blendRepository.synthesizeFriendBlend(payload)
+                // Guaranteed safety ceiling so fusing tastes never hangs
+                val created = withTimeout(10_000L) {
+                    blendRepository.synthesizeFriendBlend(payload)
+                }
                 _uiState.update { it.copy(activeBlend = created, isGenerating = false) }
                 onComplete(created.blend.blendId)
             } catch (e: Exception) {
-                _uiState.update { it.copy(isGenerating = false, error = "Failed to blend: ${e.message}") }
+                _uiState.update { it.copy(isGenerating = false, error = "Failed to blend: ${e.message ?: "Synthesis error"}") }
             }
         }
     }

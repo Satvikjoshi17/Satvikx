@@ -15,10 +15,17 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import javax.inject.Inject
 import javax.inject.Singleton
+
+sealed class SignUpResult {
+    data class Success(val profile: UserProfile) : SignUpResult()
+    data class ConfirmationEmailSent(val email: String, val message: String) : SignUpResult()
+    data class Failure(val message: String) : SignUpResult()
+}
 
 data class UserProfile(
     val id: String,
@@ -134,10 +141,8 @@ class AuthRepository @Inject constructor(
 
             _currentUser.value = resolvedProfile
             persistLocalProfile(resolvedProfile)
-            _isLoading.value = false
             resolvedProfile
         } catch (e: Exception) {
-            _isLoading.value = false
             null
         }
     }
@@ -148,14 +153,16 @@ class AuthRepository @Inject constructor(
             val cleanName = displayName.trim().ifBlank { "Operative" }
 
             var supaUser = try {
-                supabaseClient.auth.signInAnonymously(
-                    data = buildJsonObject {
-                        put("display_name", cleanName)
-                        put("avatar_url", avatarUrl)
-                        put("is_guest", true)
-                    }
-                )
-                supabaseClient.auth.currentUserOrNull()
+                withTimeout(12_000L) {
+                    supabaseClient.auth.signInAnonymously(
+                        data = buildJsonObject {
+                            put("display_name", cleanName)
+                            put("avatar_url", avatarUrl)
+                            put("is_guest", true)
+                        }
+                    )
+                    supabaseClient.auth.currentUserOrNull()
+                }
             } catch (e: Exception) {
                 null
             }
@@ -183,73 +190,92 @@ class AuthRepository @Inject constructor(
             )
             _currentUser.value = profile
             persistLocalProfile(profile)
-            _isLoading.value = false
             Result.success(profile)
         } catch (e: Exception) {
-            _isLoading.value = false
             Result.failure(e)
+        } finally {
+            _isLoading.value = false
         }
     }
 
-    suspend fun signUpWithEmail(email: String, pass: String, displayName: String): Result<UserProfile> = withContext(Dispatchers.IO) {
+    suspend fun signUpWithEmail(email: String, pass: String, displayName: String): SignUpResult = withContext(Dispatchers.IO) {
         try {
             _isLoading.value = true
-            supabaseClient.auth.signUpWith(Email) {
-                this.email = email
-                this.password = pass
-                data = buildJsonObject {
-                    put("display_name", displayName)
-                    put("is_guest", false)
+            withTimeout(15_000L) {
+                supabaseClient.auth.signUpWith(Email) {
+                    this.email = email
+                    this.password = pass
+                    data = buildJsonObject {
+                        put("display_name", displayName)
+                        put("is_guest", false)
+                    }
                 }
             }
 
             val user = supabaseClient.auth.currentUserOrNull()
-                ?: return@withContext Result.failure(IllegalStateException("Sign up succeeded, please verify email if required"))
+            if (user != null) {
+                val cleanName = displayName.ifBlank { "Stark Operative" }
+                val profileDto = ProfileDto(
+                    id = user.id,
+                    displayName = cleanName,
+                    avatarUrl = "",
+                    isGuest = false
+                )
 
-            val profileDto = ProfileDto(
-                id = user.id,
-                displayName = displayName.ifBlank { "Stark Operative" },
-                avatarUrl = "",
-                isGuest = false
-            )
+                try {
+                    supabaseClient.from("profiles").upsert(profileDto)
+                } catch (_: Exception) {}
 
-            try {
-                supabaseClient.from("profiles").upsert(profileDto)
-            } catch (_: Exception) {}
-
-            val profile = UserProfile(
-                id = user.id,
-                email = user.email,
-                displayName = profileDto.displayName,
-                avatarUrl = "",
-                isGuest = false
-            )
-            _currentUser.value = profile
-            persistLocalProfile(profile)
-            _isLoading.value = false
-            Result.success(profile)
+                val profile = UserProfile(
+                    id = user.id,
+                    email = user.email,
+                    displayName = profileDto.displayName,
+                    avatarUrl = "",
+                    isGuest = false
+                )
+                _currentUser.value = profile
+                persistLocalProfile(profile)
+                SignUpResult.Success(profile)
+            } else {
+                SignUpResult.ConfirmationEmailSent(
+                    email = email,
+                    message = "Verification link sent to $email! Please verify or log in."
+                )
+            }
         } catch (e: Exception) {
+            SignUpResult.Failure(e.localizedMessage ?: "Registration failed")
+        } finally {
             _isLoading.value = false
-            Result.failure(e)
         }
     }
 
     suspend fun signInWithEmail(email: String, pass: String): Result<UserProfile> = withContext(Dispatchers.IO) {
         try {
             _isLoading.value = true
-            supabaseClient.auth.signInWith(Email) {
-                this.email = email
-                this.password = pass
+            withTimeout(15_000L) {
+                supabaseClient.auth.signInWith(Email) {
+                    this.email = email
+                    this.password = pass
+                }
             }
 
             val profile = loadUserProfile()
-                ?: return@withContext Result.failure(IllegalStateException("Failed to load profile after login"))
+                ?: return@withContext Result.failure(IllegalStateException("Failed to load profile. Please verify your credentials."))
 
             persistLocalProfile(profile)
             Result.success(profile)
         } catch (e: Exception) {
+            val msg = e.localizedMessage.orEmpty()
+            val friendlyMsg = if (msg.contains("Email not confirmed", ignoreCase = true)) {
+                "Email not confirmed yet. Please check your inbox or turn off 'Confirm email' in Supabase."
+            } else if (msg.contains("Invalid login credentials", ignoreCase = true)) {
+                "Invalid email or password."
+            } else {
+                msg.ifBlank { "Authentication failed" }
+            }
+            Result.failure(Exception(friendlyMsg, e))
+        } finally {
             _isLoading.value = false
-            Result.failure(e)
         }
     }
 
@@ -286,13 +312,13 @@ class AuthRepository @Inject constructor(
             } catch (_: Exception) {}
             clearLocalProfile()
             _currentUser.value = null
-            _isLoading.value = false
             Result.success(Unit)
         } catch (e: Exception) {
             clearLocalProfile()
             _currentUser.value = null
-            _isLoading.value = false
             Result.failure(e)
+        } finally {
+            _isLoading.value = false
         }
     }
 }

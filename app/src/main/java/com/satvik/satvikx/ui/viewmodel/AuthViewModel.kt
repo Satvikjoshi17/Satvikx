@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.repository.AuthRepository
 import com.satvik.satvikx.data.repository.CloudSyncRepository
+import com.satvik.satvikx.data.repository.SignUpResult
 import com.satvik.satvikx.data.repository.SyncState
 import com.satvik.satvikx.data.repository.UserProfile
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -52,15 +53,18 @@ class AuthViewModel @Inject constructor(
         }
     }
 
-    fun signUpWithEmail(email: String, pass: String, displayName: String, onResult: (Boolean, String?) -> Unit) {
+    fun signUpWithEmail(
+        email: String,
+        pass: String,
+        displayName: String,
+        onResult: (SignUpResult) -> Unit
+    ) {
         viewModelScope.launch {
             val result = authRepository.signUpWithEmail(email, pass, displayName)
-            result.onSuccess {
+            if (result is SignUpResult.Success) {
                 cloudSyncRepository.syncAll()
-                onResult(true, null)
-            }.onFailure {
-                onResult(false, it.localizedMessage ?: "Sign up failed")
             }
+            onResult(result)
         }
     }
 

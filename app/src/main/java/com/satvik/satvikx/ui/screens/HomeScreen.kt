@@ -88,6 +88,7 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.repository.ArtistAffinity
 import com.satvik.satvikx.data.repository.DailyMix
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
+import com.satvik.satvikx.ui.components.SatvikXLogo
 import com.satvik.satvikx.ui.components.ShimmerTrackList
 import com.satvik.satvikx.ui.components.StarkAuthDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
@@ -204,8 +205,8 @@ fun HomeScreen(
                                 .padding(end = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Animated J.A.R.V.I.S. Holographic Arc Reactor
-                            JarvisHologramReactor(sizeDp = 42)
+                            // Official SatvikX Holographic Logo
+                            SatvikXLogo(sizeDp = 44.dp)
 
                             Spacer(modifier = Modifier.width(10.dp))
 

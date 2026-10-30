@@ -170,6 +170,7 @@ fun JoinBlendDialog(
                                     detectedClipboardCode?.let {
                                         tokenInput = it
                                         detectedClipboardCode = null
+                                        viewModel.clearError()
                                         Toast.makeText(context, "Code inserted from clipboard", Toast.LENGTH_SHORT).show()
                                     }
                                 }
@@ -209,6 +210,7 @@ fun JoinBlendDialog(
                     onValueChange = { input ->
                         // Automatically clean any messy pasted chat text
                         tokenInput = viewModel.extractCleanCode(input).ifBlank { input }
+                        viewModel.clearError()
                     },
                     placeholder = {
                         Text(

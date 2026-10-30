@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.satvik.satvikx.data.repository.SignUpResult
 import com.satvik.satvikx.data.repository.SyncState
 import com.satvik.satvikx.data.repository.UserProfile
 import com.satvik.satvikx.ui.theme.ArcCyan
@@ -256,12 +257,19 @@ fun StarkAuthDialog(
                             }
                         },
                         onEmailSignUp = { email, pass, name ->
-                            authViewModel.signUpWithEmail(email, pass, name) { success, error ->
-                                if (success) {
-                                    Toast.makeText(context, "Stark ID registered successfully!", Toast.LENGTH_SHORT).show()
-                                    onDismiss()
-                                } else {
-                                    Toast.makeText(context, error ?: "Registration failed", Toast.LENGTH_LONG).show()
+                            authViewModel.signUpWithEmail(email, pass, name) { result ->
+                                when (result) {
+                                    is SignUpResult.Success -> {
+                                        Toast.makeText(context, "Stark ID registered successfully!", Toast.LENGTH_SHORT).show()
+                                        onDismiss()
+                                    }
+                                    is SignUpResult.ConfirmationEmailSent -> {
+                                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                        onDismiss()
+                                    }
+                                    is SignUpResult.Failure -> {
+                                        Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
+                                    }
                                 }
                             }
                         }
