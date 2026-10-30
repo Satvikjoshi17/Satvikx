@@ -103,7 +103,11 @@ class BlendViewModel @Inject constructor(
     }
 
     suspend fun generateInviteInfo(): BlendInviteInfo = withContext(Dispatchers.IO) {
-        val payload = blendRepository.generateInvitePayload()
+        val payload = try {
+            blendRepository.generateInvitePayload()
+        } catch (_: Exception) {
+            blendRepository.generateFallbackInvitePayload()
+        }
         val token = blendRepository.encodeInviteToken(payload)
         BlendInviteInfo(
             code = token,

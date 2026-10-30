@@ -182,38 +182,49 @@ class BlendRepository @Inject constructor(
 
         var anchorTracks = candidateTracks.distinctSongs().take(18)
 
-        // If library has few tracks (new user), augment with top hits for their top artists
-        if (anchorTracks.size < 10 && topArtists.isNotEmpty()) {
-            val extraHits = try {
-                withTimeoutOrNull(3000L) {
-                    coroutineScope {
-                        topArtists.take(3).map { artist ->
-                            async {
-                                streamRepository.searchTracks("$artist songs official audio")
-                                    .firstOrNull()?.getOrNull().orEmpty()
-                                    .filter { it.isSongOnly() }
-                                    .take(4)
-                            }
-                        }.awaitAll().flatten()
-                    }
-                }
-            } catch (_: Exception) {
-                null
+        // If library has no tracks yet (brand new user), seed with timeless curated flagship tracks instantly (0ms)
+        if (anchorTracks.isEmpty()) {
+            val seedTitles = listOf("Starboy", "Kesariya", "Lover", "Yellow", "Blinding Lights", "Believer")
+            val seedArtists = listOf("The Weeknd", "Arijit Singh", "Taylor Swift", "Coldplay", "The Weeknd", "Imagine Dragons")
+            val seedIds = listOf("34Na4j8AVgA", "BddP6PYo2gs", "-BjZmE2gtdo", "yKNxeF4KMsY", "4NRXx6U8ABQ", "7wtfhZwyrcc")
+            seedTitles.forEachIndexed { idx, title ->
+                candidateTracks.add(
+                    TrackEntity(
+                        id = seedIds[idx],
+                        title = title,
+                        artist = seedArtists[idx],
+                        durationSeconds = 210L,
+                        thumbnailUrl = "https://i.ytimg.com/vi/${seedIds[idx]}/hqdefault.jpg"
+                    )
+                )
             }
-            if (!extraHits.isNullOrEmpty()) {
-                candidateTracks.addAll(extraHits)
-                anchorTracks = candidateTracks.distinctSongs().take(18)
-            }
+            anchorTracks = candidateTracks.take(18)
         }
 
         BlendInvitePayload(
             userName = userName,
             userAvatar = "",
-            topArtists = topArtists,
-            topGenres = topGenres,
+            topArtists = topArtists.ifEmpty { listOf("The Weeknd", "Arijit Singh", "Taylor Swift", "Coldplay") },
+            topGenres = topGenres.ifEmpty { listOf("Pop", "Bollywood", "Acoustic", "Rock") },
             anchorTrackIds = anchorTracks.map { it.id },
             anchorTitles = anchorTracks.map { it.title },
             anchorArtists = anchorTracks.map { it.artist }
+        )
+    }
+
+    /**
+     * Fallback payload generator when unexpected exceptions occur, guaranteeing 100% availability.
+     */
+    fun generateFallbackInvitePayload(): BlendInvitePayload {
+        val userName = getCurrentUserName()
+        return BlendInvitePayload(
+            userName = userName,
+            userAvatar = "",
+            topArtists = listOf("The Weeknd", "Arijit Singh", "Taylor Swift", "Coldplay"),
+            topGenres = listOf("Pop", "Bollywood", "Acoustic", "Rock"),
+            anchorTrackIds = listOf("34Na4j8AVgA", "BddP6PYo2gs", "-BjZmE2gtdo", "yKNxeF4KMsY"),
+            anchorTitles = listOf("Starboy", "Kesariya", "Lover", "Yellow"),
+            anchorArtists = listOf("The Weeknd", "Arijit Singh", "Taylor Swift", "Coldplay")
         )
     }
 
