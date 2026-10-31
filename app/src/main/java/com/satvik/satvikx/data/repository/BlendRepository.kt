@@ -56,6 +56,90 @@ data class CuratedBlendArtist(
     val avatarUrl: String = ""
 )
 
+data class CuratedSeedTrack(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val genre: String,
+    val durationSeconds: Long = 210L
+) {
+    fun toTrackEntity(): TrackEntity = TrackEntity(
+        id = id,
+        title = title,
+        artist = artist,
+        durationSeconds = durationSeconds,
+        thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+    )
+}
+
+val MASTER_CURATED_TRACKS = listOf(
+    // Bollywood & Romance
+    CuratedSeedTrack("BddP6PYo2gs", "Kesariya", "Arijit Singh, Pritam", "Bollywood", 268L),
+    CuratedSeedTrack("gvyUuxdRdR4", "Tum Hi Ho", "Arijit Singh, Mithoon", "Bollywood", 262L),
+    CuratedSeedTrack("k4yXQkGLeAA", "Raataan Lambiyan", "Jubin Nautiyal, Asees Kaur", "Bollywood", 230L),
+    CuratedSeedTrack("ilNt2bikxwc", "Apna Bana Le", "Arijit Singh, Sachin-Jigar", "Bollywood", 261L),
+    CuratedSeedTrack("vM-u5x9A6iM", "Channa Mereya", "Arijit Singh, Pritam", "Bollywood", 289L),
+    CuratedSeedTrack("zC5vV6f1sXU", "Tera Hone Laga Hoon", "Atif Aslam, Alisha Chinai", "Bollywood", 300L),
+    CuratedSeedTrack("yIIGQB6EMAM", "Zara Sa", "KK, Pritam", "Bollywood", 338L),
+    CuratedSeedTrack("y9v-DPn2qdc", "Deva Deva", "Arijit Singh, Pritam", "Bollywood", 279L),
+    CuratedSeedTrack("w9_k_X5i7E4", "Kal Ho Naa Ho", "Sonu Nigam, Shankar-Ehsaan-Loy", "Bollywood", 321L),
+    CuratedSeedTrack("C8kSrkz8Hz8", "Agar Tum Saath Ho", "Alka Yagnik, Arijit Singh", "Bollywood", 341L),
+
+    // Global Pop & Dark R&B
+    CuratedSeedTrack("34Na4j8AVgA", "Starboy", "The Weeknd, Daft Punk", "Global Pop", 230L),
+    CuratedSeedTrack("4NRXx6U8ABQ", "Blinding Lights", "The Weeknd", "Global Pop", 200L),
+    CuratedSeedTrack("-BjZmE2gtdo", "Lover", "Taylor Swift", "Global Pop", 221L),
+    CuratedSeedTrack("b1kbLwvqugk", "Anti-Hero", "Taylor Swift", "Global Pop", 200L),
+    CuratedSeedTrack("OPf0YbXqDm0", "Uptown Funk", "Mark Ronson, Bruno Mars", "Global Pop", 270L),
+    CuratedSeedTrack("JGwWNGJdvx8", "Shape of You", "Ed Sheeran", "Global Pop", 233L),
+    CuratedSeedTrack("dyRsYkffPrE", "bad guy", "Billie Eilish", "Global Pop", 194L),
+    CuratedSeedTrack("yKNxeF4KMsY", "Yellow", "Coldplay", "Global Pop", 269L),
+    CuratedSeedTrack("1G4isv_Fylg", "Paradise", "Coldplay", "Global Pop", 278L),
+    CuratedSeedTrack("7wtfhZwyrcc", "Believer", "Imagine Dragons", "Global Pop", 204L),
+    CuratedSeedTrack("fJ9rUzIMcZQ", "Bohemian Rhapsody", "Queen", "Global Pop", 354L),
+
+    // Punjabi & Urban Desi
+    CuratedSeedTrack("KhyOg8nCoXo", "295", "Sidhu Moose Wala", "Punjabi", 270L),
+    CuratedSeedTrack("cl0a3iCS42w", "Softly", "Karan Aujla", "Punjabi", 155L),
+    CuratedSeedTrack("x8VYWazR5mE", "Lover", "Diljit Dosanjh", "Punjabi", 192L),
+    CuratedSeedTrack("VNs_cCtdbPc", "Excuses", "AP Dhillon, Gurinder Gill", "Punjabi", 176L),
+    CuratedSeedTrack("1nCqRamlz74", "Elevated", "Shubh", "Punjabi", 201L),
+    CuratedSeedTrack("Dcfh9Z81lZk", "No Love", "Shubh", "Punjabi", 170L),
+    CuratedSeedTrack("mH_LSC1Y6EQ", "Cheques", "Shubh", "Punjabi", 183L),
+    CuratedSeedTrack("x8d1vN_6w9g", "Born to Shine", "Diljit Dosanjh", "Punjabi", 213L),
+
+    // Hip-Hop & Rap
+    CuratedSeedTrack("0yW7w8F2TVA", "God's Plan", "Drake", "Hip-Hop", 198L),
+    CuratedSeedTrack("tfSS1e3kYeo", "SICKO MODE", "Travis Scott", "Hip-Hop", 312L),
+    CuratedSeedTrack("_Yhyp-_hX2s", "Lose Yourself", "Eminem", "Hip-Hop", 326L),
+    CuratedSeedTrack("WcIcVapfqXw", "HUMBLE.", "Kendrick Lamar", "Hip-Hop", 177L),
+    CuratedSeedTrack("z4hU3mR4x_w", "Mirchi", "DIVINE", "Hip-Hop", 217L),
+    CuratedSeedTrack("3r6f40Wl8pM", "Kohinoor", "DIVINE", "Hip-Hop", 202L),
+
+    // Indie & Acoustic Folk
+    CuratedSeedTrack("gZd_X8Hw_qE", "Baarishein", "Anuv Jain", "Indie", 208L),
+    CuratedSeedTrack("8367ETnagHo", "cold/mess", "Prateek Kuhad", "Indie", 227L),
+    CuratedSeedTrack("1A8e2q5y0jY", "Alag Aasmaan", "Anuv Jain", "Indie", 232L),
+    CuratedSeedTrack("5GJWxDKyk3U", "Kasoor", "Prateek Kuhad", "Indie", 197L),
+    CuratedSeedTrack("K9Jv4f6p2nQ", "tere bina", "Zaeden", "Indie", 188L),
+
+    // Rock & Stadium Anthems
+    CuratedSeedTrack("v2AC41dglnM", "Thunderstruck", "AC/DC", "Rock", 292L),
+    CuratedSeedTrack("pAgnJDJN4VA", "Back In Black", "AC/DC", "Rock", 255L),
+    CuratedSeedTrack("kXYiU_JCYtU", "Numb", "Linkin Park", "Rock", 187L),
+    CuratedSeedTrack("eVTXPUF4Oz4", "In the End", "Linkin Park", "Rock", 216L),
+
+    // EDM & Synthwave
+    CuratedSeedTrack("60ItHLz5WEA", "Faded", "Alan Walker", "EDM", 212L),
+    CuratedSeedTrack("gCYcTST8s48", "Animals", "Martin Garrix", "EDM", 192L),
+    CuratedSeedTrack("MV_3Dpw-BRY", "Nightcall", "Kavinsky", "Synthwave", 259L),
+    CuratedSeedTrack("rDBbaGCCIhk", "Sunset", "The Midnight", "Synthwave", 326L),
+
+    // Sufi & Classics
+    CuratedSeedTrack("pU8x8x6_8u8", "Afreen Afreen", "Rahat Fateh Ali Khan, Momina Mustehsan", "Sufi", 405L),
+    CuratedSeedTrack("h_e1gN8pW-k", "Jhuki Jhuki Si Nazar", "Jagjit Singh", "Sufi", 303L)
+)
+
 @Singleton
 class BlendRepository @Inject constructor(
     private val blendDao: BlendDao,
@@ -423,28 +507,21 @@ class BlendRepository @Inject constructor(
 
         var userVault = userCandidates.distinctSongs().take(18).toMutableList()
 
-        // If User B has few local tracks, augment concurrently with top artist tracks
-        if (userVault.size < 8 && affinities.overallTopArtists.isNotEmpty()) {
-            val userExtra = try {
-                withTimeoutOrNull(3000L) {
-                    coroutineScope {
-                        affinities.overallTopArtists.take(2).map { artist ->
-                            async {
-                                streamRepository.searchTracks("$artist songs official audio")
-                                    .firstOrNull()?.getOrNull().orEmpty()
-                                    .filter { it.isSongOnly() }
-                                    .take(4)
-                            }
-                        }.awaitAll().flatten()
-                    }
-                }
-            } catch (_: Exception) {
-                null
-            }
-            if (!userExtra.isNullOrEmpty()) {
-                userCandidates.addAll(userExtra)
-                userVault = userCandidates.distinctSongs().take(18).toMutableList()
-            }
+        // If User B has fewer than 18 tracks, augment instantly from Curated Master Vault (0ms delay)
+        if (userVault.size < 18) {
+            val needed = 18 - userVault.size
+            val matchingCurated = MASTER_CURATED_TRACKS.filter { seed ->
+                val matchesGenre = affinities.topGenres.any { seed.genre.contains(it, ignoreCase = true) }
+                val matchesArtist = affinities.overallTopArtists.any { seed.artist.contains(it, ignoreCase = true) }
+                matchesGenre || matchesArtist
+            }.map { it.toTrackEntity() }
+
+            val fallbackCurated = (matchingCurated + MASTER_CURATED_TRACKS.map { it.toTrackEntity() })
+                .filter { seed -> userVault.none { it.isSameSong(seed) } }
+                .take(needed)
+
+            userVault.addAll(fallbackCurated)
+            userVault = userVault.distinctSongs().take(18).toMutableList()
         }
 
         // 2. Resolve Partner's Anchor Tracks directly from payload with zero network delay
@@ -454,37 +531,46 @@ class BlendRepository @Inject constructor(
             val trackId = partnerPayload.anchorTrackIds.getOrNull(i).orEmpty()
             if (title.isNotBlank()) {
                 val cached = if (trackId.isNotBlank()) trackDao.getTrackByIdSync(trackId) else null
+                val curatedMatch = MASTER_CURATED_TRACKS.firstOrNull { it.title.equals(title.trim(), ignoreCase = true) }
+
+                val effectiveId = when {
+                    trackId.length == 11 && !trackId.contains("saavn") && !trackId.startsWith("partner_") -> trackId
+                    curatedMatch != null -> curatedMatch.id
+                    trackId.isNotBlank() -> trackId
+                    else -> "partner_${UUID.randomUUID().toString().take(11)}"
+                }
+                val effectiveThumb = when {
+                    effectiveId.length == 11 && !effectiveId.startsWith("partner_") && !effectiveId.contains("saavn") ->
+                        "https://i.ytimg.com/vi/$effectiveId/hqdefault.jpg"
+                    curatedMatch != null -> "https://i.ytimg.com/vi/${curatedMatch.id}/hqdefault.jpg"
+                    else -> ""
+                }
+
                 val resolvedTrack = cached ?: TrackEntity(
-                    id = if (trackId.isNotBlank()) trackId else "partner_${UUID.randomUUID().toString().take(11)}",
+                    id = effectiveId,
                     title = title,
-                    artist = artist.ifBlank { "Featured Artist" },
-                    durationSeconds = 195L,
-                    thumbnailUrl = if (trackId.length == 11 && !trackId.contains("saavn")) {
-                        "https://i.ytimg.com/vi/$trackId/hqdefault.jpg"
-                    } else ""
+                    artist = artist.ifBlank { curatedMatch?.artist ?: "Featured Artist" },
+                    durationSeconds = curatedMatch?.durationSeconds ?: 210L,
+                    thumbnailUrl = effectiveThumb
                 )
                 partnerAnchorTracks.add(resolvedTrack)
             }
         }
 
-        // If partner had few anchor tracks, quickly query partner's top artists concurrently
-        if (partnerAnchorTracks.size < 6 && partnerPayload.topArtists.isNotEmpty()) {
-            try {
-                withTimeoutOrNull(3000L) {
-                    coroutineScope {
-                        val artistDeferreds = partnerPayload.topArtists.take(2).map { artist ->
-                            async {
-                                streamRepository.searchTracks("$artist top hits official audio")
-                                    .firstOrNull()?.getOrNull().orEmpty()
-                                    .filter { it.isSongOnly() }
-                                    .take(4)
-                            }
-                        }
-                        val hits = artistDeferreds.awaitAll().flatten()
-                        partnerAnchorTracks.addAll(hits)
-                    }
-                }
-            } catch (_: Exception) {}
+        // If partner had fewer than 18 tracks, augment instantly from Curated Master Vault (0ms delay)
+        if (partnerAnchorTracks.size < 18) {
+            val needed = 18 - partnerAnchorTracks.size
+            val matchingPartnerSeeds = MASTER_CURATED_TRACKS.filter { seed ->
+                val matchesGenre = partnerPayload.topGenres.any { seed.genre.contains(it, ignoreCase = true) }
+                val matchesArtist = partnerPayload.topArtists.any { seed.artist.contains(it, ignoreCase = true) }
+                matchesGenre || matchesArtist
+            }.map { it.toTrackEntity() }
+
+            val fallbackPartnerSeeds = (matchingPartnerSeeds + MASTER_CURATED_TRACKS.map { it.toTrackEntity() })
+                .filter { seed -> partnerAnchorTracks.none { it.isSameSong(seed) } && userVault.none { it.isSameSong(seed) } }
+                .take(needed)
+
+            partnerAnchorTracks.addAll(fallbackPartnerSeeds)
         }
 
         // 3. Identify Shared Artists
@@ -506,46 +592,56 @@ class BlendRepository @Inject constructor(
                 sharedArtists.any { a -> uTrack.artist.contains(a, ignoreCase = true) }
             } ?: partnerAnchorTracks.firstOrNull { pTrack ->
                 sharedArtists.any { a -> pTrack.artist.contains(a, ignoreCase = true) }
-            }
+            } ?: MASTER_CURATED_TRACKS.firstOrNull { seed ->
+                sharedArtists.any { a -> seed.artist.contains(a, ignoreCase = true) }
+            }?.toTrackEntity()
         }
 
-        // Priority 3: Top anchor from partner or user
+        // Priority 3: Curated flagship anthem for their top shared genre
         if (sharedAnthem == null) {
-            sharedAnthem = partnerAnchorTracks.firstOrNull() ?: userVault.firstOrNull()
+            sharedAnthem = MASTER_CURATED_TRACKS.firstOrNull { seed ->
+                seed.genre.equals(topSharedGenre, ignoreCase = true)
+            }?.toTrackEntity()
         }
 
-        // 5. Complementary Mutual Discoveries: Fetch in parallel under safety timeout
-        val discoveryGenre = partnerPayload.topGenres.firstOrNull() ?: affinities.primaryGenre ?: "acoustic chill"
-        val mutualDiscoveryTracks = try {
-            withTimeoutOrNull(3500L) {
-                coroutineScope {
-                    val genreJob = async {
-                        streamRepository.searchTracks("$discoveryGenre songs official audio")
-                            .firstOrNull()?.getOrNull().orEmpty()
-                            .filter { it.isSongOnly() }
-                            .distinctSongs()
-                            .take(6)
-                    }
-                    val sharedArtistJob = async {
-                        val seedArtist = sharedArtists.firstOrNull()
-                            ?: partnerPayload.topArtists.firstOrNull()
-                            ?: affinities.overallTopArtists.firstOrNull()
-                        if (seedArtist != null) {
-                            streamRepository.searchTracks("$seedArtist top songs audio")
-                                .firstOrNull()?.getOrNull().orEmpty()
-                                .filter { it.isSongOnly() }
-                                .distinctSongs()
-                                .take(6)
-                        } else emptyList()
-                    }
-                    (genreJob.await() + sharedArtistJob.await()).distinctSongs()
+        // Priority 4: Top anchor from partner or user
+        if (sharedAnthem == null) {
+            sharedAnthem = partnerAnchorTracks.firstOrNull() ?: userVault.firstOrNull() ?: MASTER_CURATED_TRACKS.first().toTrackEntity()
+        }
+
+        // 5. Complementary Mutual Discoveries (instant curated resolution + optional bounded 600ms live probe)
+        val mutualDiscoveryTracks = mutableListOf<TrackEntity>()
+
+        val curatedDiscoveries = MASTER_CURATED_TRACKS.filter { seed ->
+            val matchesSharedGenre = seed.genre.equals(topSharedGenre, ignoreCase = true) ||
+                    partnerPayload.topGenres.any { seed.genre.contains(it, ignoreCase = true) } ||
+                    affinities.topGenres.any { seed.genre.contains(it, ignoreCase = true) }
+            val matchesArtist = sharedArtists.any { a -> seed.artist.contains(a, ignoreCase = true) }
+            matchesSharedGenre || matchesArtist
+        }.map { it.toTrackEntity() }
+            .filter { seed -> userVault.none { it.isSameSong(seed) } && partnerAnchorTracks.none { it.isSameSong(seed) } }
+
+        mutualDiscoveryTracks.addAll(curatedDiscoveries)
+
+        // Bounded live probe strictly capped at 600ms so synthesis NEVER delays
+        try {
+            val liveTracks = withTimeoutOrNull(600L) {
+                val query = if (sharedArtists.isNotEmpty()) {
+                    "${sharedArtists.first()} top songs audio"
+                } else {
+                    "$topSharedGenre hit songs audio"
                 }
-            } ?: emptyList()
-        } catch (_: Exception) {
-            emptyList()
-        }
+                streamRepository.searchTracks(query)
+                    .firstOrNull()?.getOrNull().orEmpty()
+                    .filter { it.isSongOnly() }
+                    .take(4)
+            }
+            if (!liveTracks.isNullOrEmpty()) {
+                mutualDiscoveryTracks.addAll(0, liveTracks)
+            }
+        } catch (_: Exception) {}
 
-        // 6. Intelligent Curation & Interleaving (Target: 35 tracks)
+        // 6. Intelligent Curation & Interleaving (Target: Exactly 35 tracks)
         val attributedList = mutableListOf<AttributedTrack>()
         val seenTrackKeys = HashSet<String>()
 
@@ -559,14 +655,12 @@ class BlendRepository @Inject constructor(
         }
 
         // 1st Track: The Shared Anthem ("Both")
-        if (sharedAnthem != null) {
-            addTrack(sharedAnthem, "both", "Both")
-        }
+        addTrack(sharedAnthem, "both", "Both")
 
         // Separate user and partner tracks into distinct iterators
-        val uTracks = userVault.filter { sharedAnthem?.isSameSong(it) != true }
-        val pTracks = partnerAnchorTracks.filter { sharedAnthem?.isSameSong(it) != true }
-        val dTracks = mutualDiscoveryTracks.filter { sharedAnthem?.isSameSong(it) != true }
+        val uTracks = userVault.filter { !sharedAnthem.isSameSong(it) }
+        val pTracks = partnerAnchorTracks.filter { !sharedAnthem.isSameSong(it) }
+        val dTracks = mutualDiscoveryTracks.distinctSongs().filter { !sharedAnthem.isSameSong(it) }
 
         val uIter = uTracks.iterator()
         val pIter = pTracks.iterator()
@@ -586,8 +680,8 @@ class BlendRepository @Inject constructor(
             }
         }
 
-        // If still under 35 tracks, fill remaining slots with any unused tracks
-        val allRemaining = (dTracks + pTracks + uTracks)
+        // If still under 35 tracks, fill remaining slots with any unused tracks + curated vault
+        val allRemaining = (dTracks + pTracks + uTracks + MASTER_CURATED_TRACKS.map { it.toTrackEntity() })
         for (track in allRemaining) {
             if (attributedList.size >= 35) break
             val brought = when {
@@ -650,12 +744,12 @@ class BlendRepository @Inject constructor(
             .filter { it.isSongOnly() }
             .distinctSongs()
 
-        // Fetch signature hits for each selected artist concurrently with safety timeout
+        // Fetch signature hits for each selected artist concurrently with fast safety timeout + curated fallback
         val artistTracksMap = coroutineScope {
             selectedArtists.map { artist ->
                 async {
-                    val tracks = try {
-                        withTimeoutOrNull(4000L) {
+                    val liveHits = try {
+                        withTimeoutOrNull(2000L) {
                             streamRepository.searchTracks(artist.signatureQuery).firstOrNull()?.getOrNull().orEmpty()
                                 .filter { it.isSongOnly() }
                                 .distinctSongs()
@@ -663,7 +757,13 @@ class BlendRepository @Inject constructor(
                     } catch (_: Exception) {
                         emptyList()
                     }
-                    artist.name to tracks
+
+                    val fallbackTracks = MASTER_CURATED_TRACKS
+                        .filter { it.artist.contains(artist.name, ignoreCase = true) || it.genre.equals(artist.category, ignoreCase = true) }
+                        .map { it.toTrackEntity() }
+
+                    val finalTracks = (liveHits + fallbackTracks).distinctSongs()
+                    artist.name to finalTracks
                 }
             }.awaitAll().toMap()
         }

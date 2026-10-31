@@ -158,8 +158,8 @@ class BlendViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isGenerating = true, error = null) }
             try {
-                // Guaranteed safety ceiling so fusing tastes never hangs
-                val created = withTimeout(10_000L) {
+                // Generous safety ceiling so fusing tastes never hangs
+                val created = withTimeout(15_000L) {
                     blendRepository.synthesizeFriendBlend(payload)
                 }
                 _uiState.update { it.copy(activeBlend = created, isGenerating = false) }
