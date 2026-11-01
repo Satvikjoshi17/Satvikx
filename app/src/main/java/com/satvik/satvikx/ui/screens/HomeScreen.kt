@@ -59,6 +59,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -130,6 +131,21 @@ fun HomeScreen(
     val isMandatoryOnboarding = currentUser == null && !isAuthLoading
     val shouldShowAuthDialog = showAuthDialog || isMandatoryOnboarding
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val syncState by authViewModel.syncState.collectAsStateWithLifecycle()
+
+    // Automatically re-curate home recommendations when active user session changes
+    LaunchedEffect(currentUser?.id) {
+        if (currentUser != null) {
+            homeViewModel.loadHomeData(forceRefresh = true)
+        }
+    }
+
+    // Automatically re-curate home recommendations when cloud sync brings in fresh Liked Songs
+    LaunchedEffect(syncState) {
+        if (syncState is com.satvik.satvikx.data.repository.SyncState.Success) {
+            homeViewModel.loadHomeData(forceRefresh = true)
+        }
+    }
 
     // J.A.R.V.I.S. Holographic Ambient Background Glow
     val ambientGradient = remember(uiState.greeting) {

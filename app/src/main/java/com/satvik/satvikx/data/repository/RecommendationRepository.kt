@@ -16,6 +16,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Calendar
 import java.util.Locale
 import javax.inject.Inject
@@ -260,6 +261,24 @@ class RecommendationRepository @Inject constructor(
         )
     }
 
+    fun clearHomeCache() {
+        homeFeedCacheManager.clearCache()
+    }
+
+    private fun getCuratedFallbackTracks(query: String, count: Int = 10): List<TrackEntity> {
+        val q = query.lowercase(Locale.ROOT).trim()
+        val matches = MASTER_CURATED_TRACKS.filter { seed ->
+            val a = seed.artist.lowercase(Locale.ROOT)
+            val g = seed.genre.lowercase(Locale.ROOT)
+            val t = seed.title.lowercase(Locale.ROOT)
+            q.contains(a) || q.contains(g) || a.contains(q) || t.contains(q)
+        }.map { it.toTrackEntity() }
+
+        return (matches.shuffled() + MASTER_CURATED_TRACKS.shuffled().map { it.toTrackEntity() })
+            .distinctSongs()
+            .take(count)
+    }
+
     /**
      * Builds categorized recommendation feeds for the Home Screen using the affinity matrix.
      */
@@ -267,37 +286,82 @@ class RecommendationRepository @Inject constructor(
         val affinities = analyzeUserAffinities()
         val (timeTitle, timeSubtitle, defaultMoodQuery) = computeTimeOfDayInfo(affinities.topGenres.firstOrNull())
 
-        val primaryArtist = affinities.primaryArtist ?: "Arijit Singh"
-        val secondaryArtist = affinities.secondaryArtist ?: "The Weeknd"
+        // 1. Dynamic sampling of artists and genres for rich variety across refreshes
+        val allUserArtists = affinities.overallTopArtists.ifEmpty { affinities.topLikedArtists }
+        val fallbackFlagshipArtists = listOf(
+            "Arijit Singh", "The Weeknd", "Taylor Swift", "Coldplay",
+            "Diljit Dosanjh", "Drake", "Ed Sheeran", "Sidhu Moose Wala", "Anuv Jain", "Linkin Park"
+        )
+        val candidateArtists = (allUserArtists.take(6) + fallbackFlagshipArtists).distinct()
+
+        val primaryArtist = candidateArtists.shuffled().firstOrNull() ?: "Arijit Singh"
+        val secondaryArtist = candidateArtists.filter { !it.equals(primaryArtist, ignoreCase = true) }.shuffled().firstOrNull() ?: "The Weeknd"
+
+        val candidateGenres = (affinities.topGenres.take(4) + listOf("bollywood", "pop", "acoustic", "rock", "punjabi", "indie", "synthwave")).distinct()
+        val categoryGenre = candidateGenres.shuffled().firstOrNull() ?: "pop"
+        val discoveryGenre = candidateGenres.filter { !it.equals(categoryGenre, ignoreCase = true) }.shuffled().firstOrNull() ?: "chill acoustic"
 
         val becauseLikedQuery = "$primaryArtist songs official audio"
         val similarArtistQuery = "$secondaryArtist songs official audio"
-
-        val discoveryGenre = affinities.topGenres.getOrNull(1) ?: affinities.topGenres.firstOrNull() ?: "chill acoustic"
         val discoveryQuery = "$discoveryGenre songs official audio"
-
-        val primaryGenre = affinities.primaryGenre ?: "synthwave"
-        val categoryQuery = "$primaryGenre songs official audio"
+        val categoryQuery = "$categoryGenre songs official audio"
         val moodQuery = getQueryForMood(selectedMood)
 
-        // Query recommendation feeds in parallel on IO dispatcher
+        // Query recommendation feeds in parallel on IO dispatcher with strict 2500ms bounds and curated fallbacks
         val becauseLikedDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks(becauseLikedQuery).firstOrNull()?.getOrNull().orEmpty()
+            try {
+                withTimeoutOrNull(2500L) {
+                    streamRepository.searchTracks(becauseLikedQuery).firstOrNull()?.getOrNull().orEmpty()
+                }?.ifEmpty { null } ?: getCuratedFallbackTracks(primaryArtist, 10)
+            } catch (_: Exception) {
+                getCuratedFallbackTracks(primaryArtist, 10)
+            }
         }
         val similarArtistDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks(similarArtistQuery).firstOrNull()?.getOrNull().orEmpty()
+            try {
+                withTimeoutOrNull(2500L) {
+                    streamRepository.searchTracks(similarArtistQuery).firstOrNull()?.getOrNull().orEmpty()
+                }?.ifEmpty { null } ?: getCuratedFallbackTracks(secondaryArtist, 10)
+            } catch (_: Exception) {
+                getCuratedFallbackTracks(secondaryArtist, 10)
+            }
         }
         val discoveryDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks(discoveryQuery).firstOrNull()?.getOrNull().orEmpty()
+            try {
+                withTimeoutOrNull(2500L) {
+                    streamRepository.searchTracks(discoveryQuery).firstOrNull()?.getOrNull().orEmpty()
+                }?.ifEmpty { null } ?: getCuratedFallbackTracks(discoveryGenre, 10)
+            } catch (_: Exception) {
+                getCuratedFallbackTracks(discoveryGenre, 10)
+            }
         }
         val categoryDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks(categoryQuery).firstOrNull()?.getOrNull().orEmpty()
+            try {
+                withTimeoutOrNull(2500L) {
+                    streamRepository.searchTracks(categoryQuery).firstOrNull()?.getOrNull().orEmpty()
+                }?.ifEmpty { null } ?: getCuratedFallbackTracks(categoryGenre, 10)
+            } catch (_: Exception) {
+                getCuratedFallbackTracks(categoryGenre, 10)
+            }
         }
         val moodDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks(moodQuery).firstOrNull()?.getOrNull().orEmpty()
+            try {
+                withTimeoutOrNull(2500L) {
+                    streamRepository.searchTracks(moodQuery).firstOrNull()?.getOrNull().orEmpty()
+                }?.ifEmpty { null } ?: getCuratedFallbackTracks(selectedMood, 10)
+            } catch (_: Exception) {
+                getCuratedFallbackTracks(selectedMood, 10)
+            }
         }
         val trendingDeferred = async(Dispatchers.IO) {
-            streamRepository.searchTracks("Top Global Hits Music Official Audio").firstOrNull()?.getOrNull().orEmpty()
+            try {
+                withTimeoutOrNull(2500L) {
+                    val trendingQueries = listOf("Top Global Hits Music", "Billboard Hot 100 Official", "Viral Hits Songs", "Top Trending Songs official audio")
+                    streamRepository.searchTracks(trendingQueries.random()).firstOrNull()?.getOrNull().orEmpty()
+                }?.ifEmpty { null } ?: MASTER_CURATED_TRACKS.shuffled().take(10).map { it.toTrackEntity() }
+            } catch (_: Exception) {
+                MASTER_CURATED_TRACKS.shuffled().take(10).map { it.toTrackEntity() }
+            }
         }
 
         val becauseLikedTracks = becauseLikedDeferred.await().filter { it.isSongOnly() }.distinctSongs()
@@ -307,35 +371,32 @@ class RecommendationRepository @Inject constructor(
         val moodTracks = moodDeferred.await().filter { it.isSongOnly() }.distinctSongs()
         val trendingTracks = trendingDeferred.await().filter { it.isSongOnly() }.distinctSongs()
 
-        // Quick Picks: combine recent/heavy rotation or trending (strictly pure songs)
-        val quickPicks = (if (affinities.heavyRotationTracks.isNotEmpty()) {
-            affinities.heavyRotationTracks
-        } else if (affinities.vaultTracks.isNotEmpty()) {
-            affinities.vaultTracks
-        } else {
-            trendingTracks
-        }).filter { it.isSongOnly() }.distinctSongs().take(6)
+        // Quick Picks: combine recent/heavy rotation or trending, randomly shuffled for fresh daily discovery
+        val quickPicks = (affinities.heavyRotationTracks.shuffled() + affinities.vaultTracks.shuffled() + trendingTracks.shuffled() + MASTER_CURATED_TRACKS.shuffled().map { it.toTrackEntity() })
+            .filter { it.isSongOnly() }
+            .distinctSongs()
+            .take(6)
 
         // Spotify-style Daily Mixes (5 personalized algorithmic mixes with vibrant linear gradients)
-        val dailyMix1Tracks = (becauseLikedTracks.take(8) + affinities.heavyRotationTracks.filter { it.isSongOnly() }.take(4))
+        val dailyMix1Tracks = (becauseLikedTracks.shuffled().take(8) + affinities.heavyRotationTracks.shuffled().filter { it.isSongOnly() }.take(4))
             .distinctSongs()
-            .ifEmpty { trendingTracks.take(10) }
+            .ifEmpty { trendingTracks.shuffled().take(10) }
 
-        val dailyMix2Tracks = (similarArtistTracks.take(8) + discoveryTracks.take(4))
+        val dailyMix2Tracks = (similarArtistTracks.shuffled().take(8) + discoveryTracks.shuffled().take(4))
             .distinctSongs()
-            .ifEmpty { trendingTracks.drop(4).take(10) }
+            .ifEmpty { trendingTracks.drop(4).shuffled().take(10) }
 
-        val dailyMix3Tracks = (discoveryTracks.take(8) + moodTracks.take(4))
+        val dailyMix3Tracks = (discoveryTracks.shuffled().take(8) + moodTracks.shuffled().take(4))
             .distinctSongs()
-            .ifEmpty { trendingTracks.take(10) }
+            .ifEmpty { trendingTracks.shuffled().take(10) }
 
-        val dailyMix4Tracks = (categoryTracks.take(8) + trendingTracks.take(4))
+        val dailyMix4Tracks = (categoryTracks.shuffled().take(8) + trendingTracks.shuffled().take(4))
             .distinctSongs()
-            .ifEmpty { trendingTracks.take(10) }
+            .ifEmpty { trendingTracks.shuffled().take(10) }
 
-        val dailyMix5Tracks = (moodTracks.take(8) + categoryTracks.take(4))
+        val dailyMix5Tracks = (moodTracks.shuffled().take(8) + categoryTracks.shuffled().take(4))
             .distinctSongs()
-            .ifEmpty { trendingTracks.take(10) }
+            .ifEmpty { trendingTracks.shuffled().take(10) }
 
         val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
         val likedTracks = likedPlaylist?.let {
@@ -401,7 +462,7 @@ class RecommendationRepository @Inject constructor(
             similarArtistTracks = similarArtistTracks,
             heavyRotationTracks = affinities.heavyRotationTracks,
             discoveryRadarTracks = discoveryTracks,
-            categoryRadarTitle = "CATEGORY RADAR • ${primaryGenre.uppercase()}",
+            categoryRadarTitle = "CATEGORY RADAR • ${categoryGenre.uppercase()}",
             categoryRadarTracks = categoryTracks,
             vaultFavoritesTracks = affinities.vaultTracks,
             moodTracks = moodTracks,
@@ -414,7 +475,7 @@ class RecommendationRepository @Inject constructor(
             timeOfDayTitle = timeTitle,
             timeOfDaySubtitle = timeSubtitle,
             autopilotTargetSinger = primaryArtist.uppercase(),
-            autopilotTargetGenre = primaryGenre.uppercase()
+            autopilotTargetGenre = categoryGenre.uppercase()
         )
         homeFeedCacheManager.saveFeed(selectedMood, result)
         result

@@ -39,7 +39,8 @@ data class UserProfile(
 @Singleton
 class AuthRepository @Inject constructor(
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
-    private val supabaseClient: SupabaseClient
+    private val supabaseClient: SupabaseClient,
+    private val homeFeedCacheManager: HomeFeedCacheManager
 ) {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val prefs = context.getSharedPreferences("satvikx_auth_profile", android.content.Context.MODE_PRIVATE)
@@ -312,10 +313,12 @@ class AuthRepository @Inject constructor(
             } catch (_: Exception) {}
             clearLocalProfile()
             _currentUser.value = null
+            homeFeedCacheManager.clearCache()
             Result.success(Unit)
         } catch (e: Exception) {
             clearLocalProfile()
             _currentUser.value = null
+            homeFeedCacheManager.clearCache()
             Result.failure(e)
         } finally {
             _isLoading.value = false

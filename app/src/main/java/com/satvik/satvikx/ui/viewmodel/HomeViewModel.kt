@@ -99,9 +99,13 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             val currentMood = _uiState.value.selectedMood
 
+            if (forceRefresh) {
+                recommendationRepository.clearHomeCache()
+            }
+
             // 1. Instant Cache Retrieval:
             // Paint the home screen in 0-5ms with cached feeds and real-time local counts
-            val cached = recommendationRepository.getCachedRecommendations(currentMood)
+            val cached = if (!forceRefresh) recommendationRepository.getCachedRecommendations(currentMood) else null
             val hasCache = cached != null && (cached.trendingTracks.isNotEmpty() || cached.quickPicks.isNotEmpty())
 
             if (hasCache) {
@@ -118,7 +122,7 @@ class HomeViewModel @Inject constructor(
             if (hasCache) {
                 _uiState.update { it.copy(isRefreshing = true, error = null) }
             } else {
-                _uiState.update { it.copy(isLoading = true, error = null) }
+                _uiState.update { it.copy(isLoading = !forceRefresh, isRefreshing = forceRefresh, error = null) }
             }
 
             try {

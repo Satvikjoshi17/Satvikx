@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
 
         checkAndRequestNotificationPermission()
         handleBlendIntent(intent)
+        handleAuthIntent(intent)
 
         setContent {
             SatvikXTheme {
@@ -40,6 +41,19 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleBlendIntent(intent)
+        handleAuthIntent(intent)
+    }
+
+    private fun handleAuthIntent(intent: android.content.Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme == "satvikx" && (uri.host == "auth-callback" || uri.host == "login-callback" || uri.host == "auth")) {
+            val errorDesc = uri.getQueryParameter("error_description") ?: uri.getQueryParameter("error")
+            if (!errorDesc.isNullOrBlank()) {
+                android.widget.Toast.makeText(this, "Auth: $errorDesc", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                android.widget.Toast.makeText(this, "Supabase authentication verified! Welcome to SatvikX.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun handleBlendIntent(intent: android.content.Intent?) {

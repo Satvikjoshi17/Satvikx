@@ -24,7 +24,10 @@ object SupabaseModule {
             supabaseKey = BuildConfig.SUPABASE_ANON_KEY
         ) {
             httpEngine = OkHttp.create()
-            install(Auth)
+            install(Auth) {
+                scheme = "satvikx"
+                host = "auth-callback"
+            }
             install(Postgrest)
         }
     }

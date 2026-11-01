@@ -51,6 +51,15 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="satvikx" android:host="blend" />
             </intent-filter>
+            <!-- Supabase Authentication and Email Confirmation Callback -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="satvikx" android:host="auth-callback" />
+                <data android:scheme="satvikx" android:host="login-callback" />
+                <data android:scheme="satvikx" android:host="auth" />
+            </intent-filter>
         </activity>
 
         <!-- Native MediaSessionService Declaration -->
