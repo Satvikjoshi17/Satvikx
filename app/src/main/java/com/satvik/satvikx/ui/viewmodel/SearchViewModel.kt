@@ -102,11 +102,12 @@ class SearchViewModel @Inject constructor(
                 result.fold(
                     onSuccess = { tracks ->
                         val songsOnly = tracks.filter { it.isSongOnly() }
+                        val finalTracks = if (songsOnly.isNotEmpty()) songsOnly else tracks
                         _uiState.update {
                             it.copy(
                                 isSearching = false,
-                                results = songsOnly,
-                                error = if (songsOnly.isEmpty()) "No tracks found" else null
+                                results = finalTracks,
+                                error = if (finalTracks.isEmpty()) "No tracks found" else null
                             )
                         }
                     },
@@ -242,14 +243,15 @@ class SearchViewModel @Inject constructor(
                     onSuccess = { tracks ->
                         val allowMashup = trimmed.contains("mashup", ignoreCase = true)
                         val songsOnly = tracks.filter { it.isSongOnly(allowMashup = allowMashup) }
-                        if (songsOnly.isNotEmpty()) {
-                            searchCache[cacheKey] = songsOnly
+                        val finalTracks = if (songsOnly.isNotEmpty()) songsOnly else tracks
+                        if (finalTracks.isNotEmpty()) {
+                            searchCache[cacheKey] = finalTracks
                         }
                         _uiState.update {
                             it.copy(
                                 isSearching = false,
-                                results = songsOnly,
-                                error = if (songsOnly.isEmpty()) "No matching songs found" else null
+                                results = finalTracks,
+                                error = if (finalTracks.isEmpty()) "No matching songs found" else null
                             )
                         }
                     },

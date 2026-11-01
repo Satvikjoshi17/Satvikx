@@ -4,6 +4,10 @@ import android.net.Uri
 import android.util.Log
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.cleanArtistName
+import com.satvik.satvikx.data.local.entity.cleanSongTitle
+import com.satvik.satvikx.data.local.entity.cleanTrackTitle
+import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.storage.StorageManager
 import com.satvik.satvikx.data.remote.api.DynamicStreamApi
 import com.satvik.satvikx.data.remote.model.AudioStreamResult
@@ -126,13 +130,9 @@ class StreamRepositoryImpl @Inject constructor(
             val ytTracks = ytDeferred.await()
             val saavnTracks = saavnDeferred.await()
 
-            // Prioritize studio master tracks first, then YouTube tracks
-            for (track in saavnTracks) {
-                if (seenTrackIds.add(track.id)) {
-                    combinedTracks.add(track)
-                }
-            }
-            for (track in ytTracks) {
+            // Intelligent Relevance Ranking & Cross-Engine Fusion
+            val rankedFusedTracks = rankAndFuseSearchResults(trimmed, ytTracks, saavnTracks)
+            for (track in rankedFusedTracks) {
                 if (seenTrackIds.add(track.id)) {
                     combinedTracks.add(track)
                 }
@@ -236,8 +236,16 @@ class StreamRepositoryImpl @Inject constructor(
         }
 
         if (!fallbackTracks.isNullOrEmpty()) {
-            trackDao.insertTracks(fallbackTracks)
-            emit(Result.success(fallbackTracks))
+            val rankedFallback = fallbackTracks.mapIndexed { idx, track ->
+                ScoredTrack(
+                    track = track,
+                    score = calculateRelevanceScore(trimmed, track, isYouTube = true, originalRank = idx),
+                    isYouTube = true,
+                    originalRank = idx
+                )
+            }.sortedByDescending { it.score }.map { it.track }
+            trackDao.insertTracks(rankedFallback)
+            emit(Result.success(rankedFallback))
         } else {
             emit(Result.failure(IOException("All decentralized instances are currently unreachable or rate limited.")))
         }
@@ -673,5 +681,229 @@ class StreamRepositoryImpl @Inject constructor(
             Log.w(TAG, "Direct Innertube resolution exception: ${e.message}")
             null
         }
+    }
+
+    private data class ScoredTrack(
+        val track: TrackEntity,
+        var score: Double,
+        val isYouTube: Boolean,
+        val originalRank: Int
+    )
+
+    private fun rankAndFuseSearchResults(
+        query: String,
+        ytTracks: List<TrackEntity>,
+        saavnTracks: List<TrackEntity>
+    ): List<TrackEntity> {
+        if (ytTracks.isEmpty() && saavnTracks.isEmpty()) return emptyList()
+
+        val scoredYt = ytTracks.mapIndexed { index, track ->
+            ScoredTrack(
+                track = track,
+                score = calculateRelevanceScore(query, track, isYouTube = true, originalRank = index),
+                isYouTube = true,
+                originalRank = index
+            )
+        }
+
+        val scoredSaavn = saavnTracks.mapIndexed { index, track ->
+            ScoredTrack(
+                track = track,
+                score = calculateRelevanceScore(query, track, isYouTube = false, originalRank = index),
+                isYouTube = false,
+                originalRank = index
+            )
+        }
+
+        // Cross-engine fusion:
+        // If a YouTube track and a Saavn track represent the EXACT SAME SONG,
+        // merge them!
+        // We boost the score to the maximum of both (+ Saavn studio bonus),
+        // and prefer the Saavn TrackEntity because it has direct 320kbps CDN playback,
+        // while adopting the YouTube thumbnail if Saavn's is blank or low-res.
+        val fusedSaavnTracks = scoredSaavn.toMutableList()
+        val matchedSaavnTrackIds = mutableSetOf<String>()
+        val candidateList = mutableListOf<ScoredTrack>()
+
+        for (ytItem in scoredYt) {
+            val matchingSaavn = fusedSaavnTracks.firstOrNull { saavnItem ->
+                !matchedSaavnTrackIds.contains(saavnItem.track.id) && ytItem.track.isSameSong(saavnItem.track)
+            }
+
+            if (matchingSaavn != null) {
+                matchedSaavnTrackIds.add(matchingSaavn.track.id)
+                val combinedScore = maxOf(ytItem.score, matchingSaavn.score) + 35.0
+                val bestThumbnail = if (matchingSaavn.track.thumbnailUrl.isNotBlank()) {
+                    matchingSaavn.track.thumbnailUrl
+                } else {
+                    ytItem.track.thumbnailUrl
+                }
+                val fusedTrack = matchingSaavn.track.copy(thumbnailUrl = bestThumbnail)
+                candidateList.add(
+                    ScoredTrack(
+                        track = fusedTrack,
+                        score = combinedScore,
+                        isYouTube = false,
+                        originalRank = minOf(ytItem.originalRank, matchingSaavn.originalRank)
+                    )
+                )
+            } else {
+                candidateList.add(ytItem)
+            }
+        }
+
+        for (saavnItem in fusedSaavnTracks) {
+            if (!matchedSaavnTrackIds.contains(saavnItem.track.id)) {
+                candidateList.add(saavnItem)
+            }
+        }
+
+        val sorted = candidateList.sortedByDescending { it.score }
+
+        val distinctResults = mutableListOf<TrackEntity>()
+        for (item in sorted) {
+            if (distinctResults.none { existing -> existing.isSameSong(item.track) }) {
+                distinctResults.add(item.track)
+            }
+        }
+
+        return distinctResults
+    }
+
+    private fun calculateRelevanceScore(
+        query: String,
+        track: TrackEntity,
+        isYouTube: Boolean,
+        originalRank: Int
+    ): Double {
+        var score = 0.0
+
+        val cleanQ = cleanTrackTitle(query).trim().lowercase()
+        val rawQ = query.trim().lowercase()
+        val cleanT = track.cleanSongTitle().trim().lowercase()
+        val rawT = track.title.trim().lowercase()
+        val cleanA = track.cleanArtistName().trim().lowercase()
+        val rawA = track.artist.trim().lowercase()
+
+        val qTokens = cleanQ.split(" ").filter { it.length >= 2 }
+
+        // 1. Exact & Substring Title Matches
+        when {
+            cleanT.isNotEmpty() && cleanT == cleanQ -> {
+                score += 320.0 // Perfect exact cleaned title match
+            }
+            rawT.contains(rawQ) && rawQ.length >= 3 -> {
+                score += 240.0 // Raw title contains exact user query string
+            }
+            cleanT.startsWith(cleanQ) && cleanQ.length >= 3 -> {
+                score += 200.0 // Song title starts with query
+            }
+            cleanT.contains(cleanQ) && cleanQ.length >= 3 -> {
+                score += 160.0 // Cleaned song title contains query
+            }
+            cleanQ.contains(cleanT) && cleanT.length >= 3 -> {
+                score += 150.0 // Query contains song title
+            }
+        }
+
+        // 2. Token-level matching in Title
+        if (qTokens.isNotEmpty()) {
+            val tTokens = cleanT.split(" ").filter { it.isNotEmpty() }.toSet()
+            val matchingTokens = qTokens.count { tTokens.contains(it) || cleanT.contains(it) }
+            val tokenMatchRatio = matchingTokens.toDouble() / qTokens.size.toDouble()
+
+            if (tokenMatchRatio == 1.0) {
+                score += 120.0
+            } else if (tokenMatchRatio >= 0.5) {
+                score += 60.0 * tokenMatchRatio
+            }
+
+            for (token in qTokens) {
+                if (token.length >= 3 && Regex("\\b${Regex.escape(token)}\\b").containsMatchIn(rawT)) {
+                    score += 30.0
+                }
+            }
+        }
+
+        // 3. Artist Matching
+        when {
+            cleanA.isNotEmpty() && cleanA == cleanQ -> {
+                score += 250.0 // User searched specifically for this artist
+            }
+            cleanA.isNotEmpty() && (cleanA.contains(cleanQ) || cleanQ.contains(cleanA)) && cleanQ.length >= 3 -> {
+                score += 180.0
+            }
+            rawA.contains(rawQ) && rawQ.length >= 3 -> {
+                score += 150.0
+            }
+        }
+
+        if (qTokens.isNotEmpty()) {
+            val aTokens = cleanA.split(" ").filter { it.length >= 3 }
+            val matchingArtistTokens = aTokens.count { cleanQ.contains(it) }
+            if (matchingArtistTokens > 0) {
+                score += 45.0 * matchingArtistTokens
+            }
+        }
+
+        // 4. Source Engine & Popularity Rank Boost
+        if (isYouTube) {
+            val ytRankBoost = when (originalRank) {
+                0 -> 180.0 // YouTube's #1 hit gets massive boost
+                1 -> 140.0
+                2 -> 110.0
+                3 -> 90.0
+                4 -> 70.0
+                5 -> 55.0
+                6 -> 45.0
+                7 -> 35.0
+                8 -> 25.0
+                9 -> 20.0
+                else -> (15.0 - (originalRank - 10)).coerceAtLeast(0.0)
+            }
+            score += ytRankBoost
+
+            if (rawA.contains("official") || rawA.contains("vevo") || rawA.contains("records") ||
+                rawA.contains("music") || rawA.contains("t-series") || rawA.contains("zee") ||
+                rawA.contains("sony") || rawA.contains("- topic")
+            ) {
+                score += 25.0
+            }
+        } else {
+            val hasRelevance = score > 0.0 || (cleanT.isNotEmpty() && qTokens.any { cleanT.contains(it) })
+            if (hasRelevance) {
+                val saavnRankBoost = when (originalRank) {
+                    0 -> 90.0
+                    1 -> 70.0
+                    2 -> 50.0
+                    3 -> 35.0
+                    4 -> 25.0
+                    else -> (15.0 - (originalRank - 5)).coerceAtLeast(0.0)
+                }
+                score += saavnRankBoost
+                score += 35.0 // Studio master bonus (320kbps pristine direct audio)
+            } else {
+                score -= 60.0
+            }
+        }
+
+        // 5. Penalties for noise / secondary versions (unless explicitly searched for)
+        if (!rawQ.contains("remix")) {
+            if (rawT.contains("remix") || rawT.contains("dj mix")) score -= 30.0
+        }
+        if (!rawQ.contains("slowed") && !rawQ.contains("reverb")) {
+            if (rawT.contains("slowed") || rawT.contains("reverb") || rawT.contains("sped up")) score -= 45.0
+        }
+        if (!rawQ.contains("cover")) {
+            if (rawT.contains("cover") || rawT.contains("unplugged")) score -= 40.0
+        }
+        if (!rawQ.contains("karaoke") && !rawQ.contains("instrumental")) {
+            if (rawT.contains("karaoke") || rawT.contains("instrumental")) score -= 60.0
+        }
+        if (!rawQ.contains("live")) {
+            if (rawT.contains("live at") || rawT.contains("live performance") || rawT.contains("live concert")) score -= 35.0
+        }
+
+        return score
     }
 }

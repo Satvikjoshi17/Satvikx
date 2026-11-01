@@ -25,9 +25,10 @@ data class TrackEntity(
  * full album, compilation, mashup, or listicle (e.g., "Top 10 songs", "Best Bollywood songs of 2020", etc.).
  */
 fun TrackEntity.isSongOnly(allowMashup: Boolean = false): Boolean {
-    // 1. Duration bounds: Standard single songs run between 35 seconds and 7.5 minutes (450 seconds).
-    // Videos longer than 450s (7.5 min) or 0s (live/stream) are almost certainly compilations, DJ sets, or albums.
-    if (durationSeconds <= 35L || durationSeconds > 450L) return false
+    // 1. Duration bounds: Standard single songs run between 35 seconds and 12 minutes (720 seconds).
+    // Videos longer than 720s (12 min) are almost certainly compilations, DJ sets, or full albums.
+    // Zero-duration entries (live broadcasts or unparsed video stream tags) are allowed unless compilation keywords match.
+    if (durationSeconds > 720L || (durationSeconds in 1L..35L)) return false
 
     val titleLower = title.lowercase()
 
@@ -47,20 +48,23 @@ fun TrackEntity.isSongOnly(allowMashup: Boolean = false): Boolean {
     if (Regex("\\b\\d+\\s*(hour|hr|minute|min)s?\\b").containsMatchIn(titleLower)) return false
     if (Regex("\\b\\d{2,}\\s*(songs|sogs|tracks|hits)\\b").containsMatchIn(titleLower)) return false
 
-    // 5. Jukebox, Album, and Collection markers
+    // 5. Jukebox, Album, and Collection markers (note: "full audio" is a single song upload marker, NOT a compilation!)
     if (titleLower.contains("jukebox") ||
         titleLower.contains("full album") ||
         titleLower.contains("complete album") ||
-        titleLower.contains("full audio") ||
         titleLower.contains("audio jukebox") ||
         titleLower.contains("video jukebox") ||
         titleLower.contains("album songs") ||
-        titleLower.contains("all songs") ||
+        titleLower.contains("all songs of") ||
+        titleLower.contains("all songs from") ||
+        titleLower.contains("all songs jukebox") ||
         titleLower.contains("songs collection") ||
         titleLower.contains("hit songs collection") ||
         titleLower.contains("collection of") ||
-        titleLower.contains("greatest hits") ||
-        titleLower.contains("evergreen hits")
+        titleLower.contains("greatest hits collection") ||
+        titleLower.contains("greatest hits album") ||
+        titleLower.contains("greatest hits jukebox") ||
+        titleLower.contains("evergreen hits collection")
     ) return false
 
     // 6. Non-stop, megamix, dj mix, continuous mix
@@ -75,27 +79,22 @@ fun TrackEntity.isSongOnly(allowMashup: Boolean = false): Boolean {
         titleLower.contains("dj remix collection")
     ) return false
 
-    // 7. "Best of" / "Top songs" compilations (e.g. "best bollywood songs of 2020", "best of 90s", "top songs of 2024")
+    // 7. "Best of" / "Top songs" compilations (e.g. "best bollywood songs of 2020", "best of 90s")
     if (titleLower.contains("best songs of") ||
-        titleLower.contains("best of ") ||
-        titleLower.contains("best of:") ||
-        titleLower.contains("best bollywood") ||
-        titleLower.contains("best hindi") ||
-        titleLower.contains("best punjabi") ||
-        titleLower.contains("best english") ||
-        titleLower.contains("best romantic") ||
-        titleLower.contains("best sad") ||
-        titleLower.contains("top bollywood") ||
-        titleLower.contains("top hindi") ||
-        titleLower.contains("top punjabi") ||
-        titleLower.contains("top romantic") ||
-        titleLower.contains("top songs") ||
-        titleLower.contains("top hits") ||
-        Regex("\\b(best|top)\\s+.*(songs|sogs|hits|tracks|audio)\\b").containsMatchIn(titleLower)
+        titleLower.contains("best bollywood songs") ||
+        titleLower.contains("best hindi songs") ||
+        titleLower.contains("best punjabi songs") ||
+        titleLower.contains("best romantic songs") ||
+        titleLower.contains("best sad songs") ||
+        titleLower.contains("top bollywood songs") ||
+        titleLower.contains("top hindi songs") ||
+        titleLower.contains("top punjabi songs") ||
+        titleLower.contains("top romantic songs") ||
+        Regex("\\b(best|top)\\s+\\d+\\s*(songs|hits|tracks)\\b").containsMatchIn(titleLower) ||
+        Regex("\\b(best|top)\\s+(of|bollywood|hindi|punjabi|english|romantic|sad|dance|party)\\s+(songs|hits|tracks)\\b").containsMatchIn(titleLower) ||
+        Regex("\\bbest of\\s+(19|20)?\\d{2}\\b").containsMatchIn(titleLower) ||
+        Regex("\\bbest of\\s+([a-zA-Z\\s]{2,20})\\s+(songs|hits|collection|jukebox)\\b").containsMatchIn(titleLower)
     ) return false
-
-    // "best of 2020", "best of 90s", etc.
-    if (Regex("\\bbest of\\s+(19|20)?\\d{2}\\b").containsMatchIn(titleLower)) return false
 
     // 8. Non-music video filters (workouts, exercises, tutorials, vlogs, reviews, gaming, podcasts, movie trailers)
     val nonMusicKeywords = listOf(
@@ -268,41 +267,57 @@ fun TrackEntity.isSameSong(other: TrackEntity): Boolean {
         return this.title.equals(other.title, ignoreCase = true)
     }
 
+    val durDiff = if (this.durationSeconds > 0 && other.durationSeconds > 0) {
+        Math.abs(this.durationSeconds - other.durationSeconds)
+    } else 0
+
+    // Strict duration check: if both tracks have known durations and differ by more than 120s, not the same song
+    if (this.durationSeconds > 0 && other.durationSeconds > 0 && durDiff > 120) {
+        return false
+    }
+
+    val artA = cleanArtist(this.artist)
+    val artB = cleanArtist(other.artist)
+    val isLabelA = REGEX_RECORD_LABELS.containsMatchIn(this.artist)
+    val isLabelB = REGEX_RECORD_LABELS.containsMatchIn(other.artist)
+    val hasDistinctArtists = artA.isNotBlank() && artB.isNotBlank() && !isLabelA && !isLabelB
+
+    val artistOverlap = hasArtistOverlap(this.artist, other.artist) ||
+        (artA.isNotBlank() && other.title.contains(artA, ignoreCase = true)) ||
+        (artB.isNotBlank() && this.title.contains(artB, ignoreCase = true))
+
+    // If both tracks have distinct, explicit artists (not record labels) and have zero artist overlap,
+    // they are different songs by different artists (e.g. "Millionaire" by Chris Brown vs "Millionaire" by Honey Singh)
+    if (hasDistinctArtists && !artistOverlap) {
+        return false
+    }
+
     // 1. Exact cleaned title match (e.g. "kesariya" == "kesariya")
     if (cleanA == cleanB) {
-        return true
+        return durDiff <= 90 || this.durationSeconds == 0L || other.durationSeconds == 0L
     }
 
     // 2. Compressed alphanumeric match (e.g. "blinding lights" -> "blindinglights")
     val alphaA = cleanA.replace(" ", "")
     val alphaB = cleanB.replace(" ", "")
     if (alphaA.isNotEmpty() && alphaA == alphaB) {
-        return true
+        return durDiff <= 90 || this.durationSeconds == 0L || other.durationSeconds == 0L
     }
 
     val coreA = this.coreSongTitle()
     val coreB = other.coreSongTitle()
-    val artistOverlap = hasArtistOverlap(this.artist, other.artist) ||
-        (this.cleanArtistName().isNotBlank() && other.title.contains(this.cleanArtistName(), ignoreCase = true)) ||
-        (other.cleanArtistName().isNotBlank() && this.title.contains(other.cleanArtistName(), ignoreCase = true))
 
     // 3. Core title match (e.g. both core titles are "kesariya" or "starboy" or "deva deva")
     if (coreA.isNotBlank() && coreB.isNotBlank() && coreA == coreB && coreA.length >= 3) {
         if (artistOverlap) return true
-        val durDiff = if (this.durationSeconds > 0 && other.durationSeconds > 0) {
-            Math.abs(this.durationSeconds - other.durationSeconds)
-        } else 0
-        if (durDiff <= 120) return true
+        if (durDiff <= 60) return true
     }
 
     // 4. Substring containment (e.g. "kesariya" is contained in "kesariya brahmastra")
     if (alphaA.length >= 4 && alphaB.length >= 4) {
         if (alphaA.startsWith(alphaB) || alphaB.startsWith(alphaA) || alphaA.contains(alphaB) || alphaB.contains(alphaA)) {
             if (artistOverlap) return true
-            val durDiff = if (this.durationSeconds > 0 && other.durationSeconds > 0) {
-                Math.abs(this.durationSeconds - other.durationSeconds)
-            } else 0
-            if (durDiff <= 90) return true
+            if (durDiff <= 60) return true
         }
     }
 
@@ -313,19 +328,16 @@ fun TrackEntity.isSameSong(other: TrackEntity): Boolean {
         val intersection = wordsA.intersect(wordsB).size
         val union = wordsA.union(wordsB).size
         val jaccard = intersection.toFloat() / union.toFloat()
-        if (jaccard >= 0.50f) {
+        if (jaccard >= 0.60f) {
             if (artistOverlap) return true
-            val durDiff = if (this.durationSeconds > 0 && other.durationSeconds > 0) {
-                Math.abs(this.durationSeconds - other.durationSeconds)
-            } else 0
-            if (durDiff <= 90) return true
+            if (durDiff <= 60) return true
         }
     }
 
     // 6. Transliteration / Levenshtein match for titles >= 5 chars by the same artist
     if (artistOverlap && alphaA.length >= 5 && alphaB.length >= 5) {
         val dist = levenshteinDistance(alphaA, alphaB)
-        if (dist <= 2) return true
+        if (dist <= 2 && durDiff <= 60) return true
     }
 
     return false
