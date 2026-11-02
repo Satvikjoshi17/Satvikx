@@ -76,9 +76,9 @@ class SearchViewModel @Inject constructor(
     }
 
     init {
-        // Debounce query input to eliminate unnecessary API requests and preserve typing cadence
+        // Debounce query input to eliminate unnecessary API requests and preserve snappy typing cadence
         queryFlow
-            .debounce(650)
+            .debounce(380)
             .distinctUntilChanged()
             .filter { it.trim().length >= 2 }
             .onEach { query ->

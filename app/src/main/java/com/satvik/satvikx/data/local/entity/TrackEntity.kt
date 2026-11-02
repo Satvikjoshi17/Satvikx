@@ -152,10 +152,75 @@ private val REGEX_RECORD_LABELS = Regex("""(?i)\b(t-series|tseries|sony\s*music(
 private val REGEX_BRACKETS_TAGS = Regex("""(?i)\s*[\(\[\{][^\)\]\}]*(?:official|audio|video|music\s*video|visualizer|lyric(?:s|al)?|full\s*(?:song|audio|video)|audio\s*song|video\s*song|hd|4k|8k|1080p|remaster(?:ed)?|live|slowed|reverb|8d|from\s+["']|with\s+|feat\.?|ft\.?|prod\.?|cover|unplugged|acoustic|dance\s*mix|remix|club\s*mix|reprise|version|edit|mix|soundtrack|ost)[^\)\]\}]*[\)\]\}]""")
 private val REGEX_SMALL_BRACKETS = Regex("""\s*[\(\[\{][^\)\]\}]{0,35}[\)\]\}]""")
 private val REGEX_SEPARATORS = Regex("""\s*[-—–|•~//]\s*|\s*:\s+""")
-private val REGEX_BUZZWORDS = Regex("""(?i)\b(dance\s*mix|club\s*mix|dj\s*mix|remix|acoustic\s*version|acoustic\s*cover|unplugged|slowed\s*reverb|slowed|reverb|sped\s*up|speed\s*up|8d\s*audio|cover|duet|lofi\s*flip|lofi\s*remix|lofi\s*mix|lofi|karaoke|instrumental|teaser|trailer|motion\s*poster|short\s*clip|official\s*(music\s*)?video|official\s*audio|official\s*visualizer|lyric(?:al)?\s*video|lyrics|audio\s*song|video\s*song|full\s*(video|audio|song)|audio|video|song)\b""")
+private val REGEX_BUZZWORDS = Regex("""(?i)\b(dance\s*mix|club\s*mix|dj\s*mix|remix|acoustic\s*version|acoustic\s*cover|unplugged|slowed\s*reverb|slowed|reverb|sped\s*up|speed\s*up|8d\s*audio|cover|duet|lofi\s*flip|lofi\s*remix|lofi\s*mix|lofi|karaoke|instrumental|teaser|trailer|motion\s*poster|short\s*clip|official\s*(music\s*)?video|official\s*audio|official\s*visualizer|lyric(?:al)?\s*video|lyrics|audio\s*song|video\s*song|full\s*(video|audio|song)|official\s+audio|official\s+video|new\s*song|hit\s*song)\b""")
 private val REGEX_FEAT = Regex("""(?i)\b(feat\.?|ft\.?|featuring)\b.*""")
 private val REGEX_NON_ALPHANUM = Regex("""[^a-zA-Z0-9\s]""")
 private val REGEX_WHITESPACE = Regex("""\s+""")
+
+fun isRecordLabelOrChannel(name: String): Boolean {
+    val lower = name.trim().lowercase(java.util.Locale.ROOT)
+    return lower.isBlank() ||
+        lower == "unknown artist" ||
+        REGEX_RECORD_LABELS.containsMatchIn(lower) ||
+        lower.contains("vevo") ||
+        lower.contains("t-series") ||
+        lower.contains("tseries") ||
+        lower.contains("sony music") ||
+        lower.contains("zee music") ||
+        lower.contains("saregama") ||
+        lower.contains("speed records") ||
+        lower.contains("tips official") ||
+        lower.contains("tips music") ||
+        lower.contains("white hill") ||
+        lower.contains("geet mp3") ||
+        lower.contains("desi music factory") ||
+        lower.contains("yrf") ||
+        lower.contains("records") ||
+        lower.contains("entertainment") ||
+        lower.contains("channel")
+}
+
+/**
+ * Extracts true musical performers/artists for a track, bypassing record label names,
+ * YouTube distributor accounts, and falls back to artist metadata embedded in the title.
+ */
+fun TrackEntity.getEffectiveArtists(): List<String> {
+    val candidates = mutableListOf<String>()
+
+    // 1. Try splitting the direct artist field
+    if (!isRecordLabelOrChannel(artist)) {
+        val split = artist.split(",", "&", "feat.", "ft.", "/", ";", "•")
+            .map { it.replace(" - Topic", "", ignoreCase = true).trim() }
+            .filter { it.length >= 2 && !isRecordLabelOrChannel(it) }
+        candidates.addAll(split)
+    }
+
+    // 2. If artist field was a record label or gave no valid artists, extract from title segments
+    if (candidates.isEmpty()) {
+        val titleSegments = title.split("|", " - ", "—", "–", "•", "/", "~", "feat.", "ft.")
+            .map { it.replace(Regex("""[\(\[\{].*?[\)\]\}]"""), " ").trim() }
+            .filter { it.isNotBlank() }
+
+        for (seg in titleSegments) {
+            val s = seg.trim()
+            if (s.length in 3..25 && !isRecordLabelOrChannel(s)) {
+                val sLower = s.lowercase(java.util.Locale.ROOT)
+                if (!sLower.contains("video") && !sLower.contains("audio") &&
+                    !sLower.contains("song") && !sLower.contains("official") &&
+                    !sLower.contains("teaser") && !sLower.contains("trailer") &&
+                    !sLower.contains("album") && !sLower.contains("remix") &&
+                    !sLower.contains("full")
+                ) {
+                    candidates.add(s)
+                }
+            }
+        }
+    }
+
+    return candidates.distinct().ifEmpty {
+        if (!isRecordLabelOrChannel(artist)) listOf(artist) else emptyList()
+    }
+}
 
 fun cleanArtist(rawArtist: String): String {
     if (rawArtist.isBlank()) return ""

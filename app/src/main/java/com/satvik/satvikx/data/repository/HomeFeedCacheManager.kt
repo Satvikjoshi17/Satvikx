@@ -30,30 +30,45 @@ class HomeFeedCacheManager @Inject constructor(
 
     companion object {
         private const val TAG = "HomeFeedCacheManager"
-        // 45 minutes cache freshness window for recommendations
-        const val CACHE_TTL_MS = 45 * 60 * 1000L
+        // 25 minutes cache freshness window for recommendations
+        const val CACHE_TTL_MS = 25 * 60 * 1000L
     }
 
     // In-memory cache for ultra-fast 0ms tab navigation
     private val memoryCache = ConcurrentHashMap<String, HomeFeedCacheEntry>()
     private val adapter by lazy { moshi.adapter(HomeFeedCacheEntry::class.java) }
 
+    @Volatile
+    private var lastPlaybackRecordedAt: Long = 0L
+
+    /**
+     * Signals that the user has played a track, marking cached recommendations
+     * as stale so that fresh listening history and updated affinities are incorporated.
+     */
+    fun notifyPlaybackRecorded() {
+        lastPlaybackRecordedAt = System.currentTimeMillis()
+    }
+
     /**
      * Checks if we have valid, fresh cached recommendations for the given mood.
+     * Returns false if user has listened to new songs since the cache was created.
      */
     fun isCacheFresh(mood: String): Boolean {
         val key = normalizeMood(mood)
         val mem = memoryCache[key]
-        if (mem != null) {
-            val age = System.currentTimeMillis() - mem.timestamp
-            return age < CACHE_TTL_MS
+        val cacheTime = mem?.timestamp ?: run {
+            val file = getCacheFile(key)
+            if (file.exists()) file.lastModified() else 0L
         }
-        val file = getCacheFile(key)
-        if (file.exists()) {
-            val age = System.currentTimeMillis() - file.lastModified()
-            return age < CACHE_TTL_MS
+        if (cacheTime <= 0L) return false
+
+        // If user listened to any songs after this cache entry was created, invalidate freshness
+        if (lastPlaybackRecordedAt > cacheTime) {
+            return false
         }
-        return false
+
+        val age = System.currentTimeMillis() - cacheTime
+        return age < CACHE_TTL_MS
     }
 
     /**

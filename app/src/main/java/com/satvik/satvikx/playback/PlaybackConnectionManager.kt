@@ -208,6 +208,9 @@ class PlaybackConnectionManager @Inject constructor(
             // Guarantee track persistence in local database and register in playback telemetry history
             trackDao.insertTrack(playableTrack)
             recentPlaybackDao.recordOrIncrementPlayback(playableTrack.id)
+            try {
+                recommendationRepositoryProvider.get().notifyPlaybackRecorded()
+            } catch (_: Exception) {}
 
             // Telemetry: record start of track listening
             recordTrackStartTelemetry(playableTrack)
@@ -283,6 +286,9 @@ class PlaybackConnectionManager @Inject constructor(
             withContext(Dispatchers.IO) {
                 trackDao.insertTrack(playableTrack)
                 recentPlaybackDao.recordOrIncrementPlayback(playableTrack.id)
+                try {
+                    recommendationRepositoryProvider.get().notifyPlaybackRecorded()
+                } catch (_: Exception) {}
             }
 
             if (currentPlaylist.size <= 1) {
@@ -853,6 +859,9 @@ class PlaybackConnectionManager @Inject constructor(
                 scope.launch(Dispatchers.IO) {
                     trackDao.insertTrack(track)
                     recentPlaybackDao.recordOrIncrementPlayback(track.id)
+                    try {
+                        recommendationRepositoryProvider.get().notifyPlaybackRecorded()
+                    } catch (_: Exception) {}
                 }
 
                 // Telemetry: record start of newly active track

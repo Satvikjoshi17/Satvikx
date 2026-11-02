@@ -24,6 +24,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -107,7 +108,9 @@ class StreamRepositoryImpl @Inject constructor(
         coroutineScope {
             val ytDeferred = async {
                 try {
-                    newPipeYouTubeEngine.search(trimmed, deepSearch = true)
+                    withTimeoutOrNull(5000L) {
+                        newPipeYouTubeEngine.search(trimmed, deepSearch = true)
+                    } ?: emptyList()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -118,7 +121,9 @@ class StreamRepositoryImpl @Inject constructor(
 
             val saavnDeferred = async {
                 try {
-                    saavnMediaEngine.searchTracks(trimmed)
+                    withTimeoutOrNull(4000L) {
+                        saavnMediaEngine.searchTracks(trimmed)
+                    } ?: emptyList()
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -778,7 +783,10 @@ class StreamRepositoryImpl @Inject constructor(
     ): Double {
         var score = 0.0
 
-        val cleanQ = cleanTrackTitle(query).trim().lowercase()
+        val cleanQ = query.trim().lowercase(java.util.Locale.ROOT)
+            .replace(Regex("""[^a-zA-Z0-9\s]"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
         val rawQ = query.trim().lowercase()
         val cleanT = track.cleanSongTitle().trim().lowercase()
         val rawT = track.title.trim().lowercase()

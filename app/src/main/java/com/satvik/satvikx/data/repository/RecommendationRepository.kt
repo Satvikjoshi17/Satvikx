@@ -8,6 +8,7 @@ import com.satvik.satvikx.data.local.entity.cleanArtist
 import com.satvik.satvikx.data.local.entity.cleanArtistName
 import com.satvik.satvikx.data.local.entity.cleanSongTitle
 import com.satvik.satvikx.data.local.entity.distinctSongs
+import com.satvik.satvikx.data.local.entity.getEffectiveArtists
 import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.remote.newpipe.NewPipeYouTubeEngine
@@ -164,7 +165,7 @@ class RecommendationRepository @Inject constructor(
 
         // 1. Liked Tracks Scoring
         likedTracks.forEach { track ->
-            extractArtists(track.artist).forEach { artist ->
+            track.getEffectiveArtists().forEach { artist ->
                 artistScores[artist] = (artistScores[artist] ?: 0f) + 5.0f
                 if (!likedArtists.contains(artist)) likedArtists.add(artist)
             }
@@ -175,7 +176,7 @@ class RecommendationRepository @Inject constructor(
 
         // 2. Downloaded Tracks Scoring
         downloadedTracks.forEach { track ->
-            extractArtists(track.artist).forEach { artist ->
+            track.getEffectiveArtists().forEach { artist ->
                 artistScores[artist] = (artistScores[artist] ?: 0f) + 3.5f
                 if (!downloadedArtists.contains(artist)) downloadedArtists.add(artist)
             }
@@ -202,7 +203,7 @@ class RecommendationRepository @Inject constructor(
         // 4. Recent Tracks Frequency Scoring
         recentTracks.forEachIndexed { index, track ->
             val recencyMultiplier = if (index < 15) 2.5f else 1.2f
-            extractArtists(track.artist).forEach { artist ->
+            track.getEffectiveArtists().forEach { artist ->
                 artistScores[artist] = (artistScores[artist] ?: 0f) + recencyMultiplier
                 if (!recentArtists.contains(artist)) recentArtists.add(artist)
             }
@@ -236,7 +237,7 @@ class RecommendationRepository @Inject constructor(
 
         val artistThumbnails = mutableMapOf<String, String>()
         (recentTracks + likedTracks + downloadedTracks).forEach { track ->
-            extractArtists(track.artist).forEach { artist ->
+            track.getEffectiveArtists().forEach { artist ->
                 if (!artistThumbnails.containsKey(artist) && track.thumbnailUrl.isNotBlank()) {
                     artistThumbnails[artist] = track.thumbnailUrl
                 }
@@ -265,6 +266,10 @@ class RecommendationRepository @Inject constructor(
         homeFeedCacheManager.clearCache()
     }
 
+    fun notifyPlaybackRecorded() {
+        homeFeedCacheManager.notifyPlaybackRecorded()
+    }
+
     private fun getCuratedFallbackTracks(query: String, count: Int = 10): List<TrackEntity> {
         val q = query.lowercase(Locale.ROOT).trim()
         val matches = MASTER_CURATED_TRACKS.filter { seed ->
@@ -290,7 +295,8 @@ class RecommendationRepository @Inject constructor(
         val allUserArtists = affinities.overallTopArtists.ifEmpty { affinities.topLikedArtists }
         val fallbackFlagshipArtists = listOf(
             "Arijit Singh", "The Weeknd", "Taylor Swift", "Coldplay",
-            "Diljit Dosanjh", "Drake", "Ed Sheeran", "Sidhu Moose Wala", "Anuv Jain", "Linkin Park"
+            "Diljit Dosanjh", "Drake", "Ed Sheeran", "Sidhu Moose Wala", "Anuv Jain", "Linkin Park",
+            "Karan Aujla", "Post Malone", "Pritam", "Dua Lipa", "AP Dhillon", "Bruno Mars"
         )
         val candidateArtists = (allUserArtists.take(6) + fallbackFlagshipArtists).distinct()
 
