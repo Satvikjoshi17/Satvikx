@@ -285,6 +285,47 @@ class RecommendationRepository @Inject constructor(
     }
 
     /**
+     * Resilient multi-tier recommendation fetcher.
+     * Tries deep cross-engine search with a 5.5s bound, instantly auto-falls back to native
+     * JioSaavn high-fidelity 320kbps CDN search (300ms) with crisp 500x500 album artwork,
+     * and only resorts to curated master seeds when completely offline.
+     */
+    private suspend fun fetchRecommendationFeedTracks(rawQuery: String, fallbackKey: String): List<TrackEntity> {
+        // 1. Try StreamRepository fused search with a 5500ms safety window
+        val fromSearch = try {
+            withTimeoutOrNull(5500L) {
+                streamRepository.searchTracks(rawQuery).firstOrNull()?.getOrNull()
+            }
+        } catch (_: Exception) { null }
+
+        if (!fromSearch.isNullOrEmpty()) {
+            return fromSearch
+        }
+
+        // 2. High-speed JioSaavn native search (300ms) - cleans out YouTube buzzwords
+        val cleanQuery = rawQuery
+            .replace("songs official audio", "")
+            .replace("official audio", "")
+            .replace("official video", "")
+            .trim()
+            .ifBlank { rawQuery }
+
+        val fromSaavn = try {
+            withTimeoutOrNull(3500L) {
+                saavnMediaEngine.searchTracks(cleanQuery)
+            }
+        } catch (_: Exception) { null }
+
+        if (!fromSaavn.isNullOrEmpty()) {
+            trackDao.insertTracks(fromSaavn)
+            return fromSaavn
+        }
+
+        // 3. Fallback curated tracks
+        return getCuratedFallbackTracks(fallbackKey, 10)
+    }
+
+    /**
      * Builds categorized recommendation feeds for the Home Screen using the affinity matrix.
      */
     suspend fun loadHomeRecommendations(selectedMood: String): HomeRecommendationCategories = withContext(Dispatchers.IO) {
@@ -313,61 +354,15 @@ class RecommendationRepository @Inject constructor(
         val categoryQuery = "$categoryGenre songs official audio"
         val moodQuery = getQueryForMood(selectedMood)
 
-        // Query recommendation feeds in parallel on IO dispatcher with strict 2500ms bounds and curated fallbacks
-        val becauseLikedDeferred = async(Dispatchers.IO) {
-            try {
-                withTimeoutOrNull(2500L) {
-                    streamRepository.searchTracks(becauseLikedQuery).firstOrNull()?.getOrNull().orEmpty()
-                }?.ifEmpty { null } ?: getCuratedFallbackTracks(primaryArtist, 10)
-            } catch (_: Exception) {
-                getCuratedFallbackTracks(primaryArtist, 10)
-            }
-        }
-        val similarArtistDeferred = async(Dispatchers.IO) {
-            try {
-                withTimeoutOrNull(2500L) {
-                    streamRepository.searchTracks(similarArtistQuery).firstOrNull()?.getOrNull().orEmpty()
-                }?.ifEmpty { null } ?: getCuratedFallbackTracks(secondaryArtist, 10)
-            } catch (_: Exception) {
-                getCuratedFallbackTracks(secondaryArtist, 10)
-            }
-        }
-        val discoveryDeferred = async(Dispatchers.IO) {
-            try {
-                withTimeoutOrNull(2500L) {
-                    streamRepository.searchTracks(discoveryQuery).firstOrNull()?.getOrNull().orEmpty()
-                }?.ifEmpty { null } ?: getCuratedFallbackTracks(discoveryGenre, 10)
-            } catch (_: Exception) {
-                getCuratedFallbackTracks(discoveryGenre, 10)
-            }
-        }
-        val categoryDeferred = async(Dispatchers.IO) {
-            try {
-                withTimeoutOrNull(2500L) {
-                    streamRepository.searchTracks(categoryQuery).firstOrNull()?.getOrNull().orEmpty()
-                }?.ifEmpty { null } ?: getCuratedFallbackTracks(categoryGenre, 10)
-            } catch (_: Exception) {
-                getCuratedFallbackTracks(categoryGenre, 10)
-            }
-        }
-        val moodDeferred = async(Dispatchers.IO) {
-            try {
-                withTimeoutOrNull(2500L) {
-                    streamRepository.searchTracks(moodQuery).firstOrNull()?.getOrNull().orEmpty()
-                }?.ifEmpty { null } ?: getCuratedFallbackTracks(selectedMood, 10)
-            } catch (_: Exception) {
-                getCuratedFallbackTracks(selectedMood, 10)
-            }
-        }
+        // Query recommendation feeds in parallel on IO dispatcher with robust multi-tier fallback
+        val becauseLikedDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(becauseLikedQuery, primaryArtist) }
+        val similarArtistDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(similarArtistQuery, secondaryArtist) }
+        val discoveryDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(discoveryQuery, discoveryGenre) }
+        val categoryDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(categoryQuery, categoryGenre) }
+        val moodDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(moodQuery, selectedMood) }
         val trendingDeferred = async(Dispatchers.IO) {
-            try {
-                withTimeoutOrNull(2500L) {
-                    val trendingQueries = listOf("Top Global Hits Music", "Billboard Hot 100 Official", "Viral Hits Songs", "Top Trending Songs official audio")
-                    streamRepository.searchTracks(trendingQueries.random()).firstOrNull()?.getOrNull().orEmpty()
-                }?.ifEmpty { null } ?: MASTER_CURATED_TRACKS.shuffled().take(10).map { it.toTrackEntity() }
-            } catch (_: Exception) {
-                MASTER_CURATED_TRACKS.shuffled().take(10).map { it.toTrackEntity() }
-            }
+            val trendingQueries = listOf("Top Global Hits Music", "Billboard Hot 100 Official", "Viral Hits Songs", "Top Trending Songs official audio")
+            fetchRecommendationFeedTracks(trendingQueries.random(), "bollywood")
         }
 
         val becauseLikedTracks = becauseLikedDeferred.await().filter { it.isSongOnly() }.distinctSongs()

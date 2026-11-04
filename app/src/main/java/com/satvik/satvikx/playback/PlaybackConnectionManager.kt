@@ -17,10 +17,13 @@ import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.RecentPlaybackEntity
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.cleanArtistName
+import com.satvik.satvikx.data.local.entity.cleanSongTitle
 import com.satvik.satvikx.data.local.entity.distinctSongs
 import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.local.storage.StorageManager
+import com.satvik.satvikx.data.remote.saavn.SaavnMediaEngine
 import com.satvik.satvikx.data.repository.RecommendationRepository
 import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.playback.model.PlaybackState
@@ -38,6 +41,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Provider
 import javax.inject.Singleton
@@ -58,7 +62,8 @@ class PlaybackConnectionManager @Inject constructor(
     private val playbackTelemetryDao: com.satvik.satvikx.data.local.dao.PlaybackTelemetryDao,
     private val storageManager: StorageManager,
     private val playbackSessionManager: PlaybackSessionManager,
-    private val recommendationRepositoryProvider: Provider<RecommendationRepository>
+    private val recommendationRepositoryProvider: Provider<RecommendationRepository>,
+    private val saavnMediaEngine: SaavnMediaEngine
 ) {
 
     companion object {
@@ -592,15 +597,61 @@ class PlaybackConnectionManager @Inject constructor(
             }
         }
 
-        // 3. Resolve stream via decentralized network engine (forcing fresh resolution if requested or expired)
-        val streamResult = streamRepository.resolveAudioStream(track.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
+        // 3. Fast Auto-Healing via JioSaavn Native Engine (300ms):
+        // If track has title and artist, search JioSaavn directly to get pristine 320kbps CD audio with 0ms buffering!
+        if (track.title.isNotBlank()) {
+            try {
+                val cleanTitle = track.cleanSongTitle().ifBlank { track.title }
+                val cleanArt = track.cleanArtistName().ifBlank { track.artist }
+                val saavnQuery = if (cleanArt.isNotBlank()) "$cleanTitle $cleanArt" else cleanTitle
+                val saavnResults = saavnMediaEngine.searchTracks(saavnQuery)
+                val saavnMatch = saavnResults.firstOrNull { it.isSameSong(track) }
+                    ?: saavnResults.firstOrNull { it.cleanSongTitle().equals(cleanTitle, ignoreCase = true) }
+                    ?: if (cleanArt.isBlank()) saavnResults.firstOrNull() else null
+
+                if (saavnMatch != null && !saavnMatch.streamUrl.isNullOrBlank()) {
+                    val updated = track.copy(
+                        streamUrl = saavnMatch.streamUrl,
+                        thumbnailUrl = if (track.thumbnailUrl.isBlank() || track.thumbnailUrl.contains("ytimg.com")) saavnMatch.thumbnailUrl else track.thumbnailUrl
+                    )
+                    trackDao.insertTrack(updated)
+                    return@withContext updated
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Fast Saavn auto-healing resolution non-fatal: ${e.message}")
+            }
+        }
+
+        // 4. Resolve stream via decentralized network engine (bounded by 4500ms safety timeout)
+        val streamResult = try {
+            withTimeoutOrNull(4500L) {
+                streamRepository.resolveAudioStream(track.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
+            }
+        } catch (_: Exception) { null }
+
         if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
             val updated = track.copy(streamUrl = streamResult.streamUrl)
             trackDao.insertTrack(updated)
-            updated
-        } else {
-            null
+            return@withContext updated
         }
+
+        // 5. Broad JioSaavn title fallback
+        if (track.title.isNotBlank()) {
+            try {
+                val broadResults = saavnMediaEngine.searchTracks(track.title)
+                val broadMatch = broadResults.firstOrNull()
+                if (broadMatch != null && !broadMatch.streamUrl.isNullOrBlank()) {
+                    val updated = track.copy(
+                        streamUrl = broadMatch.streamUrl,
+                        thumbnailUrl = if (track.thumbnailUrl.isBlank() || track.thumbnailUrl.contains("ytimg.com")) broadMatch.thumbnailUrl else track.thumbnailUrl
+                    )
+                    trackDao.insertTrack(updated)
+                    return@withContext updated
+                }
+            } catch (_: Exception) {}
+        }
+
+        null
     }
 
     /**

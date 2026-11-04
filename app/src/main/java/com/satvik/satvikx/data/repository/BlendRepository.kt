@@ -68,7 +68,7 @@ data class CuratedSeedTrack(
         title = title,
         artist = artist,
         durationSeconds = durationSeconds,
-        thumbnailUrl = "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+        thumbnailUrl = "https://i.ytimg.com/vi/$id/mqdefault.jpg"
     )
 }
 
@@ -278,7 +278,7 @@ class BlendRepository @Inject constructor(
                         title = title,
                         artist = seedArtists[idx],
                         durationSeconds = 210L,
-                        thumbnailUrl = "https://i.ytimg.com/vi/${seedIds[idx]}/hqdefault.jpg"
+                        thumbnailUrl = "https://i.ytimg.com/vi/${seedIds[idx]}/mqdefault.jpg"
                     )
                 )
             }
@@ -541,8 +541,8 @@ class BlendRepository @Inject constructor(
                 }
                 val effectiveThumb = when {
                     effectiveId.length == 11 && !effectiveId.startsWith("partner_") && !effectiveId.contains("saavn") ->
-                        "https://i.ytimg.com/vi/$effectiveId/hqdefault.jpg"
-                    curatedMatch != null -> "https://i.ytimg.com/vi/${curatedMatch.id}/hqdefault.jpg"
+                        "https://i.ytimg.com/vi/$effectiveId/mqdefault.jpg"
+                    curatedMatch != null -> "https://i.ytimg.com/vi/${curatedMatch.id}/mqdefault.jpg"
                     else -> ""
                 }
 
