@@ -1,5 +1,6 @@
 package com.satvik.satvikx.ui.viewmodel
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.local.entity.BlendEntity
@@ -10,6 +11,7 @@ import com.satvik.satvikx.data.repository.BlendRepository
 import com.satvik.satvikx.data.repository.CuratedBlendArtist
 import com.satvik.satvikx.playback.PlaybackConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -45,6 +47,8 @@ class BlendViewModel @Inject constructor(
     val blends: StateFlow<List<BlendEntity>> = blendRepository.getAllBlends()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val playbackState: StateFlow<com.satvik.satvikx.playback.model.PlaybackState> = playbackConnectionManager.playbackState
+
     private val _uiState = MutableStateFlow(BlendUiState(currentUserName = blendRepository.getCurrentUserName()))
     val uiState: StateFlow<BlendUiState> = _uiState.asStateFlow()
 
@@ -56,7 +60,7 @@ class BlendViewModel @Inject constructor(
 
     fun loadBlend(blendId: String) {
         viewModelScope.launch {
-            _uiState.update { it.copy(isGenerating = true, error = null) }
+            _uiState.update { it.copy(isGenerating = true, error = null, activeBlend = null) }
             val blendWithTracks = blendRepository.getBlendWithTracks(blendId)
             _uiState.update {
                 it.copy(
@@ -87,17 +91,23 @@ class BlendViewModel @Inject constructor(
     }
 
     fun generateArtistBlend(onComplete: (String) -> Unit) {
+        if (_uiState.value.isGenerating) return
         val selected = curatedArtists.filter { _uiState.value.selectedArtistIds.contains(it.id) }
         if (selected.isEmpty()) return
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isGenerating = true, error = null) }
+            _uiState.update { it.copy(isGenerating = true, error = null, activeBlend = null) }
             try {
+                Log.d("StarkBlend", "Generating artist blend with ${selected.size} artists")
                 val created = blendRepository.synthesizeArtistBlend(selected)
-                _uiState.update { it.copy(activeBlend = created, isGenerating = false, selectedArtistIds = emptySet()) }
+                _uiState.update { it.copy(activeBlend = created, selectedArtistIds = emptySet()) }
                 onComplete(created.blend.blendId)
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isGenerating = false, error = "Synthesis failed: ${e.message}") }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Log.e("StarkBlend", "Artist blend failed", t)
+                _uiState.update { it.copy(error = "Synthesis failed: ${t.message ?: "Unknown error"}") }
+            } finally {
+                _uiState.update { it.copy(isGenerating = false) }
             }
         }
     }
@@ -149,6 +159,7 @@ class BlendViewModel @Inject constructor(
     }
 
     fun joinBlendWithToken(rawToken: String, onComplete: (String) -> Unit) {
+        if (_uiState.value.isGenerating) return
         val payload = blendRepository.decodeInviteToken(rawToken)
         if (payload == null) {
             _uiState.update { it.copy(error = "Invalid or corrupted Stark Blend invite code.") }
@@ -156,16 +167,21 @@ class BlendViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            _uiState.update { it.copy(isGenerating = true, error = null) }
+            _uiState.update { it.copy(isGenerating = true, error = null, activeBlend = null) }
             try {
-                // Generous safety ceiling so fusing tastes never hangs
-                val created = withTimeout(15_000L) {
+                Log.d("StarkBlend", "Starting friend blend synthesis for partner: ${payload.userName}")
+                val created = withTimeout(10_000L) {
                     blendRepository.synthesizeFriendBlend(payload)
                 }
-                _uiState.update { it.copy(activeBlend = created, isGenerating = false) }
+                Log.d("StarkBlend", "Friend blend synthesis completed: id=${created.blend.blendId}, tracks=${created.attributedTracks.size}")
+                _uiState.update { it.copy(activeBlend = created) }
                 onComplete(created.blend.blendId)
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isGenerating = false, error = "Failed to blend: ${e.message ?: "Synthesis error"}") }
+            } catch (t: Throwable) {
+                if (t is CancellationException) throw t
+                Log.e("StarkBlend", "Friend blend synthesis failed", t)
+                _uiState.update { it.copy(error = "Failed to blend: ${t.message ?: "Synthesis error"}") }
+            } finally {
+                _uiState.update { it.copy(isGenerating = false) }
             }
         }
     }

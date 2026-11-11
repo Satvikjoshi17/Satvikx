@@ -1,5 +1,11 @@
 package com.satvik.satvikx.ui.components
 
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
@@ -27,6 +33,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -66,6 +73,18 @@ fun BottomMiniPlayer(
     val thumbSize = if (isNarrow) 40.dp else 46.dp
     val actionBtnSize = if (isNarrow) 40.dp else 48.dp
 
+    val animatedBorderColor by animateColorAsState(
+        targetValue = if (playbackState.isPlaying) ArcCyan else StarkBorder,
+        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+        label = "mini_thumb_border"
+    )
+
+    val animatedProgress by animateFloatAsState(
+        targetValue = playbackState.progressFraction,
+        animationSpec = tween(durationMillis = 250, easing = LinearEasing),
+        label = "mini_progress"
+    )
+
     Surface(
         modifier = modifier
             .fillMaxWidth()
@@ -92,7 +111,7 @@ fun BottomMiniPlayer(
                     modifier = Modifier
                         .size(thumbSize)
                         .clip(CircleShape)
-                        .border(1.5.dp, if (playbackState.isPlaying) ArcCyan else StarkBorder, CircleShape),
+                        .border(1.5.dp, animatedBorderColor, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     AsyncImage(
@@ -166,12 +185,18 @@ fun BottomMiniPlayer(
                             onClick = onPlayPause,
                             modifier = Modifier.size(actionBtnSize)
                         ) {
-                            Icon(
-                                imageVector = if (playbackState.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (playbackState.isPlaying) "Pause" else "Play",
-                                tint = ArcCyanBright,
-                                modifier = Modifier.size(if (isNarrow) 24.dp else 30.dp)
-                            )
+                            Crossfade(
+                                targetState = playbackState.isPlaying,
+                                animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                                label = "mini_play_crossfade"
+                            ) { isPlaying ->
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) "Pause" else "Play",
+                                    tint = ArcCyanBright,
+                                    modifier = Modifier.size(if (isNarrow) 24.dp else 30.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -192,7 +217,7 @@ fun BottomMiniPlayer(
 
             // Real-time Stark Progress Indicator Bar
             LinearProgressIndicator(
-                progress = { playbackState.progressFraction },
+                progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(2.5.dp),

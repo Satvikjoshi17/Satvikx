@@ -3,7 +3,11 @@ package com.satvik.satvikx.ui.components
 import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -52,6 +56,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,7 +84,14 @@ fun JoinBlendDialog(
     onBlendCreated: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    // Intercept hardware and predictive back gestures so dialog can ALWAYS be dismissed
+    BackHandler {
+        viewModel.clearError()
+        onDismiss()
+    }
+
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var tokenInput by remember { mutableStateOf("") }
     var detectedClipboardCode by remember { mutableStateOf<String?>(null) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
@@ -104,7 +117,13 @@ fun JoinBlendDialog(
     }
 
     var isFusing by remember { mutableStateOf(false) }
+    var completedBlendId by remember { mutableStateOf<String?>(null) }
     var progress by remember { mutableFloatStateOf(0f) }
+    val smoothProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+        label = "join_blend_prog"
+    )
     var etaText by remember { mutableStateOf("EST. 1.2s") }
     var stageText by remember { mutableStateOf("1/4 • DECODING PARTNER TASTE VECTORS...") }
 
@@ -112,6 +131,8 @@ fun JoinBlendDialog(
     LaunchedEffect(uiState.error) {
         if (uiState.error != null) {
             isFusing = false
+            progress = 0f
+            stageText = "1/4 • DECODING PARTNER TASTE VECTORS..."
         }
     }
 
@@ -122,23 +143,22 @@ fun JoinBlendDialog(
         etaText = "EST. 1.2s"
         stageText = "1/4 • DECODING PARTNER TASTE VECTORS..."
 
-        var completedBlendId: String? = null
-
+        // Launch generation job strictly once per fusion sequence
         viewModel.joinBlendWithToken(cleanCode) { blendId ->
             completedBlendId = blendId
         }
 
         // Stage 1: Decode partner vectors (0% -> 28%)
         while (progress < 0.28f && uiState.error == null) {
-            delay(35)
+            delay(25)
             progress += 0.04f
-            etaText = "EST. 1.0s"
+            etaText = "EST. 0.9s"
             stageText = "1/4 • DECODING PARTNER TASTE VECTORS..."
         }
 
         // Stage 2: Cross-match acoustic matrices (28% -> 60%)
         while (progress < 0.60f && uiState.error == null) {
-            delay(35)
+            delay(25)
             progress += 0.04f
             etaText = "EST. 0.6s"
             stageText = "2/4 • CROSS-MATCHING ACOUSTIC MATRICES..."
@@ -146,81 +166,113 @@ fun JoinBlendDialog(
 
         // Stage 3: Curate shared anthem & discovery (60% -> 85%)
         while (progress < 0.85f && uiState.error == null) {
-            delay(35)
+            delay(25)
             progress += 0.04f
             etaText = "EST. 0.3s"
             stageText = "3/4 • CURATING SHARED ANTHEM & DISCOVERIES..."
         }
 
-        // Bounded wait for ViewModel completion (instant local resolution)
-        var waitIterations = 0
-        while (completedBlendId == null && uiState.error == null && waitIterations < 50) {
-            delay(50)
-            waitIterations++
+        // Wait for completion (instant local resolution; safety ceiling 10s)
+        var waitElapsedMs = 0
+        while (completedBlendId == null && uiState.activeBlend == null && uiState.error == null && waitElapsedMs < 10_000) {
+            delay(30)
+            waitElapsedMs += 30
+            if (progress < 0.94f) {
+                progress = (progress + 0.01f).coerceAtMost(0.94f)
+            }
         }
 
-        if (uiState.error != null) {
+        val targetBlendId = completedBlendId ?: uiState.activeBlend?.blend?.blendId
+
+        if (uiState.error != null || targetBlendId == null) {
             isFusing = false
+            progress = 0f
+            stageText = "1/4 • DECODING PARTNER TASTE VECTORS..."
+            if (uiState.error == null && targetBlendId == null) {
+                Toast.makeText(context, "Synthesis timed out. Please verify code and try again.", Toast.LENGTH_SHORT).show()
+            }
             return@LaunchedEffect
         }
 
-        // Stage 4: Composing 35-track master mashup (85% -> 100%)
+        // Stage 4: Composing 35-track master mashup (94% -> 100%)
+        stageText = "4/4 • COMPOSING 35-TRACK MASTER MASHUP..."
         while (progress < 1.0f) {
-            delay(30)
-            progress = (progress + 0.06f).coerceAtMost(1f)
+            delay(20)
+            progress = (progress + 0.04f).coerceAtMost(1f)
             etaText = if (progress >= 1f) "READY" else "EST. 0.1s"
-            stageText = "4/4 • COMPOSING 35-TRACK MASTER MASHUP..."
         }
 
-        delay(120) // Smooth visual closure
-        completedBlendId?.let { blendId ->
-            onBlendCreated(blendId)
-            onDismiss()
-        }
+        etaText = "READY"
+        stageText = "FUSION COMPLETE • LAUNCHING BLEND"
+        delay(150) // Smooth visual closure
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        onBlendCreated(targetBlendId)
+        onDismiss()
     }
 
     AlertDialog(
         onDismissRequest = {
-            if (!isFusing && !uiState.isGenerating) onDismiss()
+            viewModel.clearError()
+            onDismiss()
         },
         containerColor = SurfaceDark,
         shape = RoundedCornerShape(22.dp),
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Surface(
-                    shape = CircleShape,
-                    color = PrimaryNeon.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, PrimaryNeon),
-                    modifier = Modifier.size(42.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f, fill = false)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Hub,
-                            contentDescription = null,
-                            tint = PrimaryNeon,
-                            modifier = Modifier.size(20.dp)
+                    Surface(
+                        shape = CircleShape,
+                        color = PrimaryNeon.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, PrimaryNeon),
+                        modifier = Modifier.size(42.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Default.Hub,
+                                contentDescription = null,
+                                tint = PrimaryNeon,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "Join Stark Blend",
+                            style = MaterialTheme.typography.titleMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                        )
+                        Text(
+                            text = "TASTE FUSION PROTOCOL",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontFamily = FontFamily.Monospace,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = PrimaryNeon
+                            )
                         )
                     }
                 }
-                Spacer(modifier = Modifier.width(12.dp))
-                Column {
-                    Text(
-                        text = "Join Stark Blend",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
-                    )
-                    Text(
-                        text = "TASTE FUSION PROTOCOL",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = PrimaryNeon
-                        )
+                IconButton(
+                    onClick = {
+                        viewModel.clearError()
+                        onDismiss()
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close",
+                        tint = TextSecondary,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
@@ -236,9 +288,9 @@ fun JoinBlendDialog(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                if (isFusing || uiState.isGenerating) {
+                if (isFusing) {
                     TasteFusionEtaLoader(
-                        progress = progress,
+                        progress = smoothProgress,
                         etaText = etaText,
                         stageText = stageText,
                         partnerName = verifiedPayload?.userName ?: "Friend"
@@ -260,6 +312,7 @@ fun JoinBlendDialog(
                                     .fillMaxWidth()
                                     .clickable {
                                         detectedClipboardCode?.let {
+                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                             tokenInput = it
                                             detectedClipboardCode = null
                                             viewModel.clearError()
@@ -487,7 +540,8 @@ fun JoinBlendDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (cleanCode.isNotBlank()) {
+                    if (cleanCode.isNotBlank() && !isFusing && !uiState.isGenerating) {
+                        completedBlendId = null
                         isFusing = true
                     }
                 },
@@ -509,10 +563,17 @@ fun JoinBlendDialog(
             }
         },
         dismissButton = {
-            if (!isFusing && !uiState.isGenerating) {
-                TextButton(onClick = onDismiss) {
-                    Text("CANCEL", color = TextSecondary, fontFamily = FontFamily.Monospace)
+            TextButton(
+                onClick = {
+                    viewModel.clearError()
+                    onDismiss()
                 }
+            ) {
+                Text(
+                    text = if (isFusing || uiState.isGenerating) "CANCEL FUSION" else "CANCEL",
+                    color = TextSecondary,
+                    fontFamily = FontFamily.Monospace
+                )
             }
         }
     )

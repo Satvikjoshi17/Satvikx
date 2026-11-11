@@ -12,8 +12,8 @@ data class TrackEntity(
     val id: String,
     val title: String,
     val artist: String,
-    val durationSeconds: Long,
-    val thumbnailUrl: String,
+    val durationSeconds: Long = 210L,
+    val thumbnailUrl: String = "",
     val streamUrl: String? = null,
     val localPath: String? = null,
     val isDownloaded: Boolean = false,
@@ -219,6 +219,96 @@ fun TrackEntity.getEffectiveArtists(): List<String> {
 
     return candidates.distinct().ifEmpty {
         if (!isRecordLabelOrChannel(artist)) listOf(artist) else emptyList()
+    }
+}
+
+/**
+ * Polishes YouTube video titles into clean, concise song titles suitable for music player display.
+ * Strips bracketed clutter like (Official Video), [4K], | Lyrics, and extracts the primary song title segment.
+ */
+fun extractPolishedTitle(rawTitle: String, rawArtist: String = ""): String {
+    if (rawTitle.isBlank()) return ""
+    var t = rawTitle
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#039;", "'")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+
+    // 1. Remove bracketed / parenthetical clutter: (Official Video), [4K], (Lyric Video), etc.
+    val videoClutterRegex = Regex("""(?i)\s*[\(\[\{]\s*(?:official\s*(?:music\s*)?video|official\s*audio|official\s*visualizer|lyric(?:s|al)?(?:\s*video)?|full\s*(?:video|audio|song)|4k(?:\s*uhd)?|8k|1080p|hd|audio\s*song|video\s*song|visualizer|short\s*clip|teaser|trailer|motion\s*poster)[^\)\]\}]*[\)\]\}]""")
+    t = t.replace(videoClutterRegex, " ")
+
+    // 2. Remove record labels
+    t = t.replace(REGEX_RECORD_LABELS, " ")
+
+    // 3. Remove standalone clutter tags
+    val standaloneClutter = Regex("""(?i)\b(official\s*(?:music\s*)?video|official\s*audio|official\s*visualizer|lyric(?:al)?\s*video|full\s*(?:video|audio|song)|4k\s*uhd|4k|8k|hd|audio\s*song|video\s*song)\b""")
+    t = t.replace(standaloneClutter, " ")
+
+    // 4. Primary segment from pipe / dash / bullet
+    val pipeSegments = t.split("|", "•", "—", "–").map { it.trim() }.filter { it.isNotBlank() }
+    if (pipeSegments.isNotEmpty()) {
+        t = pipeSegments[0]
+    }
+
+    if (t.contains(" - ")) {
+        val dashParts = t.split(" - ").map { it.trim() }.filter { it.isNotBlank() }
+        if (dashParts.size >= 2) {
+            val part0 = dashParts[0]
+            val part1 = dashParts[1]
+            val cleanArt = cleanArtist(rawArtist)
+            if (cleanArt.isNotBlank() && (part0.contains(cleanArt, ignoreCase = true) || cleanArt.contains(part0.lowercase(java.util.Locale.ROOT)))) {
+                t = part1
+            } else {
+                t = part0
+            }
+        }
+    }
+
+    t = t.trim().trimEnd('-', '|', ':', ',', '/', '•', '~').trim()
+    return t.ifBlank { rawTitle.trim() }
+}
+
+/**
+ * Extracts true musical performers/artists for display, bypassing YouTube record label/distributor channels.
+ */
+fun extractPolishedArtist(rawTitle: String, rawArtist: String): String {
+    if (!isRecordLabelOrChannel(rawArtist)) {
+        val cleanA = rawArtist.replace(" - Topic", "", ignoreCase = true).trim()
+        if (cleanA.isNotBlank()) return cleanA
+    }
+
+    val titleSegments = rawTitle.split("|", " - ", "—", "–", "•", "/", "~")
+        .map { it.replace(Regex("""[\(\[\{].*?[\)\]\}]"""), " ").trim() }
+        .filter { it.isNotBlank() }
+
+    val candidates = mutableListOf<String>()
+    for (seg in titleSegments) {
+        val s = seg.trim()
+        if (s.length in 3..30 && !isRecordLabelOrChannel(s)) {
+            val sLower = s.lowercase(java.util.Locale.ROOT)
+            val isNoise = sLower.contains("video") || sLower.contains("audio") ||
+                    sLower.contains("song") || sLower.contains("official") ||
+                    sLower.contains("teaser") || sLower.contains("trailer") ||
+                    sLower.contains("album") || sLower.contains("remix") ||
+                    sLower.contains("full") || sLower.contains("lyrics") ||
+                    sLower.contains("movie") || sLower.contains("music")
+            if (!isNoise) {
+                val split = s.split(",", "&", "feat.", "ft.")
+                    .map { it.trim() }
+                    .filter { it.length >= 3 && !isRecordLabelOrChannel(it) }
+                candidates.addAll(split)
+            }
+        }
+    }
+
+    return if (candidates.isNotEmpty()) {
+        candidates.distinct().take(3).joinToString(", ")
+    } else {
+        if (rawArtist.isNotBlank() && rawArtist != "Unknown Artist") rawArtist else "Featured Artist"
     }
 }
 
@@ -439,8 +529,9 @@ fun List<TrackEntity>.distinctSongs(): List<TrackEntity> {
             if (!seenCoreWithArtist.add(key)) continue
         }
 
-        // 4. Secondary deep fuzzy check against the small filtered list
-        if (result.none { it.isSameSong(track) }) {
+        // 4. Secondary deep fuzzy check against recently added candidates to eliminate quadratic ANR blowup
+        val candidatesToCheck = if (result.size > 50) result.takeLast(50) else result
+        if (candidatesToCheck.none { it.isSameSong(track) }) {
             result.add(track)
         }
     }

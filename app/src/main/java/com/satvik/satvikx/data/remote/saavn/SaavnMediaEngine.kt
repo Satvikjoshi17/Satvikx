@@ -7,6 +7,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -16,7 +18,7 @@ import javax.inject.Singleton
  * bypassing rate limits, bot detection, and cloud container requirements.
  */
 @Singleton
-class SaavnMediaEngine @Inject constructor(
+open class SaavnMediaEngine @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) {
 
@@ -31,7 +33,7 @@ class SaavnMediaEngine @Inject constructor(
      * Instantly decrypts and embeds the 320kbps stream URL directly into the TrackEntity,
      * ensuring immediate playback with zero latency.
      */
-    fun searchTracks(query: String): List<TrackEntity> {
+    open fun searchTracks(query: String): List<TrackEntity> {
         val trimmed = query.trim()
         if (trimmed.isEmpty()) return emptyList()
 
@@ -72,7 +74,7 @@ class SaavnMediaEngine @Inject constructor(
      * Retrieves algorithmic song recommendations directly from the JioSaavn recommendation network.
      * Returns pristine 320kbps audio streams matching the acoustic profile of the seed song.
      */
-    fun getSongRecommendations(trackId: String): List<TrackEntity> {
+    open fun getSongRecommendations(trackId: String): List<TrackEntity> {
         val trimmed = trackId.trim()
         if (trimmed.isEmpty()) return emptyList()
 
@@ -210,4 +212,83 @@ class SaavnMediaEngine @Inject constructor(
             null
         }
     }
+
+    /**
+     * Retrieves plain-text lyrics from JioSaavn by song or lyrics identifier.
+     * Sanitizes HTML entities, replaces break tags with newlines, and strips residual markup.
+     *
+     * @param songIdOrLyricsId JioSaavn unique song identifier or dedicated lyrics ID.
+     * @return Sanitized plain-text lyrics string, or null if lyrics are unavailable.
+     */
+    open suspend fun getLyrics(songIdOrLyricsId: String): String? = withContext(Dispatchers.IO) {
+        getLyricsSync(songIdOrLyricsId)
+    }
+
+    /**
+     * Synchronously retrieves plain-text lyrics from JioSaavn.
+     * Useful for worker threads or background tasks.
+     *
+     * @param songIdOrLyricsId JioSaavn unique song identifier or dedicated lyrics ID.
+     * @return Sanitized plain-text lyrics string, or null if lyrics are unavailable.
+     */
+    open fun getLyricsSync(songIdOrLyricsId: String): String? {
+        val trimmedId = songIdOrLyricsId.trim()
+        if (trimmedId.isEmpty()) return null
+
+        return try {
+            val url = "$BASE_API?__call=lyrics.getLyrics&ctx=android&_format=json&_marker=0&lyrics_id=$trimmedId"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("User-Agent", USER_AGENT)
+                .addHeader("Accept", "application/json")
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful || response.body == null) {
+                Log.w(TAG, "Lyrics request failed for $songIdOrLyricsId with HTTP ${response.code}")
+                return null
+            }
+
+            val bodyString = response.body!!.string().trim()
+            if (bodyString.isEmpty() || bodyString == "null") return null
+
+            val json = JSONObject(bodyString)
+            val rawLyrics = json.optString("lyrics", "")
+            if (rawLyrics.isBlank() || rawLyrics.equals("null", ignoreCase = true)) {
+                return null
+            }
+
+            cleanSaavnLyrics(rawLyrics)
+        } catch (e: Exception) {
+            Log.w(TAG, "Exception fetching lyrics for $songIdOrLyricsId: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Sanitizes JioSaavn raw HTML lyrics by converting <br> tags to newlines,
+     * unescaping HTML entities, stripping formatting tags, and normalizing spacing.
+     */
+    fun cleanSaavnLyrics(rawLyrics: String): String? {
+        if (rawLyrics.isBlank()) return null
+
+        var text = rawLyrics
+            .replace(Regex("""(?i)<br\s*/?>"""), "\n")
+            .replace("&#39;", "'")
+            .replace("&#039;", "'")
+            .replace("&amp;", "&")
+            .replace("&quot;", "\"")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&copy;", "")
+
+        text = SaavnCryptoUtils.unescapeHtml(text)
+        // Strip any residual HTML tags
+        text = text.replace(Regex("""<[^>]+>"""), "")
+        // Normalize 3+ newlines to 2 newlines
+        text = text.replace(Regex("""\n{3,}"""), "\n\n").trim()
+
+        return text.ifBlank { null }
+    }
 }
+

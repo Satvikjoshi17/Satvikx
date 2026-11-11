@@ -14,7 +14,7 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -49,6 +49,10 @@ class PlaybackService : MediaSessionService() {
     @Inject
     lateinit var playbackSessionManager: PlaybackSessionManager
 
+    companion object {
+        const val NOTIFICATION_CHANNEL_ID = "satvikx_playback_channel"
+    }
+
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
@@ -57,6 +61,28 @@ class PlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+
+        // 0. Ensure persistent playback notification channel exists on API 26+
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val channel = android.app.NotificationChannel(
+                NOTIFICATION_CHANNEL_ID,
+                getString(com.satvik.satvikx.R.string.playback_notification_channel_name),
+                android.app.NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = "SatvikX Continuous Music Playback"
+                setShowBadge(false)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+            val notificationManager = getSystemService(android.app.NotificationManager::class.java)
+            notificationManager?.createNotificationChannel(channel)
+        }
+
+        // Configure Media3 Notification Provider with dedicated notification channel
+        val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
+            .setChannelId(NOTIFICATION_CHANNEL_ID)
+            .setChannelName(com.satvik.satvikx.R.string.playback_notification_channel_name)
+            .build()
+        setMediaNotificationProvider(notificationProvider)
 
         // Initialize high-performance WifiLock to prevent Android OS from putting network radio to sleep during background playback
         try {
@@ -131,14 +157,21 @@ class PlaybackService : MediaSessionService() {
         return mediaSession
     }
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY
+    }
+
     override fun onTaskRemoved(rootIntent: Intent?) {
         val activePlayer = player
         if (activePlayer != null) {
             playbackSessionManager.savePosition(activePlayer.currentPosition.coerceAtLeast(0L))
         }
-        if (activePlayer == null || !activePlayer.playWhenReady || activePlayer.playbackState == Player.STATE_IDLE) {
+        // Keep service alive if media is actively playing or buffering
+        if (activePlayer == null || (!activePlayer.playWhenReady && activePlayer.playbackState != Player.STATE_BUFFERING)) {
             stopSelf()
         }
+        super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {

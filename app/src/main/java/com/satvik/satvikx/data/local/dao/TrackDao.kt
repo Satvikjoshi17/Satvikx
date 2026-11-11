@@ -36,11 +36,20 @@ interface TrackDao {
     @Query("SELECT * FROM tracks WHERE id = :trackId LIMIT 1")
     suspend fun getTrackByIdSync(trackId: String): TrackEntity?
 
+    @Query("SELECT * FROM tracks WHERE id IN (:trackIds)")
+    suspend fun getTracksByIdsSync(trackIds: List<String>): List<TrackEntity>
+
     @Query("SELECT * FROM tracks ORDER BY addedAtTimestamp DESC")
     fun getAllTracks(): Flow<List<TrackEntity>>
 
+    @Query("SELECT * FROM tracks ORDER BY addedAtTimestamp DESC")
+    suspend fun getAllTracksSync(): List<TrackEntity>
+
     @Query("SELECT * FROM tracks WHERE isDownloaded = 1 ORDER BY addedAtTimestamp DESC")
     fun getDownloadedTracks(): Flow<List<TrackEntity>>
+
+    @Query("SELECT * FROM tracks WHERE isDownloaded = 1 ORDER BY addedAtTimestamp DESC")
+    suspend fun getDownloadedTracksSync(): List<TrackEntity>
 
     @Query("SELECT * FROM tracks WHERE title LIKE '%' || :query || '%' OR artist LIKE '%' || :query || '%' ORDER BY title ASC")
     fun searchTracks(query: String): Flow<List<TrackEntity>>

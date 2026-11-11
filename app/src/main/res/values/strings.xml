@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">SatvikX</string>
+    <string name="playback_notification_channel_name">Music Playback</string>
 </resources>

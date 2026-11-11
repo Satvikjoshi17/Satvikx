@@ -93,6 +93,7 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
+import com.satvik.satvikx.ui.components.isolateHorizontalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.draw.clip
@@ -364,7 +365,8 @@ fun PlaylistsScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
+                            .horizontalScroll(rememberScrollState())
+                            .isolateHorizontalScroll(),
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
@@ -1342,10 +1344,13 @@ private fun StarkBlendSection(
             LazyRow(
                 contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .isolateHorizontalScroll()
             ) {
                 items(blends, key = { it.blendId }) { blend ->
                     StarkBlendCard(
+                        modifier = Modifier.animateItem(),
                         blend = blend,
                         onClick = { onBlendClick(blend.blendId) }
                     )
@@ -1409,6 +1414,7 @@ private fun StarkBlendSection(
 
 @Composable
 private fun StarkBlendCard(
+    modifier: Modifier = Modifier,
     blend: BlendEntity,
     onClick: () -> Unit
 ) {
@@ -1416,7 +1422,7 @@ private fun StarkBlendCard(
         shape = RoundedCornerShape(16.dp),
         color = SurfaceElevated,
         border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.45f)),
-        modifier = Modifier
+        modifier = modifier
             .width(240.dp)
             .clickable(onClick = onClick)
     ) {

@@ -97,6 +97,7 @@ import com.satvik.satvikx.ui.components.ShimmerTrackList
 import com.satvik.satvikx.ui.components.StarkAuthDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
+import com.satvik.satvikx.ui.components.isolateHorizontalScroll
 import com.satvik.satvikx.ui.theme.ArcCyan
 import com.satvik.satvikx.ui.theme.ArcCyanBright
 import com.satvik.satvikx.ui.theme.BackgroundDark
@@ -407,7 +408,8 @@ fun HomeScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
+                            .horizontalScroll(rememberScrollState())
+                            .isolateHorizontalScroll(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         homeViewModel.availableMoods.forEach { mood ->
@@ -620,7 +622,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.moodTracks, key = { "mood_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -644,7 +648,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.jumpBackInTracks, key = { "jump_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -668,7 +674,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.dailyMixes, key = { it.id }) { mix ->
                             SpotifyDailyMixCard(
@@ -691,7 +699,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.topArtists, key = { it.name }) { artist ->
                             SpotifyArtistCard(
@@ -722,7 +732,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.becauseYouLikedTracks, key = { "liked_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -746,7 +758,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.similarArtistTracks, key = { "similar_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -770,7 +784,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.heavyRotationTracks, key = { "heavy_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -794,7 +810,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.discoveryRadarTracks, key = { "disc_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -818,7 +836,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.categoryRadarTracks, key = { "cat_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -842,7 +862,9 @@ fun HomeScreen(
                     LazyRow(
                         contentPadding = PaddingValues(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier.padding(top = 10.dp)
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .isolateHorizontalScroll()
                     ) {
                         items(uiState.vaultFavoritesTracks, key = { "vault_${it.id}" }) { track ->
                             SpotifyRecommendationCard(
@@ -868,6 +890,7 @@ fun HomeScreen(
 
                 items(uiState.trendingTracks, key = { "trend_${it.id}" }) { track ->
                     TrackItem(
+                        modifier = Modifier.animateItem(),
                         track = track,
                         onClick = {
                             homeViewModel.playTrackWithSuggestionQueue(

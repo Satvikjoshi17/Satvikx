@@ -5,6 +5,8 @@ import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.PlaylistEntity
 import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.extractPolishedArtist
+import com.satvik.satvikx.data.local.entity.extractPolishedTitle
 import com.satvik.satvikx.data.remote.supabase.dto.UserFavoriteDto
 import com.satvik.satvikx.data.remote.supabase.dto.UserPlaylistDto
 import com.satvik.satvikx.data.remote.supabase.dto.UserPlaylistTrackDto
@@ -100,21 +102,27 @@ class CloudSyncRepository @Inject constructor(
                 )
             }
 
-            // 3. Upload local favorites that are not yet on Supabase
+            // 3. Upload local favorites that are not yet on Supabase (with polished clean metadata)
             val localLikedTrackIds = playlistDao.getLikedTrackIds().firstOrNull() ?: emptyList()
             val toUpload = localLikedTrackIds.filter { it !in remoteTrackIds }
 
             for (trackId in toUpload) {
                 val track = trackDao.getTrackByIdSync(trackId)
                 if (track != null) {
+                    val cleanT = extractPolishedTitle(track.title, track.artist)
+                    val cleanA = extractPolishedArtist(track.title, track.artist)
+                    val cleanThumb = if (track.thumbnailUrl.contains("hqdefault.jpg")) {
+                        track.thumbnailUrl.replace("hqdefault.jpg", "mqdefault.jpg")
+                    } else track.thumbnailUrl
+
                     try {
                         supabaseClient.from("user_favorites").upsert(
                             UserFavoriteDto(
                                 userId = user.id,
                                 trackId = track.id,
-                                title = track.title,
-                                artist = track.artist,
-                                thumbnailUrl = track.thumbnailUrl,
+                                title = cleanT,
+                                artist = cleanA,
+                                thumbnailUrl = cleanThumb,
                                 durationSeconds = track.durationSeconds.toInt()
                             )
                         )
@@ -122,7 +130,7 @@ class CloudSyncRepository @Inject constructor(
                 }
             }
 
-            // 4. Sync custom playlists
+            // 4. Bidirectional Custom Playlist & Track Synchronization
             val remotePlaylists = try {
                 supabaseClient.from("user_playlists")
                     .select {
@@ -135,6 +143,7 @@ class CloudSyncRepository @Inject constructor(
                 emptyList()
             }
 
+            // A. Download missing remote playlists to local Room DB
             for (remoteP in remotePlaylists) {
                 var localP = playlistDao.getPlaylistByNameSync(remoteP.name)
                 if (localP == null) {
@@ -175,6 +184,69 @@ class CloudSyncRepository @Inject constructor(
                 }
             }
 
+            // B. Upload local custom playlists & their tracks to Supabase
+            val localCustomPlaylists = playlistDao.getAllPlaylistsWithTracksSync()
+                .filter { it.playlist.name != "Liked Songs" }
+
+            for (localCP in localCustomPlaylists) {
+                val matchingRemote = remotePlaylists.firstOrNull { it.name.equals(localCP.playlist.name, ignoreCase = true) }
+                val targetPlaylistId = matchingRemote?.id ?: run {
+                    try {
+                        val newDto = UserPlaylistDto(
+                            userId = user.id,
+                            name = localCP.playlist.name
+                        )
+                        val inserted = supabaseClient.from("user_playlists")
+                            .insert(newDto) {
+                                select()
+                            }
+                            .decodeSingleOrNull<UserPlaylistDto>()
+                        inserted?.id
+                    } catch (_: Exception) {
+                        null
+                    }
+                }
+
+                if (targetPlaylistId != null) {
+                    val remoteTracksForPlaylist = try {
+                        supabaseClient.from("user_playlist_tracks")
+                            .select {
+                                filter {
+                                    eq("playlist_id", targetPlaylistId)
+                                }
+                            }
+                            .decodeList<UserPlaylistTrackDto>()
+                    } catch (_: Exception) {
+                        emptyList()
+                    }
+                    val existingRemoteTrackIds = remoteTracksForPlaylist.map { it.trackId }.toSet()
+
+                    for (track in localCP.tracks) {
+                        if (!existingRemoteTrackIds.contains(track.id)) {
+                            val cleanT = extractPolishedTitle(track.title, track.artist)
+                            val cleanA = extractPolishedArtist(track.title, track.artist)
+                            val cleanThumb = if (track.thumbnailUrl.contains("hqdefault.jpg")) {
+                                track.thumbnailUrl.replace("hqdefault.jpg", "mqdefault.jpg")
+                            } else track.thumbnailUrl
+
+                            try {
+                                supabaseClient.from("user_playlist_tracks").upsert(
+                                    UserPlaylistTrackDto(
+                                        playlistId = targetPlaylistId,
+                                        userId = user.id,
+                                        trackId = track.id,
+                                        title = cleanT,
+                                        artist = cleanA,
+                                        thumbnailUrl = cleanThumb,
+                                        durationSeconds = track.durationSeconds.toInt()
+                                    )
+                                )
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+            }
+
             _syncState.value = SyncState.Success("Cloud sequence synchronized")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -188,13 +260,19 @@ class CloudSyncRepository @Inject constructor(
         scope.launch {
             try {
                 if (isLiked) {
+                    val cleanT = extractPolishedTitle(track.title, track.artist)
+                    val cleanA = extractPolishedArtist(track.title, track.artist)
+                    val cleanThumb = if (track.thumbnailUrl.contains("hqdefault.jpg")) {
+                        track.thumbnailUrl.replace("hqdefault.jpg", "mqdefault.jpg")
+                    } else track.thumbnailUrl
+
                     supabaseClient.from("user_favorites").upsert(
                         UserFavoriteDto(
                             userId = user.id,
                             trackId = track.id,
-                            title = track.title,
-                            artist = track.artist,
-                            thumbnailUrl = track.thumbnailUrl,
+                            title = cleanT,
+                            artist = cleanA,
+                            thumbnailUrl = cleanThumb,
                             durationSeconds = track.durationSeconds.toInt()
                         )
                     )

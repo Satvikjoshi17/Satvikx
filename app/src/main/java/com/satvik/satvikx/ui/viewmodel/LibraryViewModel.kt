@@ -229,6 +229,7 @@ class LibraryViewModel @Inject constructor(
             val isAlreadyLiked = playlistDao.isTrackLikedSync(track.id)
             if (isAlreadyLiked) {
                 playlistDao.deletePlaylistTrackCrossRef(favPlaylist.playlistId, track.id)
+                playbackConnectionManager.updateTrackLikeStatusInTelemetry(track.id, false)
             } else {
                 playlistDao.insertPlaylistTrackCrossRef(
                     PlaylistTrackCrossRef(
@@ -236,6 +237,7 @@ class LibraryViewModel @Inject constructor(
                         trackId = track.id
                     )
                 )
+                playbackConnectionManager.onTrackLiked(track)
             }
             cloudSyncRepository.onFavoriteChanged(track, !isAlreadyLiked)
         }

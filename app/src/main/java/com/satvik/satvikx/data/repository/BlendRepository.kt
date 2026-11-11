@@ -148,7 +148,8 @@ class BlendRepository @Inject constructor(
     private val recommendationRepository: RecommendationRepository,
     private val streamRepository: StreamRepository,
     private val authRepository: AuthRepository,
-    private val moshi: Moshi
+    private val moshi: Moshi,
+    private val blendTasteCalibrator: BlendTasteCalibrator = BlendTasteCalibrator()
 ) {
 
     private val payloadAdapter by lazy {
@@ -249,22 +250,18 @@ class BlendRepository @Inject constructor(
         candidateTracks.addAll(affinities.heavyRotationTracks.filter { it.isSongOnly() })
         candidateTracks.addAll(affinities.vaultTracks.filter { it.isSongOnly() })
 
-        // 1. Liked Songs
+        // 1. Liked Songs (bounded to top 20 to guarantee sub-millisecond execution)
         val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
         if (likedPlaylist != null) {
-            val liked = playlistDao.getPlaylistWithTracks(likedPlaylist.playlistId).firstOrNull()?.tracks.orEmpty()
-            candidateTracks.addAll(liked.filter { it.isSongOnly() })
+            val liked = playlistDao.getPlaylistWithTracksSync(likedPlaylist.playlistId)?.tracks.orEmpty()
+            candidateTracks.addAll(liked.filter { it.isSongOnly() }.take(20))
         }
 
-        // 2. Downloaded Songs
-        val downloaded = trackDao.getDownloadedTracks().firstOrNull().orEmpty()
-        candidateTracks.addAll(downloaded.filter { it.isSongOnly() })
+        // 2. Downloaded Songs (bounded to top 20)
+        val downloaded = trackDao.getDownloadedTracksSync()
+        candidateTracks.addAll(downloaded.filter { it.isSongOnly() }.take(20))
 
-        // 3. Local Library
-        val allLocal = trackDao.getAllTracks().firstOrNull().orEmpty()
-        candidateTracks.addAll(allLocal.filter { it.isSongOnly() })
-
-        var anchorTracks = candidateTracks.distinctSongs().take(18)
+        var anchorTracks = candidateTracks.take(40).distinctSongs().take(18)
 
         // If library has no tracks yet (brand new user), seed with timeless curated flagship tracks instantly (0ms)
         if (anchorTracks.isEmpty()) {
@@ -313,101 +310,19 @@ class BlendRepository @Inject constructor(
     }
 
     /**
-     * Extracts strictly the clean Blend code (e.g. "STKBLD:...") from any input string,
-     * stripping any surrounding chat text, explanations, or deep link wrappers.
+     * Extracts strictly the clean Blend code (e.g. "STKBLD:...") from any input string.
      */
-    fun extractCleanCode(rawInput: String): String {
-        if (rawInput.isBlank()) return ""
-        val trimmed = rawInput.trim()
-
-        // 1. If it's a URL or deep link (e.g. satvikx://blend?data=...)
-        val fromQuery = when {
-            trimmed.contains("data=") -> trimmed.substringAfter("data=").substringBefore("&").substringBefore(" ").substringBefore("\n")
-            trimmed.contains("token=") -> trimmed.substringAfter("token=").substringBefore("&").substringBefore(" ").substringBefore("\n")
-            trimmed.contains("code=") -> trimmed.substringAfter("code=").substringBefore("&").substringBefore(" ").substringBefore("\n")
-            else -> null
-        }
-
-        var candidate = (fromQuery ?: trimmed).trim()
-
-        // Handle URL decoding if encoded (e.g. %3A for :)
-        try {
-            candidate = URLDecoder.decode(candidate, "UTF-8")
-        } catch (_: Exception) {}
-
-        // 2. If it contains STKBLD:
-        if (candidate.contains("STKBLD:")) {
-            val afterPrefix = candidate.substringAfter("STKBLD:")
-                .substringBefore(" ")
-                .substringBefore("\n")
-                .substringBefore("\"")
-                .substringBefore("'")
-                .trim()
-            val cleanToken = afterPrefix.replace("\\s+".toRegex(), "").trim('"', '\'', '`', '<', '>', '(', ')')
-            return "STKBLD:$cleanToken"
-        }
-
-        // 3. Otherwise clean whitespace/quotes
-        val cleanCandidate = candidate.replace("\\s+".toRegex(), "").trim('"', '\'', '`', '<', '>', '(', ')')
-        return if (cleanCandidate.startsWith("STKBLD:")) cleanCandidate else cleanCandidate
-    }
+    fun extractCleanCode(rawInput: String): String = blendTasteCalibrator.extractCleanCode(rawInput)
 
     /**
      * Encodes a Blend invite payload into a portable URL-safe token.
-     * Uses GZIP compression to keep the code ultra-compact and easy to copy.
      */
-    fun encodeInviteToken(payload: BlendInvitePayload): String {
-        val json = payloadAdapter.toJson(payload)
-        val byteStream = ByteArrayOutputStream()
-        GZIPOutputStream(byteStream).use { it.write(json.toByteArray(Charsets.UTF_8)) }
-        val compressed = byteStream.toByteArray()
-        val base64 = Base64.encodeToString(compressed, Base64.NO_WRAP or Base64.URL_SAFE)
-        return "STKBLD:$base64"
-    }
+    fun encodeInviteToken(payload: BlendInvitePayload): String = blendTasteCalibrator.encodeInviteToken(payload, moshi)
 
     /**
      * Decodes a portable invite token back into a BlendInvitePayload.
-     * Supports GZIP-compressed tokens, uncompressed legacy tokens, deep link URLs,
-     * and auto-extracts the code even if pasted inside surrounding chat text.
      */
-    fun decodeInviteToken(rawToken: String): BlendInvitePayload? {
-        if (rawToken.isBlank()) return null
-
-        val cleanCode = extractCleanCode(rawToken)
-        val cleanBase64 = if (cleanCode.startsWith("STKBLD:")) {
-            cleanCode.removePrefix("STKBLD:")
-        } else {
-            cleanCode
-        }
-
-        if (cleanBase64.isBlank()) return null
-
-        val bytes = try {
-            Base64.decode(cleanBase64, Base64.NO_WRAP or Base64.URL_SAFE)
-        } catch (_: Exception) {
-            try {
-                Base64.decode(cleanBase64, Base64.DEFAULT)
-            } catch (_: Exception) {
-                return null
-            }
-        }
-
-        val json = try {
-            if (bytes.size >= 2 && bytes[0] == 0x1f.toByte() && bytes[1] == 0x8b.toByte()) {
-                GZIPInputStream(ByteArrayInputStream(bytes)).bufferedReader(Charsets.UTF_8).use { it.readText() }
-            } else {
-                String(bytes, Charsets.UTF_8)
-            }
-        } catch (_: Exception) {
-            return null
-        }
-
-        return try {
-            payloadAdapter.fromJson(json)
-        } catch (_: Exception) {
-            null
-        }
-    }
+    fun decodeInviteToken(rawToken: String): BlendInvitePayload? = blendTasteCalibrator.decodeInviteToken(rawToken, moshi)
 
     /**
      * Saves a synthesized Stark Blend as a permanent custom playlist in the user's library.
@@ -432,42 +347,18 @@ class BlendRepository @Inject constructor(
     }
 
     /**
-     * Calculates mathematical taste match compatibility between 0% and 100%.
-     * Minimum floor of 65% ensures encouraging, positive social feedback.
+     * Calculates mathematical taste match compatibility between 70% and 98%.
      */
-    private fun calculateTasteMatchScore(
+    fun calculateTasteMatchScore(
         userArtists: List<String>,
         partnerArtists: List<String>,
         userGenres: List<String>,
-        partnerGenres: List<String>
-    ): Pair<Int, String> {
-        val uA = userArtists.map { it.lowercase(Locale.ROOT).trim() }.toSet()
-        val pA = partnerArtists.map { it.lowercase(Locale.ROOT).trim() }.toSet()
-
-        val uG = userGenres.map { it.lowercase(Locale.ROOT).trim() }.toSet()
-        val pG = partnerGenres.map { it.lowercase(Locale.ROOT).trim() }.toSet()
-
-        val sharedArtists = uA.intersect(pA)
-        val sharedGenres = uG.intersect(pG)
-
-        val artistOverlapScore = if (uA.isNotEmpty() && pA.isNotEmpty()) {
-            (2.0f * sharedArtists.size) / (uA.size + pA.size)
-        } else 0.5f
-
-        val genreOverlapScore = if (uG.isNotEmpty() && pG.isNotEmpty()) {
-            (2.0f * sharedGenres.size) / (uG.size + pG.size)
-        } else 0.6f
-
-        val rawScore = (0.55f * artistOverlapScore) + (0.45f * genreOverlapScore)
-        // Scale to a realistic rewarding range of 68% to 98%
-        val finalScore = (68 + (rawScore * 30)).toInt().coerceIn(68, 98)
-
-        val sharedTopic = sharedGenres.firstOrNull()?.replaceFirstChar { it.uppercase() }
-            ?: sharedArtists.firstOrNull()?.replaceFirstChar { it.uppercase() }
-            ?: "Melodic Harmony"
-
-        return Pair(finalScore, sharedTopic)
-    }
+        partnerGenres: List<String>,
+        userTrackTitles: List<String> = emptyList(),
+        partnerTrackTitles: List<String> = emptyList()
+    ): Pair<Int, String> = blendTasteCalibrator.calculateTasteMatchScore(
+        userArtists, partnerArtists, userGenres, partnerGenres, userTrackTitles, partnerTrackTitles
+    )
 
     /**
      * Synthesizes a Stark Blend between the current user and a friend from an invite token.
@@ -483,29 +374,20 @@ class BlendRepository @Inject constructor(
         val creatorName = getCurrentUserName()
         val partnerName = partnerPayload.userName.trim().ifBlank { "Friend" }
 
-        val (matchScore, topSharedGenre) = calculateTasteMatchScore(
-            userArtists = affinities.overallTopArtists,
-            partnerArtists = partnerPayload.topArtists,
-            userGenres = affinities.topGenres,
-            partnerGenres = partnerPayload.topGenres
-        )
-
-        // 1. Gather User B's Deep Library (Up to 18 authentic tracks)
+        // 1. Gather User B's Deep Library (Up to 18 authentic tracks, bounded to eliminate quadratic distinct checks)
         val userCandidates = mutableListOf<TrackEntity>()
         userCandidates.addAll(affinities.heavyRotationTracks.filter { it.isSongOnly() })
         userCandidates.addAll(affinities.vaultTracks.filter { it.isSongOnly() })
 
         val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
         if (likedPlaylist != null) {
-            val liked = playlistDao.getPlaylistWithTracks(likedPlaylist.playlistId).firstOrNull()?.tracks.orEmpty()
-            userCandidates.addAll(liked.filter { it.isSongOnly() })
+            val liked = playlistDao.getPlaylistWithTracksSync(likedPlaylist.playlistId)?.tracks.orEmpty()
+            userCandidates.addAll(liked.filter { it.isSongOnly() }.take(20))
         }
-        val downloaded = trackDao.getDownloadedTracks().firstOrNull().orEmpty()
-        userCandidates.addAll(downloaded.filter { it.isSongOnly() })
-        val allLocal = trackDao.getAllTracks().firstOrNull().orEmpty()
-        userCandidates.addAll(allLocal.filter { it.isSongOnly() })
+        val downloaded = trackDao.getDownloadedTracksSync()
+        userCandidates.addAll(downloaded.filter { it.isSongOnly() }.take(20))
 
-        var userVault = userCandidates.distinctSongs().take(18).toMutableList()
+        var userVault = userCandidates.take(40).distinctSongs().take(18).toMutableList()
 
         // If User B has fewer than 18 tracks, augment instantly from Curated Master Vault (0ms delay)
         if (userVault.size < 18) {
@@ -526,11 +408,18 @@ class BlendRepository @Inject constructor(
 
         // 2. Resolve Partner's Anchor Tracks directly from payload with zero network delay
         val partnerAnchorTracks = mutableListOf<TrackEntity>()
+        val partnerTrackIds = partnerPayload.anchorTrackIds.filter { it.isNotBlank() }
+        val cachedTracksMap = if (partnerTrackIds.isNotEmpty()) {
+            trackDao.getTracksByIdsSync(partnerTrackIds).associateBy { it.id }
+        } else {
+            emptyMap()
+        }
+
         partnerPayload.anchorTitles.forEachIndexed { i, title ->
             val artist = partnerPayload.anchorArtists.getOrNull(i).orEmpty()
             val trackId = partnerPayload.anchorTrackIds.getOrNull(i).orEmpty()
             if (title.isNotBlank()) {
-                val cached = if (trackId.isNotBlank()) trackDao.getTrackByIdSync(trackId) else null
+                val cached = if (trackId.isNotBlank()) cachedTracksMap[trackId] else null
                 val curatedMatch = MASTER_CURATED_TRACKS.firstOrNull { it.title.equals(title.trim(), ignoreCase = true) }
 
                 val effectiveId = when {
@@ -573,7 +462,17 @@ class BlendRepository @Inject constructor(
             partnerAnchorTracks.addAll(fallbackPartnerSeeds)
         }
 
-        // 3. Identify Shared Artists
+        // 3. Mathematical Taste Match Calibration
+        val (matchScore, topSharedGenre) = calculateTasteMatchScore(
+            userArtists = affinities.overallTopArtists,
+            partnerArtists = partnerPayload.topArtists,
+            userGenres = affinities.topGenres,
+            partnerGenres = partnerPayload.topGenres,
+            userTrackTitles = userVault.map { it.title },
+            partnerTrackTitles = partnerAnchorTracks.map { it.title }
+        )
+
+        // 4. Identify Shared Artists
         val sharedArtists = affinities.overallTopArtists.filter { uA ->
             partnerPayload.topArtists.any { pA ->
                 uA.contains(pA, ignoreCase = true) || pA.contains(uA, ignoreCase = true)
@@ -609,7 +508,7 @@ class BlendRepository @Inject constructor(
             sharedAnthem = partnerAnchorTracks.firstOrNull() ?: userVault.firstOrNull() ?: MASTER_CURATED_TRACKS.first().toTrackEntity()
         }
 
-        // 5. Complementary Mutual Discoveries (instant curated resolution + optional bounded 600ms live probe)
+        // 5. Complementary Mutual Discoveries (instant curated resolution with 0ms network latency)
         val mutualDiscoveryTracks = mutableListOf<TrackEntity>()
 
         val curatedDiscoveries = MASTER_CURATED_TRACKS.filter { seed ->
@@ -622,24 +521,6 @@ class BlendRepository @Inject constructor(
             .filter { seed -> userVault.none { it.isSameSong(seed) } && partnerAnchorTracks.none { it.isSameSong(seed) } }
 
         mutualDiscoveryTracks.addAll(curatedDiscoveries)
-
-        // Bounded live probe strictly capped at 600ms so synthesis NEVER delays
-        try {
-            val liveTracks = withTimeoutOrNull(600L) {
-                val query = if (sharedArtists.isNotEmpty()) {
-                    "${sharedArtists.first()} top songs audio"
-                } else {
-                    "$topSharedGenre hit songs audio"
-                }
-                streamRepository.searchTracks(query)
-                    .firstOrNull()?.getOrNull().orEmpty()
-                    .filter { it.isSongOnly() }
-                    .take(4)
-            }
-            if (!liveTracks.isNullOrEmpty()) {
-                mutualDiscoveryTracks.addAll(0, liveTracks)
-            }
-        } catch (_: Exception) {}
 
         // 6. Intelligent Curation & Interleaving (Target: Exactly 35 tracks)
         val attributedList = mutableListOf<AttributedTrack>()
@@ -668,15 +549,25 @@ class BlendRepository @Inject constructor(
 
         // Interleave in a studio-quality mashup pattern
         while (attributedList.size < 35 && (uIter.hasNext() || pIter.hasNext() || dIter.hasNext())) {
+            var anyAdvanced = false
             if (uIter.hasNext() && attributedList.size < 35) {
                 addTrack(uIter.next(), "creator", creatorName)
+                anyAdvanced = true
             }
             if (pIter.hasNext() && attributedList.size < 35) {
                 addTrack(pIter.next(), "partner", partnerName)
+                anyAdvanced = true
             }
-            // Insert a shared/discovery song every 4 tracks
-            if (dIter.hasNext() && attributedList.size < 35 && (attributedList.size % 4 == 0)) {
+            if (dIter.hasNext() && attributedList.size < 35 && (attributedList.size % 4 == 0 || (!uIter.hasNext() && !pIter.hasNext()))) {
                 addTrack(dIter.next(), "both", "Both")
+                anyAdvanced = true
+            }
+            if (!anyAdvanced) {
+                if (dIter.hasNext() && attributedList.size < 35) {
+                    addTrack(dIter.next(), "both", "Both")
+                } else {
+                    break
+                }
             }
         }
 
@@ -768,11 +659,13 @@ class BlendRepository @Inject constructor(
             }.awaitAll().toMap()
         }
 
-        // Calculate realistic affinity score
-        val matchingAffinities = selectedArtists.count { a ->
-            affinities.overallTopArtists.any { it.contains(a.name, ignoreCase = true) }
-        }
-        val matchScore = (76 + (matchingAffinities * 8) + (Math.random() * 8).toInt()).coerceIn(75, 96)
+        // Deterministic, calibrated affinity scoring based on user's actual taste vectors
+        val matchScore = blendTasteCalibrator.calculateArtistAffinity(
+            selectedArtists = selectedArtists,
+            overallTopArtists = affinities.overallTopArtists,
+            userVaultArtists = userVault.map { it.artist },
+            topGenres = affinities.topGenres
+        )
 
         // Identify Shared Anthem
         val firstArtistTracks = artistTracksMap[selectedArtists.first().name].orEmpty()
@@ -784,7 +677,7 @@ class BlendRepository @Inject constructor(
         val seenTrackKeys = HashSet<String>()
 
         fun addTrack(track: TrackEntity, broughtBy: String, broughtByName: String) {
-            val key = track.cleanSongTitle().replace(" ", "")
+            val key = track.cleanSongTitle().replace(" ", "").lowercase(Locale.ROOT)
             if (key.isNotBlank() && seenTrackKeys.add(key)) {
                 attributedList.add(AttributedTrack(track, broughtBy, broughtByName))
             }
@@ -828,9 +721,8 @@ class BlendRepository @Inject constructor(
             isArtistBlend = true
         )
 
-        for (item in attributedList) {
-            trackDao.insertTrack(item.track)
-        }
+        // Batch insert tracks in room database for instantaneous synthesis
+        trackDao.insertTracks(attributedList.map { it.track })
 
         blendDao.insertBlend(blendEntity)
 
@@ -849,19 +741,13 @@ class BlendRepository @Inject constructor(
     }
 
     /**
-     * Reads a blend and resolves all attributed tracks from Room.
+     * Reads a blend and resolves all attributed tracks from Room using an optimized batch query.
      */
     suspend fun getBlendWithTracks(blendId: String): BlendWithTracks? = withContext(Dispatchers.IO) {
         val blend = blendDao.getBlendById(blendId) ?: return@withContext null
         val refs = blendDao.getBlendTracks(blendId)
-        val tracksMap = mutableMapOf<String, TrackEntity>()
-
-        refs.forEach { ref ->
-            val track = trackDao.getTrackByIdSync(ref.trackId)
-            if (track != null) {
-                tracksMap[ref.trackId] = track
-            }
-        }
+        val trackIds = refs.map { it.trackId }.distinct()
+        val tracksMap = trackDao.getTracksByIdsSync(trackIds).associateBy { it.id }
 
         val attributed = refs.mapNotNull { ref ->
             tracksMap[ref.trackId]?.let { track ->

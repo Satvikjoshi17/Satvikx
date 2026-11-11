@@ -1,6 +1,9 @@
 package com.satvik.satvikx.ui.navigation
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -11,12 +14,15 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -24,18 +30,19 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
+import kotlinx.coroutines.launch
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.BottomMiniPlayer
@@ -59,18 +66,35 @@ fun RootNavigationHost(
     libraryViewModel: LibraryViewModel = hiltViewModel(),
     searchViewModel: SearchViewModel = hiltViewModel()
 ) {
-    val navController = rememberNavController()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route
+    val coroutineScope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(initialPage = 0, pageCount = { Screen.bottomNavItems.size })
 
     val playbackState by playerViewModel.playbackState.collectAsStateWithLifecycle()
     val updateState by playerViewModel.updateState.collectAsStateWithLifecycle()
     val likedTrackIds by libraryViewModel.likedTrackIds.collectAsStateWithLifecycle()
+    val lyricsState by playerViewModel.lyricsState.collectAsStateWithLifecycle()
 
     var isFullPlayerExpanded by remember { mutableStateOf(false) }
+    var isQueueOpen by remember { mutableStateOf(false) }
     var trackForPlaylistDialog by remember { mutableStateOf<TrackEntity?>(null) }
-    val fullPlayerSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val fullPlayerSheetState = rememberModalBottomSheetState(
+        skipPartiallyExpanded = true,
+        confirmValueChange = { sheetValue ->
+            if (isQueueOpen && sheetValue != SheetValue.Expanded) {
+                false
+            } else {
+                true
+            }
+        }
+    )
     var lastSearchClickTime by remember { mutableLongStateOf(0L) }
+
+    // Intercept hardware back button when on a secondary tab to return to Home (Instagram style)
+    BackHandler(enabled = pagerState.currentPage != 0 && !isFullPlayerExpanded && !isQueueOpen) {
+        coroutineScope.launch {
+            pagerState.animateScrollToPage(0)
+        }
+    }
 
     Scaffold(
         bottomBar = {
@@ -82,8 +106,14 @@ fun RootNavigationHost(
                 // Persistent Floating MiniPlayer docked above NavigationBar
                 AnimatedVisibility(
                     visible = playbackState.currentTrack != null,
-                    enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                    exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
+                    enter = slideInVertically(
+                        initialOffsetY = { it },
+                        animationSpec = tween(durationMillis = 340, easing = FastOutSlowInEasing)
+                    ) + fadeIn(animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing)),
+                    exit = slideOutVertically(
+                        targetOffsetY = { it },
+                        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                    ) + fadeOut(animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing))
                 ) {
                     BottomMiniPlayer(
                         playbackState = playbackState,
@@ -99,8 +129,8 @@ fun RootNavigationHost(
                     tonalElevation = 8.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Screen.bottomNavItems.forEach { screen ->
-                        val isSelected = currentRoute == screen.route
+                    Screen.bottomNavItems.forEachIndexed { index, screen ->
+                        val isSelected = pagerState.currentPage == index
                         NavigationBarItem(
                             selected = isSelected,
                             onClick = {
@@ -111,12 +141,11 @@ fun RootNavigationHost(
                                     lastSearchClickTime = currentTime
                                 }
 
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(
+                                        page = index,
+                                        animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing)
+                                    )
                                 }
 
                                 if (isSearch) {
@@ -155,28 +184,29 @@ fun RootNavigationHost(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            NavHost(
-                navController = navController,
-                startDestination = Screen.Home.route,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                composable(Screen.Home.route) {
-                    HomeScreen()
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+                beyondViewportPageCount = 1,
+                pageNestedScrollConnection = remember {
+                    object : NestedScrollConnection {
+                        // Do not allow nested child horizontal scroll containers (like recommendation carousels)
+                        // to drag or switch the parent tab pager
+                        override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset = Offset.Zero
+                        override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset = Offset.Zero
+                        override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity = Velocity.Zero
+                    }
                 }
-                composable(Screen.Search.route) {
-                    SearchScreen(
+            ) { pageIndex ->
+                when (Screen.bottomNavItems[pageIndex]) {
+                    Screen.Home -> HomeScreen()
+                    Screen.Search -> SearchScreen(
                         viewModel = searchViewModel,
                         libraryViewModel = libraryViewModel
                     )
-                }
-                composable(Screen.Downloads.route) {
-                    DownloadsScreen()
-                }
-                composable(Screen.Recents.route) {
-                    RecentsScreen()
-                }
-                composable(Screen.Playlists.route) {
-                    PlaylistsScreen()
+                    Screen.Playlists -> PlaylistsScreen()
+                    Screen.Downloads -> DownloadsScreen()
+                    Screen.Recents -> RecentsScreen()
                 }
             }
         }
@@ -190,7 +220,12 @@ fun RootNavigationHost(
         FullPlayerSheet(
             playbackState = playbackState,
             sheetState = fullPlayerSheetState,
-            onDismiss = { isFullPlayerExpanded = false },
+            onDismiss = {
+                isQueueOpen = false
+                isFullPlayerExpanded = false
+            },
+            isQueueOpen = isQueueOpen,
+            onQueueOpenChange = { isQueueOpen = it },
             onPlayPause = { playerViewModel.playPause() },
             onSeekTo = { playerViewModel.seekTo(it) },
             onSkipNext = { playerViewModel.skipToNext() },
@@ -204,10 +239,13 @@ fun RootNavigationHost(
             onPlayTrackAtIndex = { playerViewModel.playTrackAtIndex(it) },
             onRemoveFromQueue = { playerViewModel.removeFromQueue(it) },
             onMoveQueueItem = { from, to -> playerViewModel.moveQueueItem(from, to) },
+            onRefreshQueue = { playerViewModel.refreshQueue() },
             onStartSleepTimer = { playerViewModel.startSleepTimer(it) },
             onCancelSleepTimer = { playerViewModel.cancelSleepTimer() },
             isFavorite = isCurrentTrackLiked,
-            onToggleFavorite = { libraryViewModel.toggleFavorite(it) }
+            onToggleFavorite = { libraryViewModel.toggleFavorite(it) },
+            lyricsState = lyricsState,
+            onRetryLyrics = { playerViewModel.retryFetchLyrics() }
         )
     }
 

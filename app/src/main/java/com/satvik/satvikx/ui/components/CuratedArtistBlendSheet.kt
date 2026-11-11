@@ -1,5 +1,8 @@
 package com.satvik.satvikx.ui.components
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -49,6 +52,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,6 +78,7 @@ fun CuratedArtistBlendSheet(
     onBlendCreated: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val haptic = LocalHapticFeedback.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val allArtists = viewModel.curatedArtists
     var selectedCategory by remember { mutableStateOf("All") }
@@ -193,16 +199,36 @@ fun CuratedArtistBlendSheet(
                 items(filteredArtists, key = { it.id }) { artist ->
                     val isSelected = uiState.selectedArtistIds.contains(artist.id)
 
+                    val animBgColor by animateColorAsState(
+                        targetValue = if (isSelected) ArcCyan.copy(alpha = 0.15f) else SurfaceElevated,
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                        label = "artist_bg"
+                    )
+                    val animBorderColor by animateColorAsState(
+                        targetValue = if (isSelected) ArcCyanBright else SurfaceVariantDark,
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                        label = "artist_border"
+                    )
+                    val animIconBg by animateColorAsState(
+                        targetValue = if (isSelected) ArcCyanBright else SurfaceVariantDark,
+                        animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
+                        label = "artist_icon_bg"
+                    )
+
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = if (isSelected) ArcCyan.copy(alpha = 0.12f) else SurfaceElevated,
+                        color = animBgColor,
                         border = BorderStroke(
                             width = if (isSelected) 1.5.dp else 1.dp,
-                            color = if (isSelected) ArcCyanBright else SurfaceVariantDark
+                            color = animBorderColor
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable { viewModel.toggleArtistSelection(artist.id) }
+                            .animateItem()
+                            .clickable {
+                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                viewModel.toggleArtistSelection(artist.id)
+                            }
                     ) {
                         Row(
                             modifier = Modifier
@@ -212,7 +238,7 @@ fun CuratedArtistBlendSheet(
                         ) {
                             Surface(
                                 shape = CircleShape,
-                                color = if (isSelected) ArcCyanBright else SurfaceVariantDark,
+                                color = animIconBg,
                                 modifier = Modifier.size(38.dp)
                             ) {
                                 Box(contentAlignment = Alignment.Center) {
@@ -242,7 +268,7 @@ fun CuratedArtistBlendSheet(
                                         text = artist.name,
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             fontWeight = FontWeight.Bold,
-                                            color = TextPrimary
+                                            color = if (isSelected) ArcCyanBright else TextPrimary
                                         ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis

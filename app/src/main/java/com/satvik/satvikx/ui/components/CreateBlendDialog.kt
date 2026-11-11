@@ -6,6 +6,9 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
@@ -54,6 +57,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -84,12 +89,18 @@ fun CreateBlendDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     var inviteCode by remember { mutableStateOf<String?>(null) }
     var tastePayload by remember { mutableStateOf<BlendInvitePayload?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var isCopied by remember { mutableStateOf(false) }
 
     var progress by remember { mutableFloatStateOf(0f) }
+    val smoothProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing),
+        label = "create_blend_prog"
+    )
     var etaText by remember { mutableStateOf("EST. 1.2s") }
     var stageText by remember { mutableStateOf("1/3 • MINING ACOUSTIC AFFINITIES...") }
 
@@ -135,6 +146,7 @@ fun CreateBlendDialog(
         inviteCode = info.code
         tastePayload = info.payload
         isLoading = false
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
     }
 
     fun copyOnlyCode(code: String) {
@@ -143,6 +155,7 @@ fun CreateBlendDialog(
         val clip = ClipData.newPlainText("Stark Blend Code", code)
         clipboard.setPrimaryClip(clip)
         isCopied = true
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         Toast.makeText(context, "Blend code copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
@@ -203,7 +216,7 @@ fun CreateBlendDialog(
 
                 if (isLoading) {
                     TasteProfileComputationEtaLoader(
-                        progress = progress,
+                        progress = smoothProgress,
                         etaText = etaText,
                         stageText = stageText
                     )

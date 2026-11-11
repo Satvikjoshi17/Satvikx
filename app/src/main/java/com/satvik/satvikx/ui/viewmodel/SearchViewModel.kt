@@ -78,7 +78,7 @@ class SearchViewModel @Inject constructor(
     init {
         // Debounce query input to eliminate unnecessary API requests and preserve snappy typing cadence
         queryFlow
-            .debounce(380)
+            .debounce(260)
             .distinctUntilChanged()
             .filter { it.trim().length >= 2 }
             .onEach { query ->
@@ -162,31 +162,31 @@ class SearchViewModel @Inject constructor(
 
             // Trending queries
             lower == "trending" || lower == "trending 50" || lower == "trending global" ->
-                "Trending Global Music Hits 2026"
+                "Trending Music Hits"
 
             // Lo-Fi queries
             lower == "chill lofi" || lower == "lofi" || lower == "lo-fi" ->
-                "Chill Lofi Beats Songs"
+                "Chill Lofi Beats"
 
             // Synthwave
             lower == "synthwave" || lower == "synthwave 2088" ->
-                "Cyberpunk Synthwave Music"
+                "Synthwave Music"
 
             // EDM
             lower == "edm" || lower == "edm & club" ->
-                "EDM Festival Hits Music"
+                "EDM Hits"
 
             // Bollywood & Regional
             lower == "bollywood hits" ->
-                "Bollywood Hits Songs 2026"
+                "Bollywood Hits Songs"
             lower == "punjabi beats" ->
-                "Punjabi Hits Songs 2026"
+                "Punjabi Hits Songs"
             lower == "night drive" ->
-                "Night Drive Phonk Synthwave Songs"
+                "Night Drive Songs"
             lower == "acoustic chill" ->
                 "Acoustic Pop Chill Songs"
             lower == "hip hop & rap" ->
-                "Best Hip Hop Rap Songs"
+                "Hip Hop Rap Songs"
 
             else -> q
         }
@@ -242,8 +242,13 @@ class SearchViewModel @Inject constructor(
                 result.fold(
                     onSuccess = { tracks ->
                         val allowMashup = trimmed.contains("mashup", ignoreCase = true)
-                        val songsOnly = tracks.filter { it.isSongOnly(allowMashup = allowMashup) }
-                        val finalTracks = if (songsOnly.isNotEmpty()) songsOnly else tracks
+                        val allowCompilation = trimmed.contains("best", ignoreCase = true) ||
+                                               trimmed.contains("top", ignoreCase = true) ||
+                                               trimmed.contains("collection", ignoreCase = true) ||
+                                               trimmed.contains("jukebox", ignoreCase = true) ||
+                                               trimmed.contains("mix", ignoreCase = true)
+                        val filtered = if (allowCompilation) tracks else tracks.filter { it.isSongOnly(allowMashup = allowMashup) }
+                        val finalTracks = filtered.ifEmpty { tracks }
                         if (finalTracks.isNotEmpty()) {
                             searchCache[cacheKey] = finalTracks
                         }
@@ -281,9 +286,9 @@ class SearchViewModel @Inject constructor(
     }
 
     fun playTrack(track: TrackEntity, customQueue: List<TrackEntity>? = null) {
-        val initialQueue = if (!customQueue.isNullOrEmpty()) {
+        if (!customQueue.isNullOrEmpty()) {
             val idx = customQueue.indexOfFirst { it.id == track.id }
-            if (idx != -1) {
+            val initialQueue = if (idx != -1) {
                 val upcoming = customQueue.subList(idx + 1, customQueue.size)
                     .filter { it.isSongOnly() && !it.isSameSong(track) }
                     .distinctSongs()
@@ -296,25 +301,11 @@ class SearchViewModel @Inject constructor(
                     .filter { it.id != track.id && !it.isSameSong(track) && it.isSongOnly() }
                     .distinctSongs()
             }
+            playbackConnectionManager.playTrack(track, initialQueue)
         } else {
-            listOf(track)
-        }
-
-        playbackConnectionManager.playTrack(track, initialQueue)
-
-        // Enrich the upcoming queue with algorithmic recommendations without interrupting active playback
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val recommendations = recommendationRepository.generateRecommendationQueue(track)
-                val filteredRecs = recommendations
-                    .filter { it.isSongOnly() && !it.isSameSong(track) }
-                    .distinctSongs()
-                if (filteredRecs.isNotEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        playbackConnectionManager.updateUpcomingQueue(filteredRecs)
-                    }
-                }
-            } catch (_: Exception) {}
+            // When playing from search, seed the playback and let Autoplay generate
+            // a fresh, high-affinity, vibe-aligned 15-track recommendation queue!
+            playbackConnectionManager.playTrack(track, emptyList())
         }
     }
 

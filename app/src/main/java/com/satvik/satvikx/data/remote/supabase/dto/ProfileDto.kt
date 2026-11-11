@@ -15,6 +15,12 @@ data class ProfileDto(
     val isGuest: Boolean = false,
     @SerialName("listening_seconds")
     val listeningSeconds: Long = 0L,
+    @SerialName("listening_time_human")
+    val listeningTimeHuman: String? = null,
+    @SerialName("last_active_ist")
+    val lastActiveIst: String? = null,
+    @SerialName("device_model")
+    val deviceModel: String? = null,
     @SerialName("created_at")
     val createdAt: String? = null
 )

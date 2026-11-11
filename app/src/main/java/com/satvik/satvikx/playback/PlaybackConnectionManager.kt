@@ -2,6 +2,7 @@ package com.satvik.satvikx.playback
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.util.Log
 import androidx.annotation.OptIn
@@ -25,6 +26,7 @@ import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.local.storage.StorageManager
 import com.satvik.satvikx.data.remote.saavn.SaavnMediaEngine
 import com.satvik.satvikx.data.repository.RecommendationRepository
+import com.satvik.satvikx.recommendation.SessionAdaptationTrigger
 import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.playback.model.PlaybackState
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -63,7 +65,9 @@ class PlaybackConnectionManager @Inject constructor(
     private val storageManager: StorageManager,
     private val playbackSessionManager: PlaybackSessionManager,
     private val recommendationRepositoryProvider: Provider<RecommendationRepository>,
-    private val saavnMediaEngine: SaavnMediaEngine
+    private val saavnMediaEngine: SaavnMediaEngine,
+    private val authRepositoryProvider: Provider<com.satvik.satvikx.data.repository.AuthRepository>,
+    private val supabaseAnalyticsRepositoryProvider: Provider<com.satvik.satvikx.data.repository.SupabaseAnalyticsRepository>
 ) {
 
     companion object {
@@ -135,7 +139,17 @@ class PlaybackConnectionManager @Inject constructor(
         }
     }
 
+    private fun ensureServiceStarted() {
+        try {
+            val intent = Intent(context, PlaybackService::class.java)
+            context.startService(intent)
+        } catch (e: Exception) {
+            Log.w(TAG, "Explicit service start non-fatal: ${e.message}")
+        }
+    }
+
     private fun initializeController() {
+        ensureServiceStarted()
         val sessionToken = SessionToken(
             context,
             ComponentName(context, PlaybackService::class.java)
@@ -172,6 +186,8 @@ class PlaybackConnectionManager @Inject constructor(
         val initialQueue = if (filteredPlaylist.isNotEmpty()) filteredPlaylist else listOf(track)
         val initialIndex = initialQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
 
+        ensureServiceStarted()
+
         // 1. Immediately update UI state so Spotify-style bottom mini-player pops up instantly!
         _playbackState.update {
             it.copy(
@@ -201,6 +217,16 @@ class PlaybackConnectionManager @Inject constructor(
 
             currentPlaylist = queueToSet.toMutableList()
             val targetIndex = currentPlaylist.indexOfFirst { it.id == playableTrack.id }.coerceAtLeast(0)
+
+            // Proactively resolve the immediate next track so gapless transition never encounters Uri.EMPTY
+            val nextTrack = currentPlaylist.getOrNull(targetIndex + 1)
+            if (nextTrack != null && !nextTrack.isDownloaded && (nextTrack.streamUrl.isNullOrBlank() || StreamUrlValidator.isExpired(nextTrack.streamUrl))) {
+                val resolvedNext = resolveTrackForPlayback(nextTrack)
+                if (resolvedNext != null) {
+                    currentPlaylist[targetIndex + 1] = resolvedNext
+                }
+            }
+
             val mediaItems = currentPlaylist.map { buildMediaItem(it) }
 
             controller?.let { c ->
@@ -245,6 +271,7 @@ class PlaybackConnectionManager @Inject constructor(
      * Re-resolves stream URL to avoid expired tokens and resumes at the saved position.
      */
     fun resumePlayback(track: TrackEntity, playlist: List<TrackEntity> = emptyList(), startPositionMs: Long = 0L) {
+        ensureServiceStarted()
         val filteredPlaylist = if (playlist.isNotEmpty()) {
             playlist.filter { it.id == track.id || it.isSongOnly() }
         } else {
@@ -487,6 +514,19 @@ class PlaybackConnectionManager @Inject constructor(
         }
     }
 
+    /**
+     * Refreshes the upcoming recommendations queue on demand using the active seed track and vibe.
+     */
+    fun refreshQueueRecommendations() {
+        scope.launch {
+            val currentTrack = _playbackState.value.currentTrack ?: return@launch
+            val freshRecs = recommendationRepositoryProvider.get().generateRecommendationQueue(currentTrack, 15)
+            if (freshRecs.isNotEmpty()) {
+                updateUpcomingQueue(freshRecs)
+            }
+        }
+    }
+
     fun playNext(track: TrackEntity) {
         scope.launch {
             val controller = mediaController ?: return@launch
@@ -501,9 +541,20 @@ class PlaybackConnectionManager @Inject constructor(
 
     fun playTrackAtIndex(index: Int) {
         if (index in currentPlaylist.indices) {
-            mediaController?.let { controller ->
+            scope.launch {
+                val controller = mediaController ?: return@launch
+                val track = currentPlaylist[index]
+                val isExpired = StreamUrlValidator.isExpired(track.streamUrl)
+                val resolved = if (!track.isDownloaded && (track.streamUrl.isNullOrBlank() || isExpired)) {
+                    resolveTrackForPlayback(track, forceFresh = isExpired) ?: track
+                } else {
+                    track
+                }
+                currentPlaylist[index] = resolved
+                controller.replaceMediaItem(index, buildMediaItem(resolved))
                 controller.seekToDefaultPosition(index)
                 controller.play()
+                prefetchAdjacentTracks(index)
             }
         }
     }
@@ -940,8 +991,9 @@ class PlaybackConnectionManager @Inject constructor(
                 prefetchAdjacentTracks(currentIndex)
                 savePlaybackSession()
 
-                // YouTube-like Infinite Autoplay: automatically append more songs when nearing queue end
-                if (currentIndex >= currentPlaylist.size - 2) {
+                // YouTube-like Infinite Autoplay: regenerate every 5 tracks or when nearing queue end
+                val shouldRegenerateCadence = (lastAutoplayGenerationIndex != -1 && currentIndex - lastAutoplayGenerationIndex >= 5)
+                if (currentIndex >= currentPlaylist.size - 2 || shouldRegenerateCadence) {
                     extendAutoplayQueue(track)
                 }
             }
@@ -970,6 +1022,7 @@ class PlaybackConnectionManager @Inject constructor(
         }
     }
 
+    private var lastAutoplayGenerationIndex: Int = -1
     private var autoplayQueueJob: kotlinx.coroutines.Job? = null
 
     /**
@@ -982,6 +1035,8 @@ class PlaybackConnectionManager @Inject constructor(
         } else if (autoplayQueueJob?.isActive == true) {
             return
         }
+        val controller = mediaController
+        lastAutoplayGenerationIndex = controller?.currentMediaItemIndex ?: 0
         autoplayQueueJob = scope.launch(Dispatchers.IO) {
             try {
                 val recommendationRepo = recommendationRepositoryProvider.get()
@@ -1049,6 +1104,12 @@ class PlaybackConnectionManager @Inject constructor(
                     title = track.title,
                     artist = track.artist
                 )
+                val trigger = recommendationRepositoryProvider.get().onTrackStarted(track)
+                if (trigger == SessionAdaptationTrigger.MAJOR_GENRE_SWITCH) {
+                    recalculateUpcomingQueue(track, reason = "Major genre switch")
+                } else if (trigger == SessionAdaptationTrigger.TWO_REPLAYS) {
+                    recalculateUpcomingQueue(track, reason = "2 consecutive replays")
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Telemetry start non-fatal: ${e.message}")
             }
@@ -1074,8 +1135,35 @@ class PlaybackConnectionManager @Inject constructor(
                     completed = if (isCompleted) 1 else 0,
                     skipped = if (isQuickSkip) 1 else 0
                 )
+
+                if (isQuickSkip || isSkipped) {
+                    val trigger = recommendationRepositoryProvider.get().onTrackSkipped(currentTrack, listenedMs)
+                    if (trigger == SessionAdaptationTrigger.THREE_SKIPS) {
+                        recalculateUpcomingQueue(currentTrack, reason = "3 consecutive skips")
+                    }
+                } else if (isCompleted) {
+                    recommendationRepositoryProvider.get().onTrackCompleted(currentTrack)
+                }
             } catch (e: Exception) {
                 Log.w(TAG, "Telemetry finalize non-fatal: ${e.message}")
+            }
+
+            val listenedSec = listenedMs / 1000L
+            if (listenedSec > 0L) {
+                try {
+                    authRepositoryProvider.get().recordListeningSeconds(listenedSec)
+                } catch (_: Exception) {}
+
+                try {
+                    supabaseAnalyticsRepositoryProvider.get().recordTrackPlayback(
+                        track = currentTrack,
+                        listenedSeconds = listenedSec,
+                        isCompleted = isCompleted,
+                        isSkipped = isSkipped || isQuickSkip
+                    )
+                } catch (e: Exception) {
+                    Log.w(TAG, "Supabase analytics telemetry non-fatal: ${e.message}")
+                }
             }
         }
 
@@ -1088,6 +1176,30 @@ class PlaybackConnectionManager @Inject constructor(
                 isCrossfadeEnabled = enabled,
                 crossfadeDurationSeconds = durationSeconds.coerceIn(2, 10)
             )
+        }
+    }
+
+    fun onTrackLiked(track: TrackEntity) {
+        updateTrackLikeStatusInTelemetry(track.id, true)
+        scope.launch(Dispatchers.IO) {
+            recommendationRepositoryProvider.get().onTrackLiked(track)
+            recalculateUpcomingQueue(track, reason = "Track liked")
+        }
+    }
+
+    fun recalculateUpcomingQueue(seedTrack: TrackEntity, reason: String) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                Log.i(TAG, "Dynamic session adaptation triggered ($reason) for: ${seedTrack.title}")
+                val freshRecs = recommendationRepositoryProvider.get().generateRecommendationQueue(seedTrack, 15)
+                if (freshRecs.isNotEmpty()) {
+                    updateUpcomingQueue(freshRecs)
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.w(TAG, "Recalculate upcoming queue error: ${e.message}")
+                }
+            }
         }
     }
 

@@ -1,20 +1,44 @@
 package com.satvik.satvikx.ui.components
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.unit.IntOffset
+import kotlin.math.roundToInt
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.gestures.scrollBy
+import androidx.compose.material3.CircularProgressIndicator
+import kotlinx.coroutines.delay
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
@@ -38,6 +62,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -57,8 +86,11 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Lyrics
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
@@ -82,6 +114,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -106,6 +139,8 @@ import androidx.compose.ui.unit.sp
 import androidx.media3.common.Player
 import coil3.compose.AsyncImage
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.parser.LrcParser
+import com.satvik.satvikx.ui.viewmodel.LyricsUiState
 import com.satvik.satvikx.playback.model.PlaybackState
 import com.satvik.satvikx.ui.theme.ArcCyan
 import com.satvik.satvikx.ui.theme.ArcCyanBright
@@ -119,12 +154,96 @@ import com.satvik.satvikx.ui.theme.StarkSurface
 import com.satvik.satvikx.ui.theme.TextPrimary
 import com.satvik.satvikx.ui.theme.TextSecondary
 
+/**
+ * YouTube Music-grade Drag and Drop queue state manager.
+ * Tracks pointer offset in real physical pixels and uses visibleItemsInfo boundaries
+ * to calculate exact center-point intersection and compensation offsets, eliminating
+ * all jitter and visual jumps during reordering gestures.
+ */
+class QueueDragDropState(
+    val listState: androidx.compose.foundation.lazy.LazyListState,
+    val coroutineScope: CoroutineScope,
+    val onSwap: (Int, Int) -> Unit,
+    val onCommit: (Int, Int) -> Unit
+) {
+    var draggingItemIndex by mutableStateOf<Int?>(null)
+        private set
+    var draggingItemOffset by mutableFloatStateOf(0f)
+        private set
+    var initialIndex by mutableStateOf<Int?>(null)
+        private set
+
+    fun onDragStart(index: Int) {
+        initialIndex = index
+        draggingItemIndex = index
+        draggingItemOffset = 0f
+    }
+
+    fun onDrag(deltaY: Float) {
+        val currentDragging = draggingItemIndex ?: return
+        draggingItemOffset += deltaY
+
+        val currentItemInfo = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == currentDragging } ?: return
+
+        val draggedItemCenter = currentItemInfo.offset + currentItemInfo.size / 2f + draggingItemOffset
+
+        val targetItem = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { other ->
+                other.index != currentDragging &&
+                draggedItemCenter.toInt() in other.offset..(other.offset + other.size)
+            }
+
+        if (targetItem != null) {
+            val targetIndex = targetItem.index
+            val deltaOffset = targetItem.offset - currentItemInfo.offset
+            onSwap(currentDragging, targetIndex)
+            draggingItemOffset -= deltaOffset
+            draggingItemIndex = targetIndex
+        }
+
+        // Boundary auto-scroll
+        val viewportStart = listState.layoutInfo.viewportStartOffset
+        val viewportEnd = listState.layoutInfo.viewportEndOffset
+        val scrollThreshold = 64f
+
+        if (draggedItemCenter > viewportEnd - scrollThreshold) {
+            coroutineScope.launch {
+                listState.scrollBy(14f)
+            }
+        } else if (draggedItemCenter < viewportStart + scrollThreshold) {
+            coroutineScope.launch {
+                listState.scrollBy(-14f)
+            }
+        }
+    }
+
+    fun onDragEnd() {
+        val initial = initialIndex
+        val current = draggingItemIndex
+        if (initial != null && current != null && initial != current) {
+            onCommit(initial, current)
+        }
+        draggingItemIndex = null
+        initialIndex = null
+        draggingItemOffset = 0f
+    }
+
+    fun onDragCancel() {
+        draggingItemIndex = null
+        initialIndex = null
+        draggingItemOffset = 0f
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FullPlayerSheet(
     playbackState: PlaybackState,
     sheetState: SheetState,
     onDismiss: () -> Unit,
+    isQueueOpen: Boolean = false,
+    onQueueOpenChange: (Boolean) -> Unit = {},
     onPlayPause: () -> Unit,
     onSeekTo: (Long) -> Unit,
     onSkipNext: () -> Unit,
@@ -136,26 +255,135 @@ fun FullPlayerSheet(
     onPlayTrackAtIndex: (Int) -> Unit = {},
     onRemoveFromQueue: (Int) -> Unit = {},
     onMoveQueueItem: (fromIndex: Int, toIndex: Int) -> Unit = { _, _ -> },
+    onRefreshQueue: () -> Unit = {},
     onStartSleepTimer: (Int) -> Unit = {},
     onCancelSleepTimer: () -> Unit = {},
     isFavorite: Boolean = false,
+    lyricsState: LyricsUiState = LyricsUiState(),
+    onRetryLyrics: () -> Unit = {},
     onToggleFavorite: (TrackEntity) -> Unit = {}
 ) {
     val track = playbackState.currentTrack ?: return
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
 
     var userDraggingSlider by remember { mutableFloatStateOf(-1f) }
-    var showQueueSheet by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
-    val queueSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var showLyrics by remember { mutableStateOf(false) }
+
+    var isRefreshingLocally by remember { mutableStateOf(false) }
+    var refreshBannerMessage by remember { mutableStateOf<String?>(null) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "queueRefreshTransition")
+    val spinAngle by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 700, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "spinAngle"
+    )
+
+    val queueDragOffsetY = remember { Animatable(0f) }
+    val density = LocalDensity.current
+    val dismissThresholdPx = with(density) { 140.dp.toPx() }
+
+    LaunchedEffect(isQueueOpen) {
+        if (isQueueOpen) {
+            queueDragOffsetY.snapTo(0f)
+        }
+    }
+
+    val dismissQueueWithAnimation: (Float) -> Unit = { velocityY ->
+        coroutineScope.launch {
+            queueDragOffsetY.animateTo(
+                targetValue = 2500f,
+                animationSpec = tween(durationMillis = 240, easing = FastOutSlowInEasing),
+                initialVelocity = velocityY
+            )
+            onQueueOpenChange(false)
+            queueDragOffsetY.snapTo(0f)
+        }
+    }
+
+    val snapQueueBackToOpen: () -> Unit = {
+        coroutineScope.launch {
+            queueDragOffsetY.animateTo(
+                targetValue = 0f,
+                animationSpec = spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                )
+            )
+        }
+    }
+
+    // Intercept hardware back button / back gesture when queue is open
+    BackHandler(enabled = isQueueOpen) {
+        dismissQueueWithAnimation(0f)
+    }
+
+    val queueListState = rememberLazyListState()
+
+    // Interactive vertical scroll & fling connection: follows user's finger downward when at top of queue
+    val queueNestedScrollConnection = remember(queueListState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // If user is pulling downward at the top of the queue list, drag the sheet down with finger
+                if (available.y > 0f && queueListState.firstVisibleItemIndex == 0 && queueListState.firstVisibleItemScrollOffset == 0) {
+                    val newOffset = queueDragOffsetY.value + available.y
+                    coroutineScope.launch { queueDragOffsetY.snapTo(newOffset) }
+                    return Offset(0f, available.y)
+                }
+                // If sheet is dragged down and user moves finger upward, push the sheet back up first
+                if (available.y < 0f && queueDragOffsetY.value > 0f) {
+                    val newOffset = (queueDragOffsetY.value + available.y).coerceAtLeast(0f)
+                    coroutineScope.launch { queueDragOffsetY.snapTo(newOffset) }
+                    return Offset(0f, available.y)
+                }
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f && queueListState.firstVisibleItemIndex == 0 && queueListState.firstVisibleItemScrollOffset == 0) {
+                    val newOffset = queueDragOffsetY.value + available.y
+                    coroutineScope.launch { queueDragOffsetY.snapTo(newOffset) }
+                    return Offset(0f, available.y)
+                }
+                return available
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (queueDragOffsetY.value > dismissThresholdPx || available.y > 1000f) {
+                    haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    dismissQueueWithAnimation(available.y)
+                } else if (queueDragOffsetY.value > 0f) {
+                    snapQueueBackToOpen()
+                }
+                return available
+            }
+        }
+    }
 
     ModalBottomSheet(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (isQueueOpen) {
+                dismissQueueWithAnimation(0f)
+            } else {
+                onDismiss()
+            }
+        },
         sheetState = sheetState,
         dragHandle = null,
         containerColor = StarkCarbon
     ) {
+        // Intercept back button inside dialog window hierarchy
+        BackHandler(enabled = isQueueOpen) {
+            dismissQueueWithAnimation(0f)
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -168,12 +396,13 @@ fun FullPlayerSheet(
                         )
                     )
                 )
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = 12.dp, vertical = 6.dp)
         ) {
             Column(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding()
+                    .navigationBarsPadding()
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
             ) {
@@ -242,6 +471,19 @@ fun FullPlayerSheet(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(0.dp)
                     ) {
+                        // Holographic Lyrics Toggle Button
+                        IconButton(
+                            onClick = { showLyrics = !showLyrics },
+                            modifier = Modifier.size(34.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Lyrics,
+                                contentDescription = if (showLyrics) "Hide lyrics" else "Show lyrics",
+                                tint = if (showLyrics) ArcCyanBright else Color.White,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
                         // Sleep Timer Button
                         IconButton(
                             onClick = { showSleepTimerDialog = true },
@@ -257,13 +499,13 @@ fun FullPlayerSheet(
 
                         // Up Next Queue Button
                         IconButton(
-                            onClick = { showQueueSheet = true },
+                            onClick = { onQueueOpenChange(!isQueueOpen) },
                             modifier = Modifier.size(34.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.AutoMirrored.Filled.QueueMusic,
                                 contentDescription = "View Queue",
-                                tint = if (showQueueSheet) ArcCyanBright else Color.White,
+                                tint = if (isQueueOpen) ArcCyanBright else Color.White,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -329,17 +571,34 @@ fun FullPlayerSheet(
                 // ==========================================
                 Box(
                     modifier = Modifier
-                        .weight(1f, fill = false)
+                        .weight(1f)
+                        .fillMaxWidth()
                         .padding(vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    ArcReactorHousing(
-                        thumbnailUrl = track.thumbnailUrl,
-                        title = track.title,
-                        isPlaying = playbackState.isPlaying,
-                        showDiagnostics = showDiagnostics,
-                        onToggleDiagnostics = { showDiagnostics = !showDiagnostics }
-                    )
+                    Crossfade(
+                        targetState = showLyrics,
+                        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
+                        label = "player_center_view"
+                    ) { isLyricsVisible ->
+                        if (isLyricsVisible) {
+                            SyncedLyricsView(
+                                lyricsState = lyricsState,
+                                currentPositionMs = playbackState.playbackPositionMs,
+                                isPlaying = playbackState.isPlaying,
+                                onSeekTo = onSeekTo,
+                                onRetry = onRetryLyrics
+                            )
+                        } else {
+                            ArcReactorHousing(
+                                thumbnailUrl = track.thumbnailUrl,
+                                title = track.title,
+                                isPlaying = playbackState.isPlaying,
+                                showDiagnostics = showDiagnostics,
+                                onToggleDiagnostics = { showDiagnostics = !showDiagnostics }
+                            )
+                        }
+                    }
                 }
 
                 // Track Metadata + Favorite Heart
@@ -393,6 +652,50 @@ fun FullPlayerSheet(
                                 )
                             }
                         }
+
+                        // Interactive Mini Lyric Pill Preview (Tap to open full lyrics)
+                        val activeLyricLine = remember(lyricsState.lyrics, playbackState.playbackPositionMs) {
+                            val lines = lyricsState.lyrics?.lines
+                            if (!lines.isNullOrEmpty()) {
+                                val idx = LrcParser.findActiveLineIndex(lines, playbackState.playbackPositionMs)
+                                if (idx in lines.indices) lines[idx].text else null
+                            } else null
+                        }
+
+                        if (!showLyrics && !activeLyricLine.isNullOrBlank()) {
+                            Surface(
+                                color = ArcCyanGlow,
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .border(0.8.dp, ArcCyan.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                                    .clickable { showLyrics = true }
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Lyrics,
+                                        contentDescription = null,
+                                        tint = ArcCyanBright,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text(
+                                        text = activeLyricLine,
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = FontFamily.SansSerif,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = ArcCyanBright,
+                                            fontSize = 11.sp
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
                     }
 
                     // Player Actions: Download Button & Favorite Heart
@@ -416,7 +719,15 @@ fun FullPlayerSheet(
                             )
                         }
 
-                        // Like / Favorite Heart
+                        // Like / Favorite Heart with animated bounce
+                        val favoriteScale by androidx.compose.animation.core.animateFloatAsState(
+                            targetValue = if (isFavorite) 1.25f else 1.0f,
+                            animationSpec = androidx.compose.animation.core.spring(
+                                dampingRatio = androidx.compose.animation.core.Spring.DampingRatioHighBouncy,
+                                stiffness = androidx.compose.animation.core.Spring.StiffnessMedium
+                            ),
+                            label = "fav_scale"
+                        )
                         IconButton(
                             onClick = {
                                 val willBeLiked = !isFavorite
@@ -432,7 +743,12 @@ fun FullPlayerSheet(
                                 imageVector = if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                                 contentDescription = "Favorite",
                                 tint = if (isFavorite) StarkCrimson else Color.Gray.copy(alpha = 0.6f),
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .graphicsLayer {
+                                        scaleX = favoriteScale
+                                        scaleY = favoriteScale
+                                    }
                             )
                         }
                     }
@@ -524,237 +840,547 @@ fun FullPlayerSheet(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-            }
-        }
-    }
+                Spacer(modifier = Modifier.height(4.dp))
 
-    // ==========================================
-    // NOW PLAYING QUEUE MODAL SHEET
-    // ==========================================
-    if (showQueueSheet) {
-        ModalBottomSheet(
-            onDismissRequest = { showQueueSheet = false },
-            sheetState = queueSheetState,
-            containerColor = StarkSurface
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(bottom = 16.dp)
-            ) {
-                Row(
+                // YouTube-style UP NEXT bottom pull tab / handle for revealing queue
+                Surface(
+                    color = StarkSurface.copy(alpha = 0.92f),
+                    shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
+                    border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.40f)),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .fillMaxWidth(0.94f)
+                        .pointerInput(Unit) {
+                            awaitEachGesture {
+                                val down = awaitFirstDown(requireUnconsumed = false)
+                                var totalDragY = 0f
+                                var isDrag = false
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) {
+                                        if (!isDrag) {
+                                            change.consume()
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onQueueOpenChange(true)
+                                        }
+                                        break
+                                    }
+                                    val deltaY = change.position.y - change.previousPosition.y
+                                    totalDragY += deltaY
+                                    if (kotlin.math.abs(totalDragY) > 8f) {
+                                        isDrag = true
+                                        change.consume() // Consume every drag event so parent ModalBottomSheet never sees it
+                                        if (totalDragY < -12f) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onQueueOpenChange(true)
+                                            break
+                                        }
+                                    }
+                                }
+                            }
+                        }
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 7.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.KeyboardArrowUp,
+                            contentDescription = "Swipe up for queue",
+                            tint = ArcCyanBright,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "J.A.R.V.I.S. UP-NEXT SEQUENCE",
-                            style = MaterialTheme.typography.titleMedium.copy(
+                            text = "UP NEXT (${playbackState.queue.size})",
+                            style = MaterialTheme.typography.labelSmall.copy(
                                 fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
                             ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                             color = ArcCyanBright
                         )
-                        Text(
-                            text = "ACTIVE QUEUE CORES: ${playbackState.queue.size}",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                            maxLines = 1,
-                            color = StarkGold
-                        )
-                    }
-                    IconButton(
-                        onClick = { showQueueSheet = false },
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
                     }
                 }
 
-                HorizontalDivider(color = StarkBorder, modifier = Modifier.padding(vertical = 4.dp))
+                Spacer(modifier = Modifier.height(4.dp))
+            }
 
-                if (playbackState.queue.isEmpty()) {
-                    Box(
+            // ==========================================
+            // J.A.R.V.I.S. UP-NEXT QUEUE OVERLAY PANEL
+            // ==========================================
+            // Dimmed Scrim above queue sheet (tap to dismiss, drag down to slide)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isQueueOpen,
+                enter = fadeIn(animationSpec = tween(220)),
+                exit = fadeOut(animationSpec = tween(200)),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(45f)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Color.Black.copy(
+                                alpha = (0.55f * (1f - (queueDragOffsetY.value / 1200f).coerceIn(0f, 1f))).coerceIn(0f, 0.55f)
+                            )
+                        )
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { dismissQueueWithAnimation(0f) })
+                        }
+                        .pointerInput(Unit) {
+                            val velocityTracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                            detectVerticalDragGestures(
+                                onDragStart = { velocityTracker.resetTracking() },
+                                onVerticalDrag = { change, dragAmount ->
+                                    change.consume()
+                                    velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                    val newOffset = (queueDragOffsetY.value + dragAmount).coerceAtLeast(0f)
+                                    coroutineScope.launch { queueDragOffsetY.snapTo(newOffset) }
+                                },
+                                onDragEnd = {
+                                    val velocityY = velocityTracker.calculateVelocity().y
+                                    if (queueDragOffsetY.value > dismissThresholdPx || velocityY > 1000f) {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        dismissQueueWithAnimation(velocityY)
+                                    } else {
+                                        snapQueueBackToOpen()
+                                    }
+                                },
+                                onDragCancel = { snapQueueBackToOpen() }
+                            )
+                        }
+                )
+            }
+
+            // Partial-height Queue Sheet sliding up from bottom (covers ~78% of the screen)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isQueueOpen,
+                enter = slideInVertically(
+                    initialOffsetY = { it },
+                    animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing)
+                ),
+                exit = slideOutVertically(
+                    targetOffsetY = { it },
+                    animationSpec = tween(durationMillis = 280, easing = FastOutSlowInEasing)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.78f)
+                    .align(Alignment.BottomCenter)
+                    .zIndex(50f)
+                    .offset { IntOffset(0, queueDragOffsetY.value.roundToInt().coerceAtLeast(0)) }
+                    .nestedScroll(queueNestedScrollConnection)
+            ) {
+                Surface(
+                    color = StarkSurface,
+                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                    border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.45f)),
+                    shadowElevation = 16.dp,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(Unit) {
+                            detectTapGestures(onTap = { /* Absorb clicks on queue background */ })
+                        }
+                ) {
+                    Column(
                         modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(32.dp),
-                        contentAlignment = Alignment.Center
+                            .fillMaxSize()
+                            .navigationBarsPadding()
+                            .padding(bottom = 8.dp)
                     ) {
-                        Text("No queued tracks in flight sequence", color = Color.Gray, fontFamily = FontFamily.Monospace)
-                    }
-                } else {
-                    var draggedIndex by remember { mutableStateOf<Int?>(null) }
-                    var dragOffsetY by remember { mutableFloatStateOf(0f) }
-                    val haptic = LocalHapticFeedback.current
-                    val density = LocalDensity.current
-                    val itemHeightPx = with(density) { 64.dp.toPx() }
+                        // Tactical Pull-Down Dismiss Handle & Header Gesture Area (Interactive Drag)
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .pointerInput(Unit) {
+                                    val velocityTracker = androidx.compose.ui.input.pointer.util.VelocityTracker()
+                                    detectVerticalDragGestures(
+                                        onDragStart = { velocityTracker.resetTracking() },
+                                        onVerticalDrag = { change, dragAmount ->
+                                            change.consume()
+                                            velocityTracker.addPosition(change.uptimeMillis, change.position)
+                                            val newOffset = (queueDragOffsetY.value + dragAmount).coerceAtLeast(0f)
+                                            coroutineScope.launch { queueDragOffsetY.snapTo(newOffset) }
+                                        },
+                                        onDragEnd = {
+                                            val velocityY = velocityTracker.calculateVelocity().y
+                                            if (queueDragOffsetY.value > dismissThresholdPx || velocityY > 1000f) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                                dismissQueueWithAnimation(velocityY)
+                                            } else {
+                                                snapQueueBackToOpen()
+                                            }
+                                        },
+                                        onDragCancel = { snapQueueBackToOpen() }
+                                    )
+                                }
+                        ) {
+                            // Tactical Pull-Down Dismiss Handle
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        dismissQueueWithAnimation(0f)
+                                    }
+                                    .padding(top = 10.dp, bottom = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Surface(
+                                    color = ArcCyanBright.copy(alpha = 0.6f),
+                                    shape = RoundedCornerShape(2.dp),
+                                    modifier = Modifier.size(width = 38.dp, height = 4.dp)
+                                ) {}
+                            }
 
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 180.dp, max = 460.dp)
-                    ) {
-                        itemsIndexed(
-                            items = playbackState.queue,
-                            key = { index, item -> "${item.id}_$index" }
-                        ) { index, queueTrack ->
-                            val isCurrentlyPlaying = index == playbackState.currentQueueIndex
-                            val isBeingDragged = draggedIndex == index
-
+                            // Tactical Queue Header
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .zIndex(if (isBeingDragged) 10f else 1f)
-                                    .graphicsLayer {
-                                        translationY = if (isBeingDragged) dragOffsetY else 0f
-                                        scaleX = if (isBeingDragged) 1.02f else 1.0f
-                                        scaleY = if (isBeingDragged) 1.02f else 1.0f
-                                        shadowElevation = if (isBeingDragged) 12f else 0f
-                                    }
-                                    .background(
-                                        when {
-                                            isBeingDragged -> ArcCyanGlow.copy(alpha = 0.35f)
-                                            isCurrentlyPlaying -> ArcCyan.copy(alpha = 0.14f)
-                                            else -> Color.Transparent
-                                        }
-                                    )
-                                    .clickable { onPlayTrackAtIndex(index) }
-                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Track Index / Playing Status
-                                Text(
-                                    text = String.format("%02d", index + 1),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = if (isCurrentlyPlaying) ArcCyanBright else TextSecondary
-                                )
-
-                                Spacer(modifier = Modifier.width(8.dp))
-
-                                // Music Thumbnail
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = StarkSurface,
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .border(
-                                            width = if (isCurrentlyPlaying) 1.dp else 0.5.dp,
-                                            color = if (isCurrentlyPlaying) ArcCyanBright else StarkBorder,
-                                            shape = RoundedCornerShape(8.dp)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "J.A.R.V.I.S. UP-NEXT SEQUENCE",
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        color = ArcCyanBright
+                                    )
+                                    Text(
+                                        text = if (isRefreshingLocally) "RECALIBRATING AUDIO CORES..." else "ACTIVE QUEUE CORES: ${playbackState.queue.size}",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                        maxLines = 1,
+                                        color = if (isRefreshingLocally) StarkGold else ArcCyanBright.copy(alpha = 0.75f)
+                                    )
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // Refresh Queue Recommendations Button with Spinning Animation & Haptic Feedback
+                                    IconButton(
+                                        onClick = {
+                                            if (!isRefreshingLocally) {
+                                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                isRefreshingLocally = true
+                                                refreshBannerMessage = "Recalibrating sequence..."
+                                                onRefreshQueue()
+                                                coroutineScope.launch {
+                                                    delay(950)
+                                                    isRefreshingLocally = false
+                                                    refreshBannerMessage = "Sequence Refreshed • ${playbackState.queue.size} Tracks"
+                                                    delay(2400)
+                                                    refreshBannerMessage = null
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Refresh queue recommendations",
+                                            tint = if (isRefreshingLocally) StarkGold else ArcCyanBright,
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .graphicsLayer {
+                                                    rotationZ = if (isRefreshingLocally) spinAngle else 0f
+                                                }
                                         )
+                                    }
+                                    // Collapse / Close Queue Button
+                                    IconButton(
+                                        onClick = {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            dismissQueueWithAnimation(0f)
+                                        },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.KeyboardArrowDown,
+                                            contentDescription = "Close queue",
+                                            tint = ArcCyanBright,
+                                            modifier = Modifier.size(28.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // J.A.R.V.I.S. HUD Feedback Banner for Refresh Status
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = refreshBannerMessage != null,
+                            enter = fadeIn(animationSpec = tween(180)) + expandVertically(animationSpec = tween(220)),
+                            exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(220))
+                        ) {
+                            Surface(
+                                color = StarkSurface.copy(alpha = 0.95f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, if (isRefreshingLocally) StarkGold.copy(alpha = 0.6f) else ArcCyanBright.copy(alpha = 0.6f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 16.dp, vertical = 4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    if (queueTrack.thumbnailUrl.isNotBlank()) {
-                                        AsyncImage(
-                                            model = queueTrack.thumbnailUrl,
-                                            contentDescription = queueTrack.title,
-                                            contentScale = ContentScale.Crop,
-                                            modifier = Modifier.fillMaxSize()
+                                    if (isRefreshingLocally) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(14.dp),
+                                            color = StarkGold,
+                                            strokeWidth = 2.dp
                                         )
                                     } else {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = ArcCyanBright,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = refreshBannerMessage ?: "",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        ),
+                                        color = if (isRefreshingLocally) StarkGold else ArcCyanBright
+                                    )
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = StarkBorder, modifier = Modifier.padding(vertical = 4.dp))
+
+                        if (playbackState.queue.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(32.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No queued tracks in flight sequence",
+                                    color = Color.Gray,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
+                        } else {
+                            var localQueue by remember { mutableStateOf(playbackState.queue) }
+                            val currentLocalQueue by rememberUpdatedState(localQueue)
+                            val currentOnMove by rememberUpdatedState(onMoveQueueItem)
+                            val haptic = LocalHapticFeedback.current
+                            val listState = queueListState
+                            val coroutineScope = rememberCoroutineScope()
+
+                            val dragDropState = remember(listState) {
+                                QueueDragDropState(
+                                    listState = listState,
+                                    coroutineScope = coroutineScope,
+                                    onSwap = { from, to ->
+                                        val queue = currentLocalQueue
+                                        if (from in queue.indices && to in queue.indices) {
+                                            val updated = queue.toMutableList()
+                                            val item = updated.removeAt(from)
+                                            updated.add(to, item)
+                                            localQueue = updated
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                        }
+                                    },
+                                    onCommit = { from, to ->
+                                        currentOnMove(from, to)
+                                    }
+                                )
+                            }
+
+                            LaunchedEffect(playbackState.queue) {
+                                if (dragDropState.draggingItemIndex == null) {
+                                    localQueue = playbackState.queue
+                                }
+                            }
+
+                            // Collision-free unique and stable keys for LazyColumn items
+                            val uniqueKeys = remember(localQueue) {
+                                val seenCounts = mutableMapOf<String, Int>()
+                                localQueue.mapIndexed { index, trackItem ->
+                                    val rawId = trackItem.id.ifBlank { "track_$index" }
+                                    val count = seenCounts.getOrDefault(rawId, 0)
+                                    seenCounts[rawId] = count + 1
+                                    if (count == 0) rawId else "${rawId}_dup_${count}_$index"
+                                }
+                            }
+
+                            LazyColumn(
+                                state = listState,
+                                modifier = Modifier.fillMaxSize()
+                            ) {
+                                itemsIndexed(
+                                    items = localQueue,
+                                    key = { index, trackItem ->
+                                        uniqueKeys.getOrElse(index) { "${trackItem.id}_$index" }
+                                    }
+                                ) { index, queueTrack ->
+                                    val isCurrentlyPlaying = queueTrack.id == playbackState.currentTrack?.id
+                                    val isBeingDragged = dragDropState.draggingItemIndex == index
+
+                                    val currentIndex by rememberUpdatedState(index)
+                                    val currentItemKey = uniqueKeys.getOrElse(index) { "${queueTrack.id}_$index" }
+
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .then(if (!isBeingDragged) Modifier.animateItem() else Modifier)
+                                            .zIndex(if (isBeingDragged) 100f else 1f)
+                                            .graphicsLayer {
+                                                translationY = if (isBeingDragged) dragDropState.draggingItemOffset else 0f
+                                                scaleX = if (isBeingDragged) 1.03f else 1.0f
+                                                scaleY = if (isBeingDragged) 1.03f else 1.0f
+                                                shadowElevation = if (isBeingDragged) 16f else 0f
+                                            }
+                                            .background(
+                                                when {
+                                                    isBeingDragged -> ArcCyanGlow.copy(alpha = 0.40f)
+                                                    isCurrentlyPlaying -> ArcCyan.copy(alpha = 0.14f)
+                                                    else -> Color.Transparent
+                                                }
+                                            )
+                                            .border(
+                                                width = if (isBeingDragged) 1.5.dp else 0.dp,
+                                                color = if (isBeingDragged) ArcCyanBright else Color.Transparent,
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .clickable {
+                                                val actualIndex = playbackState.queue.indexOfFirst { it.id == queueTrack.id }.takeIf { it >= 0 } ?: currentIndex
+                                                onPlayTrackAtIndex(actualIndex)
+                                            }
+                                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Track Index / Playing Status
+                                        Text(
+                                            text = String.format("%02d", index + 1),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontFamily = FontFamily.Monospace,
+                                                fontWeight = FontWeight.Bold
+                                            ),
+                                            color = if (isCurrentlyPlaying) ArcCyanBright else TextSecondary
+                                        )
+
+                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                        // Music Thumbnail
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = StarkSurface,
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .border(
+                                                    width = if (isCurrentlyPlaying) 1.dp else 0.5.dp,
+                                                    color = if (isCurrentlyPlaying) ArcCyanBright else StarkBorder,
+                                                    shape = RoundedCornerShape(8.dp)
+                                                )
+                                        ) {
+                                            if (queueTrack.thumbnailUrl.isNotBlank()) {
+                                                AsyncImage(
+                                                    model = queueTrack.thumbnailUrl,
+                                                    contentDescription = queueTrack.title,
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                            } else {
+                                                Box(
+                                                    modifier = Modifier.fillMaxSize(),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.PlayArrow,
+                                                        contentDescription = null,
+                                                        tint = ArcCyanBright,
+                                                        modifier = Modifier.size(20.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(12.dp))
+
+                                        // Title and Artist
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = queueTrack.title,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = if (isCurrentlyPlaying) FontWeight.Bold else FontWeight.SemiBold
+                                                ),
+                                                color = if (isCurrentlyPlaying) ArcCyanBright else TextPrimary,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = queueTrack.artist,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TextSecondary,
+                                                maxLines = 1,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                            )
+                                        }
+
+                                        // Delete from Queue Button
+                                        IconButton(
+                                            onClick = {
+                                                val actualIndex = playbackState.queue.indexOfFirst { it.id == queueTrack.id }.takeIf { it >= 0 } ?: currentIndex
+                                                onRemoveFromQueue(actualIndex)
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Remove from queue",
+                                                tint = Color.Gray.copy(alpha = 0.7f),
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+
+                                        // YouTube-style Drag Handle for Adjusting Queue Order
                                         Box(
-                                            modifier = Modifier.fillMaxSize(),
+                                            modifier = Modifier
+                                                .size(44.dp)
+                                                .pointerInput(currentItemKey) {
+                                                    detectDragGestures(
+                                                        onDragStart = {
+                                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                                            dragDropState.onDragStart(currentIndex)
+                                                        },
+                                                        onDrag = { change, dragAmount ->
+                                                            change.consume()
+                                                            dragDropState.onDrag(dragAmount.y)
+                                                        },
+                                                        onDragEnd = {
+                                                            dragDropState.onDragEnd()
+                                                        },
+                                                        onDragCancel = {
+                                                            localQueue = playbackState.queue
+                                                            dragDropState.onDragCancel()
+                                                        }
+                                                    )
+                                                },
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.PlayArrow,
-                                                contentDescription = null,
-                                                tint = ArcCyanBright,
-                                                modifier = Modifier.size(20.dp)
+                                                imageVector = Icons.Default.DragHandle,
+                                                contentDescription = "Drag to reorder",
+                                                tint = if (isBeingDragged) ArcCyanBright else Color.White.copy(alpha = 0.6f),
+                                                modifier = Modifier.size(22.dp)
                                             )
                                         }
                                     }
-                                }
-
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                // Title and Artist
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = queueTrack.title,
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontWeight = if (isCurrentlyPlaying) FontWeight.Bold else FontWeight.SemiBold
-                                        ),
-                                        color = if (isCurrentlyPlaying) ArcCyanBright else TextPrimary,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = queueTrack.artist,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = TextSecondary,
-                                        maxLines = 1,
-                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                                    )
-                                }
-
-                                // Delete from Queue Button
-                                IconButton(
-                                    onClick = { onRemoveFromQueue(index) },
-                                    modifier = Modifier.size(36.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Remove from queue",
-                                        tint = Color.Gray.copy(alpha = 0.7f),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                // Spotify-style Drag Handle for Adjusting Queue Order
-                                Box(
-                                    modifier = Modifier
-                                        .size(36.dp)
-                                        .pointerInput(index, playbackState.queue.size) {
-                                            detectDragGestures(
-                                                onDragStart = {
-                                                    draggedIndex = index
-                                                    dragOffsetY = 0f
-                                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                },
-                                                onDrag = { change, dragAmount ->
-                                                    change.consume()
-                                                    dragOffsetY += dragAmount.y
-                                                    val cur = draggedIndex ?: return@detectDragGestures
-
-                                                    if (dragOffsetY > itemHeightPx && cur < playbackState.queue.size - 1) {
-                                                        onMoveQueueItem(cur, cur + 1)
-                                                        draggedIndex = cur + 1
-                                                        dragOffsetY -= itemHeightPx
-                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    } else if (dragOffsetY < -itemHeightPx && cur > 0) {
-                                                        onMoveQueueItem(cur, cur - 1)
-                                                        draggedIndex = cur - 1
-                                                        dragOffsetY += itemHeightPx
-                                                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                                                    }
-                                                },
-                                                onDragEnd = {
-                                                    draggedIndex = null
-                                                    dragOffsetY = 0f
-                                                },
-                                                onDragCancel = {
-                                                    draggedIndex = null
-                                                    dragOffsetY = 0f
-                                                }
-                                            )
-                                        },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.DragHandle,
-                                        contentDescription = "Drag to reorder",
-                                        tint = if (isBeingDragged) ArcCyanBright else Color.White.copy(alpha = 0.6f),
-                                        modifier = Modifier.size(22.dp)
-                                    )
                                 }
                             }
                         }
@@ -872,7 +1498,7 @@ private fun ArcReactorHousing(
         initialValue = 0.6f,
         targetValue = 1.0f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = if (isPlaying) 1100 else 2400, easing = LinearEasing),
+            animation = tween(durationMillis = if (isPlaying) 1100 else 2400, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "reactor_pulse"
@@ -1034,7 +1660,7 @@ private fun ArcReactorPlayButton(
         initialValue = 1f,
         targetValue = 1.15f,
         animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
+            animation = tween(900, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse_scale"
@@ -1077,12 +1703,18 @@ private fun ArcReactorPlayButton(
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = StarkCarbon,
-                    modifier = Modifier.fillMaxSize(0.55f)
-                )
+                Crossfade(
+                    targetState = isPlaying,
+                    animationSpec = tween(durationMillis = 180, easing = FastOutSlowInEasing),
+                    label = "play_btn_crossfade"
+                ) { playing ->
+                    Icon(
+                        imageVector = if (playing) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (playing) "Pause" else "Play",
+                        tint = StarkCarbon,
+                        modifier = Modifier.fillMaxSize(0.55f)
+                    )
+                }
             }
         }
     }
@@ -1107,7 +1739,7 @@ private fun JarvisAudioSpectrum(
             initialValue = 0.15f,
             targetValue = if (isPlaying) ratio else 0.15f,
             animationSpec = infiniteRepeatable(
-                animation = tween(durationMillis = 260 + (index * 31) % 360, easing = LinearEasing),
+                animation = tween(durationMillis = 260 + (index * 31) % 360, easing = FastOutSlowInEasing),
                 repeatMode = RepeatMode.Reverse
             ),
             label = "jarvis_bar_$index"

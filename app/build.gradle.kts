@@ -28,8 +28,8 @@ android {
         applicationId = "com.satvik.satvikx"
         minSdk = 26
         targetSdk = 35
-        versionCode = 17
-        versionName = "1.0.16"
+        versionCode = 18
+        versionName = "1.0.17"
 
         buildConfigField("String", "SUPABASE_URL", "\"${supabaseUrl}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${supabaseAnonKey}\"")
@@ -157,6 +157,7 @@ dependencies {
 
     // Testing
     testImplementation(libs.junit)
+    testImplementation("org.json:json:20240303")
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

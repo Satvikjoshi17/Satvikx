@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.satvik.satvikx.data.local.SatvikXDatabase
+import com.satvik.satvikx.data.local.dao.LyricsDao
 import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.SearchHistoryDao
@@ -97,6 +98,23 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `lyrics` (
+                    `trackId` TEXT NOT NULL PRIMARY KEY,
+                    `isSynced` INTEGER NOT NULL,
+                    `lrcContent` TEXT,
+                    `plainLyrics` TEXT,
+                    `provider` TEXT NOT NULL,
+                    `cachedAtTimestamp` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideSatvikXDatabase(
@@ -107,7 +125,7 @@ object DatabaseModule {
             SatvikXDatabase::class.java,
             SatvikXDatabase.DATABASE_NAME
         )
-        .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+        .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
         .fallbackToDestructiveMigration()
         .build()
     }
@@ -146,5 +164,11 @@ object DatabaseModule {
     @Singleton
     fun provideBlendDao(database: SatvikXDatabase): com.satvik.satvikx.data.local.dao.BlendDao {
         return database.blendDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideLyricsDao(database: SatvikXDatabase): LyricsDao {
+        return database.lyricsDao()
     }
 }

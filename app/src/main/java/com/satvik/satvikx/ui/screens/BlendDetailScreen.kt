@@ -8,6 +8,10 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -19,6 +23,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -66,8 +71,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -88,6 +96,7 @@ import com.satvik.satvikx.ui.theme.SurfaceVariantDark
 import com.satvik.satvikx.ui.theme.TextPrimary
 import com.satvik.satvikx.ui.theme.TextSecondary
 import com.satvik.satvikx.ui.viewmodel.BlendViewModel
+import java.util.Locale
 
 @Composable
 fun BlendDetailScreen(
@@ -96,7 +105,11 @@ fun BlendDetailScreen(
     viewModel: BlendViewModel = hiltViewModel()
 ) {
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
+    val currentTrackId = playbackState.currentTrack?.id
+    val isPlaying = playbackState.isPlaying
 
     LaunchedEffect(blendId) {
         viewModel.loadBlend(blendId)
@@ -244,11 +257,17 @@ fun BlendDetailScreen(
 
             // Shared Anthem Card ("The Song That Unites You")
             if (blend.sharedAnthemTitle.isNotBlank()) {
+                val anthemTrack = blendWithTracks.attributedTracks.firstOrNull { it.broughtBy == "both" }?.track
+                    ?: blendWithTracks.attributedTracks.firstOrNull { it.track.title.equals(blend.sharedAnthemTitle, ignoreCase = true) }?.track
+                    ?: blendWithTracks.attributedTracks.firstOrNull()?.track
+                val isAnthemPlaying = (anthemTrack?.id == currentTrackId) && isPlaying
+
                 item {
                     SharedAnthemCard(
                         blend = blend,
+                        isPlaying = isAnthemPlaying,
                         onClickPlay = {
-                            val anthemTrack = blendWithTracks.attributedTracks.firstOrNull { it.broughtBy == "both" }?.track
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             if (anthemTrack != null) {
                                 viewModel.playTrackInBlend(anthemTrack, blendWithTracks.attributedTracks.map { it.track })
                             }
@@ -266,7 +285,10 @@ fun BlendDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
-                        onClick = { viewModel.playBlend(blendWithTracks, shuffle = false) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.playBlend(blendWithTracks, shuffle = false)
+                        },
                         modifier = Modifier.weight(1f),
                         colors = ButtonDefaults.buttonColors(containerColor = ArcCyanBright, contentColor = StarkCarbon),
                         shape = RoundedCornerShape(12.dp)
@@ -277,7 +299,10 @@ fun BlendDetailScreen(
                     }
 
                     OutlinedButton(
-                        onClick = { viewModel.playBlend(blendWithTracks, shuffle = true) },
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            viewModel.playBlend(blendWithTracks, shuffle = true)
+                        },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(1.dp, ArcCyanBright)
@@ -328,9 +353,12 @@ fun BlendDetailScreen(
                 key = { idx, item -> "${item.track.id}_$idx" }
             ) { index, item ->
                 AttributedTrackRow(
+                    modifier = Modifier.animateItem(),
                     index = index + 1,
                     attributedTrack = item,
+                    isCurrentPlaying = (item.track.id == currentTrackId) && isPlaying,
                     onClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                         viewModel.playTrackInBlend(item.track, blendWithTracks.attributedTracks.map { it.track })
                     }
                 )
@@ -373,14 +401,16 @@ private fun HolographicMatchHeader(
                     useCenter = false,
                     style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
                 )
-                // Animated Match Arc
-                drawArc(
-                    brush = Brush.sweepGradient(listOf(ArcCyanBright, PrimaryNeon, StarkGold, ArcCyanBright)),
-                    startAngle = -90f,
-                    sweepAngle = 360f * animatedProgress.value,
-                    useCenter = false,
-                    style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
-                )
+                // Rotated Sweep Gradient Arc for perfect 12 o'clock alignment
+                rotate(-90f) {
+                    drawArc(
+                        brush = Brush.sweepGradient(listOf(ArcCyanBright, PrimaryNeon, StarkGold, ArcCyanBright)),
+                        startAngle = 0f,
+                        sweepAngle = 360f * animatedProgress.value,
+                        useCenter = false,
+                        style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                }
             }
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -485,12 +515,13 @@ private fun HolographicMatchHeader(
 @Composable
 private fun SharedAnthemCard(
     blend: com.satvik.satvikx.data.local.entity.BlendEntity,
+    isPlaying: Boolean,
     onClickPlay: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = SurfaceElevated,
-        border = BorderStroke(1.dp, PrimaryNeon.copy(alpha = 0.4f)),
+        border = BorderStroke(1.dp, if (isPlaying) PrimaryNeon else PrimaryNeon.copy(alpha = 0.4f)),
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
@@ -505,6 +536,7 @@ private fun SharedAnthemCard(
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = SurfaceVariantDark,
+                border = if (isPlaying) BorderStroke(1.dp, PrimaryNeon) else null,
                 modifier = Modifier.size(46.dp)
             ) {
                 if (blend.sharedAnthemThumbnail.isNotBlank()) {
@@ -553,7 +585,7 @@ private fun SharedAnthemCard(
                     text = blend.sharedAnthemTitle,
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = if (isPlaying) PrimaryNeon else TextPrimary
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -567,13 +599,20 @@ private fun SharedAnthemCard(
                 )
             }
 
-            IconButton(onClick = onClickPlay) {
-                Icon(
-                    imageVector = Icons.Default.PlayCircle,
-                    contentDescription = "Play Shared Anthem",
-                    tint = PrimaryNeon,
-                    modifier = Modifier.size(32.dp)
+            if (isPlaying) {
+                MiniAudioWaveBars(
+                    modifier = Modifier.padding(horizontal = 6.dp),
+                    color = PrimaryNeon
                 )
+            } else {
+                IconButton(onClick = onClickPlay) {
+                    Icon(
+                        imageVector = Icons.Default.PlayCircle,
+                        contentDescription = "Play Shared Anthem",
+                        tint = PrimaryNeon,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
             }
         }
     }
@@ -581,35 +620,49 @@ private fun SharedAnthemCard(
 
 @Composable
 private fun AttributedTrackRow(
+    modifier: Modifier = Modifier,
     index: Int,
     attributedTrack: AttributedTrack,
+    isCurrentPlaying: Boolean,
     onClick: () -> Unit
 ) {
     val track = attributedTrack.track
 
     Surface(
-        color = Color.Transparent,
-        modifier = Modifier
+        color = if (isCurrentPlaying) ArcCyan.copy(alpha = 0.08f) else Color.Transparent,
+        shape = RoundedCornerShape(10.dp),
+        border = if (isCurrentPlaying) BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.5f)) else null,
+        modifier = modifier
             .fillMaxWidth()
             .clickable { onClick() }
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 14.dp, vertical = 2.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "$index",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    color = TextSecondary.copy(alpha = 0.6f)
-                ),
-                modifier = Modifier.width(26.dp)
-            )
+            if (isCurrentPlaying) {
+                MiniAudioWaveBars(
+                    modifier = Modifier.width(26.dp),
+                    color = ArcCyanBright
+                )
+            } else {
+                Text(
+                    text = "$index",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                        color = TextSecondary.copy(alpha = 0.6f)
+                    ),
+                    modifier = Modifier.width(26.dp)
+                )
+            }
 
             Surface(
                 shape = RoundedCornerShape(8.dp),
                 color = SurfaceVariantDark,
+                border = if (isCurrentPlaying) BorderStroke(1.dp, ArcCyanBright) else null,
                 modifier = Modifier.size(44.dp)
             ) {
                 if (track.thumbnailUrl.isNotBlank()) {
@@ -629,7 +682,7 @@ private fun AttributedTrackRow(
                     text = track.title,
                     style = MaterialTheme.typography.bodyMedium.copy(
                         fontWeight = FontWeight.Bold,
-                        color = TextPrimary
+                        color = if (isCurrentPlaying) ArcCyanBright else TextPrimary
                     ),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -639,7 +692,7 @@ private fun AttributedTrackRow(
                     Text(
                         text = track.artist,
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = TextSecondary,
+                        color = if (isCurrentPlaying) ArcCyan.copy(alpha = 0.8f) else TextSecondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false)
@@ -680,13 +733,76 @@ private fun AttributedTrackRow(
             val durationMinutes = track.durationSeconds / 60
             val durationRemainingSec = track.durationSeconds % 60
             Text(
-                text = String.format("%d:%02d", durationMinutes, durationRemainingSec),
+                text = String.format(Locale.US, "%d:%02d", durationMinutes, durationRemainingSec),
                 style = MaterialTheme.typography.labelSmall.copy(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 11.sp,
-                    color = TextSecondary
+                    color = if (isCurrentPlaying) ArcCyanBright else TextSecondary
                 )
             )
         }
+    }
+}
+
+@Composable
+private fun MiniAudioWaveBars(
+    modifier: Modifier = Modifier,
+    color: Color = ArcCyanBright
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "audio_bars")
+    val h1 by infiniteTransition.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 0.95f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(420, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "h1"
+    )
+    val h2 by infiniteTransition.animateFloat(
+        initialValue = 0.85f,
+        targetValue = 0.25f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(360, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "h2"
+    )
+    val h3 by infiniteTransition.animateFloat(
+        initialValue = 0.40f,
+        targetValue = 0.90f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(480, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "h3"
+    )
+
+    Row(
+        modifier = modifier.height(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+        verticalAlignment = Alignment.Bottom
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight(h1)
+                .clip(RoundedCornerShape(1.5.dp))
+                .background(color)
+        )
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight(h2)
+                .clip(RoundedCornerShape(1.5.dp))
+                .background(color)
+        )
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .fillMaxHeight(h3)
+                .clip(RoundedCornerShape(1.5.dp))
+                .background(color)
+        )
     }
 }

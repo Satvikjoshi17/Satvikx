@@ -2,6 +2,8 @@ package com.satvik.satvikx.di
 
 import com.satvik.satvikx.data.download.DownloadRepository
 import com.satvik.satvikx.data.download.DownloadRepositoryImpl
+import com.satvik.satvikx.data.repository.LyricsRepository
+import com.satvik.satvikx.data.repository.LyricsRepositoryImpl
 import com.satvik.satvikx.data.repository.StreamRepository
 import com.satvik.satvikx.data.repository.StreamRepositoryImpl
 import dagger.Binds
@@ -25,4 +27,10 @@ abstract class RepositoryModule {
     abstract fun bindDownloadRepository(
         downloadRepositoryImpl: DownloadRepositoryImpl
     ): DownloadRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLyricsRepository(
+        lyricsRepositoryImpl: LyricsRepositoryImpl
+    ): LyricsRepository
 }

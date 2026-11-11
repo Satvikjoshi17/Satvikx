@@ -3,7 +3,11 @@ package com.satvik.satvikx.data.remote.newpipe
 import android.util.Log
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.remote.model.AudioStreamResult
+import com.satvik.satvikx.data.parser.LrcParser
+import com.satvik.satvikx.data.remote.model.LrcLine
 import okhttp3.OkHttpClient
+import okhttp3.Request
+import org.schabi.newpipe.extractor.MediaFormat
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
@@ -17,7 +21,7 @@ import javax.inject.Singleton
  * browser accounts, or external Python runtimes.
  */
 @Singleton
-class NewPipeYouTubeEngine @Inject constructor(
+open class NewPipeYouTubeEngine @Inject constructor(
     private val okHttpClient: OkHttpClient
 ) {
 
@@ -79,15 +83,25 @@ class NewPipeYouTubeEngine @Inject constructor(
             fun extractFromItems(items: List<Any?>) {
                 for (item in items) {
                     if (item is StreamInfoItem) {
+                        // Exclude YouTube Shorts (< 40s or isShortFormContent) unless query explicitly contains "short"
+                        if ((item.isShortFormContent || item.duration in 1..40) && !trimmed.contains("short", ignoreCase = true)) {
+                            continue
+                        }
                         val videoId = item.url?.let { extractVideoIdFromUrl(it) } ?: ""
                         if (videoId.isNotBlank() && tracks.none { it.id == videoId }) {
+                            val rawThumb = item.thumbnails.lastOrNull()?.url.orEmpty()
+                            val cleanThumb = when {
+                                rawThumb.contains("hqdefault.jpg") -> rawThumb.replace("hqdefault.jpg", "mqdefault.jpg")
+                                rawThumb.isBlank() -> "https://i.ytimg.com/vi/$videoId/mqdefault.jpg"
+                                else -> rawThumb
+                            }
                             tracks.add(
                                 TrackEntity(
                                     id = videoId,
                                     title = item.name.orEmpty().ifBlank { "Unknown Title" },
                                     artist = item.uploaderName.orEmpty().ifBlank { "Unknown Artist" },
                                     durationSeconds = item.duration.coerceAtLeast(0L),
-                                    thumbnailUrl = item.thumbnails.lastOrNull()?.url.orEmpty(),
+                                    thumbnailUrl = cleanThumb,
                                     streamUrl = null,
                                     localPath = null,
                                     isDownloaded = false
@@ -100,8 +114,8 @@ class NewPipeYouTubeEngine @Inject constructor(
 
             extractFromItems(page.items)
 
-            // Deep Search: Fetch secondary batch of items from YouTube for thoroughness
-            if (deepSearch && page.hasNextPage()) {
+            // Deep Search: Fetch secondary batch if initial page yielded fewer than 15 items
+            if (deepSearch && tracks.size < 15 && page.hasNextPage()) {
                 try {
                     val nextPage = searchExtractor.getPage(page.nextPage)
                     extractFromItems(nextPage.items)
@@ -187,7 +201,7 @@ class NewPipeYouTubeEngine @Inject constructor(
      * Extracts YouTube's algorithmic "Up Next" / Related stream recommendations directly
      * from NewPipe's StreamExtractor page.
      */
-    fun getRelatedTracks(videoId: String): List<TrackEntity> {
+    open fun getRelatedTracks(videoId: String): List<TrackEntity> {
         val trimmedId = videoId.trim()
         if (trimmedId.isEmpty()) return emptyList()
 
@@ -231,5 +245,171 @@ class NewPipeYouTubeEngine @Inject constructor(
             Log.w(TAG, "Failed to extract related YouTube tracks for $videoId: ${e.message}")
             emptyList()
         }
+    }
+
+    /**
+     * Extracts time-synchronized subtitle / caption cues from YouTube video stream,
+     * converting WebVTT cues into sorted [LrcLine] objects.
+     *
+     * @param videoId 11-character YouTube video ID or video URL.
+     * @return Chronologically sorted list of [LrcLine] instances, or empty list if unavailable.
+     */
+    open fun getSubtitles(videoId: String): List<LrcLine> {
+        val trimmedId = videoId.trim().let { if (it.length > 11) extractVideoIdFromUrl(it) else it }
+        if (trimmedId.isEmpty()) return emptyList()
+
+        ensureInitialized()
+
+        return try {
+            val service = ServiceList.YouTube
+            val linkHandler = service.streamLHFactory.fromId(trimmedId)
+            val streamExtractor = service.getStreamExtractor(linkHandler)
+            streamExtractor.fetchPage()
+
+            val subtitlesList = try {
+                streamExtractor.subtitlesDefault.orEmpty()
+            } catch (e: Exception) {
+                emptyList()
+            }
+            if (subtitlesList.isEmpty()) {
+                Log.d(TAG, "No subtitle streams found for videoId: $trimmedId")
+                return emptyList()
+            }
+
+            // Prioritize English/Hindi manual subtitles, then any manual, then auto-generated
+            val selectedSub = subtitlesList.firstOrNull { sub ->
+                !sub.isAutoGenerated && (sub.languageTag.orEmpty().contains("en", ignoreCase = true) || sub.languageTag.orEmpty().contains("hi", ignoreCase = true))
+            } ?: subtitlesList.firstOrNull { sub ->
+                !sub.isAutoGenerated
+            } ?: subtitlesList.firstOrNull { sub ->
+                sub.languageTag.orEmpty().contains("en", ignoreCase = true) || sub.languageTag.orEmpty().contains("hi", ignoreCase = true)
+            } ?: subtitlesList.first()
+
+            var subUrl = selectedSub.content.orEmpty().ifBlank { selectedSub.url.orEmpty() }
+            if (subUrl.isBlank()) return emptyList()
+
+            // Ensure WebVTT format requested from timedtext API
+            if (!subUrl.contains("fmt=")) {
+                subUrl += if (subUrl.contains("?")) "&fmt=vtt" else "?fmt=vtt"
+            } else if (!subUrl.contains("fmt=vtt")) {
+                subUrl = subUrl.replace(Regex("""fmt=[a-zA-Z0-9]+"""), "fmt=vtt")
+            }
+
+            val request = Request.Builder()
+                .url(subUrl)
+                .addHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful || response.body == null) {
+                Log.w(TAG, "Failed to download subtitle content for $trimmedId: HTTP ${response.code}")
+                return emptyList()
+            }
+
+            val webVttContent = response.body!!.string()
+            parseWebVtt(webVttContent, isAutoGenerated = selectedSub.isAutoGenerated)
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to extract subtitles for videoId $videoId: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
+     * Serializes extracted subtitles to standard LRC string format.
+     */
+    open fun getSubtitlesLrc(videoId: String): String? {
+        val lines = getSubtitles(videoId)
+        return if (lines.isNotEmpty()) LrcParser.format(lines) else null
+    }
+
+    /**
+     * Parses standard WebVTT cue blocks into chronologically sorted [LrcLine] instances.
+     * Robust against cue identifiers, multi-line cues, HTML markup tags, and sound descriptors.
+     */
+    open fun parseWebVtt(vttContent: String?, isAutoGenerated: Boolean = false): List<LrcLine> {
+        if (vttContent.isNullOrBlank()) return emptyList()
+
+        val lines = vttContent.lines()
+        val result = mutableListOf<LrcLine>()
+        val cueTimingRegex = Regex("""(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})\s*-->\s*(?:(\d{1,2}):)?(\d{2}):(\d{2})[.,](\d{3})""")
+        val soundTagRegex = Regex("""(?i)\[(Music|Applause|Laughter|Cheering|Audio|Silence)\]""")
+        val inlineTagRegex = Regex("""<[^>]*>""")
+
+        var currentStartMs: Long? = null
+        val currentTextParts = mutableListOf<String>()
+
+        fun emitCurrentCue() {
+            val startMs = currentStartMs ?: return
+            if (currentTextParts.isNotEmpty()) {
+                val rawText = currentTextParts.joinToString(" ")
+                val cleanText = inlineTagRegex.replace(rawText, "")
+                    .replace(soundTagRegex, "")
+                    .replace("&amp;", "&")
+                    .replace("&quot;", "\"")
+                    .replace("&#39;", "'")
+                    .replace("&#039;", "'")
+                    .replace("&lt;", "<")
+                    .replace("&gt;", ">")
+                    .replace(">>", "")
+                    .replace("♪", "")
+                    .replace(Regex("""\s+"""), " ")
+                    .trim()
+
+                if (cleanText.isNotBlank()) {
+                    // YouTube auto-generated speech recognition timestamps systematically lag vocal delivery by ~1000ms.
+                    // Advance auto-generated cues by 1000ms so the line glow highlights in real-time with singing.
+                    val finalStartMs = if (isAutoGenerated) maxOf(0L, startMs - 1000L) else startMs
+                    val lastLine = result.lastOrNull()
+                    if (lastLine != null && lastLine.text.equals(cleanText, ignoreCase = true)) {
+                        // Suppress duplicate rolling cue from YouTube ASR
+                    } else {
+                        result.add(LrcLine(startTimeMs = finalStartMs, text = cleanText))
+                    }
+                }
+            }
+            currentStartMs = null
+            currentTextParts.clear()
+        }
+
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.isEmpty()) {
+                emitCurrentCue()
+                continue
+            }
+
+            // Skip WEBVTT header and metadata tags (NOTE, STYLE, REGION)
+            if (trimmed.startsWith("WEBVTT", ignoreCase = true) ||
+                trimmed.startsWith("NOTE", ignoreCase = true) ||
+                trimmed.startsWith("STYLE", ignoreCase = true) ||
+                trimmed.startsWith("REGION", ignoreCase = true)) {
+                continue
+            }
+
+            val timingMatch = cueTimingRegex.find(trimmed)
+            if (timingMatch != null) {
+                // If there was an un-emitted cue, emit it first
+                emitCurrentCue()
+
+                val hours = timingMatch.groupValues[1].toLongOrNull() ?: 0L
+                val minutes = timingMatch.groupValues[2].toLongOrNull() ?: 0L
+                val seconds = timingMatch.groupValues[3].toLongOrNull() ?: 0L
+                val millis = timingMatch.groupValues[4].toLongOrNull() ?: 0L
+                currentStartMs = (hours * 3600_000L) + (minutes * 60_000L) + (seconds * 1_000L) + millis
+
+                // Check if there is cue text on the same line after settings
+                val lineAfterMatch = trimmed.substring(timingMatch.range.last + 1).trim()
+                if (lineAfterMatch.isNotBlank() && !lineAfterMatch.contains("-->") && !lineAfterMatch.startsWith("align:") && !lineAfterMatch.startsWith("position:")) {
+                    currentTextParts.add(lineAfterMatch)
+                }
+            } else if (currentStartMs != null) {
+                currentTextParts.add(trimmed)
+            }
+        }
+
+        // Emit final cue
+        emitCurrentCue()
+
+        return result.sorted()
     }
 }

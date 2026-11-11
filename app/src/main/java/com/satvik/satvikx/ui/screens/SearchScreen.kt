@@ -84,6 +84,7 @@ import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.ShimmerTrackList
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
+import com.satvik.satvikx.ui.components.isolateHorizontalScroll
 import com.satvik.satvikx.ui.theme.PrimaryNeon
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 import com.satvik.satvikx.ui.viewmodel.SearchViewModel
@@ -328,6 +329,7 @@ fun SearchScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
+                    .isolateHorizontalScroll()
                     .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
@@ -408,12 +410,13 @@ fun SearchScreen(
                                     key = { it.id }
                                 ) { track ->
                                     TrackItem(
+                                        modifier = Modifier.animateItem(),
                                         track = track,
                                         onClick = {
                                             keyboardController?.hide()
                                             focusManager.clearFocus()
                                             isSearchFocused = false
-                                            viewModel.playTrack(track, uiState.results)
+                                            viewModel.playTrack(track)
                                         },
                                         onOptionClick = {
                                             keyboardController?.hide()
@@ -610,7 +613,7 @@ fun SearchScreen(
             onPlayNow = {
                 keyboardController?.hide()
                 focusManager.clearFocus()
-                viewModel.playTrack(it, uiState.results)
+                viewModel.playTrack(it)
             },
             onPlayNext = {
                 viewModel.playNext(it)

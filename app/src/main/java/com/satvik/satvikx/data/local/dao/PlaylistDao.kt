@@ -59,8 +59,16 @@ interface PlaylistDao {
     fun getPlaylistWithTracks(playlistId: Long): Flow<PlaylistWithTracks?>
 
     @Transaction
+    @Query("SELECT * FROM playlists WHERE playlistId = :playlistId LIMIT 1")
+    suspend fun getPlaylistWithTracksSync(playlistId: Long): PlaylistWithTracks?
+
+    @Transaction
     @Query("SELECT * FROM playlists ORDER BY createdAtTimestamp DESC")
     fun getAllPlaylistsWithTracks(): Flow<List<PlaylistWithTracks>>
+
+    @Transaction
+    @Query("SELECT * FROM playlists ORDER BY createdAtTimestamp DESC")
+    suspend fun getAllPlaylistsWithTracksSync(): List<PlaylistWithTracks>
 
     @Query("""
         SELECT cr.trackId 

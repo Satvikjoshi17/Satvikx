@@ -65,6 +65,7 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
+import com.satvik.satvikx.ui.components.isolateHorizontalScroll
 import com.satvik.satvikx.ui.theme.ArcCyan
 import com.satvik.satvikx.ui.theme.ArcCyanBright
 import com.satvik.satvikx.ui.theme.ArcCyanGlow
@@ -290,6 +291,7 @@ fun RecentsScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
+                        .isolateHorizontalScroll()
                         .padding(top = 8.dp, bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
