@@ -244,12 +244,21 @@ class LyricsRepositoryImpl(
     ): LyricsData? {
         if (title.isBlank()) return null
 
-        // Step 2a: Try GET /api/get
+        // Step 2a: Try GET /api/get with title + artist
         val exactMatch = queryLrclibGet(title, artist, album, durationSec)
         if (exactMatch != null) return exactMatch
 
-        // Step 2b: Search Fallback GET /api/search
-        return queryLrclibSearch(title, artist, durationSec)
+        // Step 2b: Search Fallback GET /api/search with title + artist
+        val searchWithArtist = queryLrclibSearch(title, artist, durationSec)
+        if (searchWithArtist != null) return searchWithArtist
+
+        // Step 2c: Search Fallback with title ONLY (for YouTube tracks where artist is an uploader/label)
+        if (artist.isNotBlank()) {
+            val titleOnlyMatch = queryLrclibSearch(title, "", durationSec)
+            if (titleOnlyMatch != null) return titleOnlyMatch
+        }
+
+        return null
     }
 
     private fun queryLrclibGet(

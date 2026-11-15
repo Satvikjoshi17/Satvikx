@@ -5,22 +5,16 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.interaction.collectIsDraggedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -42,14 +36,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -67,7 +59,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -80,28 +72,21 @@ import androidx.compose.ui.unit.sp
 import com.satvik.satvikx.data.parser.LrcParser
 import com.satvik.satvikx.data.remote.model.LrcLine
 import com.satvik.satvikx.data.remote.model.LyricsData
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.ArcCyanGlow
-import com.satvik.satvikx.ui.theme.StarkBorder
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
-import com.satvik.satvikx.ui.theme.StarkSurface
-import com.satvik.satvikx.ui.theme.TextPrimary
-import com.satvik.satvikx.ui.theme.TextSecondary
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.viewmodel.LyricsUiState
 import kotlinx.coroutines.launch
 
 /**
- * Tony Stark / J.A.R.V.I.S. Holographic Karaoke Synced Lyrics View.
+ * Spotify Signature Mobile Synced Lyrics Card.
  *
  * Features:
- * - Dynamic 0ms cached vs live streamed lyrics presentation.
- * - Micro-second accurate time synchronization with active line glow highlight.
- * - Interactive tap-to-seek to jump playback directly to any lyric timestamp.
- * - Smooth intelligent auto-scroll with 4-second manual override pause.
- * - Floating "Resume Sync" HUD chip when user scrolls away from active line.
- * - Clean plain-text fallback and instrumental track status badges.
+ * - High-contrast left-aligned lyrics layout matching Spotify mobile client.
+ * - Active line: Pure white (#FFFFFF) bold 22sp text with subtle scale up.
+ * - Past/unplayed lines: Soft 38% muted white text (18sp) for effortless reading.
+ * - Tap-to-seek: Jump playback instantly to any lyric timestamp with tactile haptic feedback.
+ * - Smooth auto-scrolling centered at ~35% viewport height with automatic 4-second resume on idle.
+ * - Spotify "Sync to music" capsule pill button when user manually scrolls through lyrics.
+ * - Clean provider badge attribution and fine sync offset calibration controls.
  */
 @Composable
 fun SyncedLyricsView(
@@ -129,28 +114,16 @@ fun SyncedLyricsView(
     Surface(
         modifier = modifier
             .fillMaxSize()
-            .clip(RoundedCornerShape(20.dp))
-            .border(
-                1.dp,
-                Brush.verticalGradient(
-                    listOf(
-                        ArcCyan.copy(alpha = 0.35f),
-                        StarkBorder,
-                        ArcCyan.copy(alpha = 0.15f)
-                    )
-                ),
-                RoundedCornerShape(20.dp)
-            ),
-        color = StarkSurface.copy(alpha = 0.85f)
+            .clip(RoundedCornerShape(16.dp)),
+        color = Color(0xFF242424) // Spotify dark card surface
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 16.dp, vertical = 12.dp)
         ) {
-            // Top HUD Telemetry Bar with Sync Calibration Control
-            LyricsTopHudBar(
+            // Spotify Top Header: "Lyrics" title + provider credit + optional sync tuner
+            SpotifyLyricsHeader(
                 lyrics = lyrics,
                 isLoading = isLoading,
                 userOffsetMs = userOffsetMs,
@@ -158,9 +131,9 @@ fun SyncedLyricsView(
                 onToggleCalibrate = { isCalibrateOpen = !isCalibrateOpen }
             )
 
-            // Animated Micro Calibration Bar
+            // Discreet calibration bar (only when user opens tuner)
             AnimatedVisibility(visible = isCalibrateOpen && lyrics?.isSynced == true) {
-                LyricsCalibrationControls(
+                SpotifyCalibrationBar(
                     userOffsetMs = userOffsetMs,
                     onAdjustOffset = { deltaMs ->
                         val newOffset = (userOffsetMs + deltaMs).coerceIn(-15000L, 15000L)
@@ -180,42 +153,38 @@ fun SyncedLyricsView(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Main Content Area
+            // Main Lyrics View
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .weight(1f),
-                contentAlignment = Alignment.Center
+                    .weight(1f)
             ) {
                 when {
                     isLoading && lyrics == null -> {
-                        LyricsLoadingView()
+                        SpotifyLyricsLoadingSkeleton()
                     }
 
                     lyrics != null && lyrics.lines.isEmpty() && lyrics.plainLyrics == null -> {
-                        // Instrumental Track
-                        InstrumentalLyricsView()
+                        SpotifyInstrumentalView()
                     }
 
                     lyrics != null && lyrics.isSynced && lyrics.lines.isNotEmpty() -> {
-                        // Time-synced Karaoke Lines with Calibrated Position
-                        SyncedLinesContent(
+                        SpotifySyncedLinesList(
                             lines = lyrics.lines,
                             currentPositionMs = effectivePositionMs,
                             userOffsetMs = userOffsetMs,
+                            isPlaying = isPlaying,
                             onSeekTo = onSeekTo
                         )
                     }
 
                     lyrics != null && !lyrics.plainLyrics.isNullOrBlank() -> {
-                        // Plain Text Lyrics Fallback
-                        PlainLyricsContent(plainLyrics = lyrics.plainLyrics)
+                        SpotifyPlainLyricsList(plainLyrics = lyrics.plainLyrics)
                     }
 
                     else -> {
-                        // Empty / Not Found / Error State
-                        LyricsErrorView(
-                            errorMessage = error ?: "NO_TELEMETRY_FOUND",
+                        SpotifyLyricsUnavailableView(
+                            errorMessage = error,
                             onRetry = onRetry
                         )
                     }
@@ -225,98 +194,90 @@ fun SyncedLyricsView(
     }
 }
 
+/**
+ * Spotify Lyrics Top Header Bar with clean typography and subtle provider credit
+ */
 @Composable
-private fun LyricsTopHudBar(
+private fun SpotifyLyricsHeader(
     lyrics: LyricsData?,
     isLoading: Boolean,
-    userOffsetMs: Long = 0L,
-    isCalibrateOpen: Boolean = false,
-    onToggleCalibrate: () -> Unit = {}
+    userOffsetMs: Long,
+    isCalibrateOpen: Boolean,
+    onToggleCalibrate: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
+            .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Holographic Provider Badge
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(6.dp)
-                    .clip(CircleShape)
-                    .background(if (isLoading) StarkGold else ArcCyanBright)
-            )
-            val badgeText = when {
-                isLoading -> "SCANNING TELEMETRY..."
-                lyrics == null -> "OFFLINE ARCHIVE"
-                lyrics.isSynced -> "HOLO-SYNC • ${lyrics.provider}"
-                lyrics.lines.isEmpty() && lyrics.plainLyrics == null -> "INSTRUMENTAL CORE"
-                else -> "TEXT TELEMETRY • ${lyrics.provider}"
-            }
+        Column {
             Text(
-                text = badgeText,
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = FontFamily.Monospace,
+                text = "Lyrics",
+                style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    color = if (isLoading) StarkGold else ArcCyanBright
+                    fontSize = 17.sp,
+                    color = Color.White
                 )
+            )
+
+            val providerText = when {
+                isLoading -> "Loading lyrics..."
+                lyrics == null -> "Offline"
+                lyrics.isSynced -> "Synced lyrics • ${lyrics.provider}"
+                lyrics.lines.isEmpty() && lyrics.plainLyrics == null -> "Instrumental"
+                else -> "Lyrics • ${lyrics.provider}"
+            }
+
+            Text(
+                text = providerText,
+                style = MaterialTheme.typography.labelSmall.copy(
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.55f)
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
 
-        // Action Controls: Sync Calibration Trigger & Audio Indicator
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (lyrics?.isSynced == true) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isCalibrateOpen) ArcCyanGlow else if (userOffsetMs != 0L) StarkGold.copy(alpha = 0.20f) else StarkCarbon,
-                    border = BorderStroke(1.dp, if (userOffsetMs != 0L) StarkGold.copy(alpha = 0.65f) else ArcCyan.copy(alpha = 0.40f)),
-                    modifier = Modifier.clickable { onToggleCalibrate() }
+        if (lyrics?.isSynced == true) {
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .background(if (isCalibrateOpen || userOffsetMs != 0L) Color(0xFF383838) else Color(0xFF2C2C2C))
+                    .clickable { onToggleCalibrate() }
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Tune,
-                            contentDescription = "Sync Offset Calibration",
-                            tint = if (userOffsetMs != 0L) StarkGold else ArcCyanBright,
-                            modifier = Modifier.size(13.dp)
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "Sync offset",
+                        tint = if (userOffsetMs != 0L) SpotifyGreen else Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Text(
+                        text = if (userOffsetMs == 0L) "Sync" else "${if (userOffsetMs > 0) "+" else ""}${"%.1f".format(java.util.Locale.US, userOffsetMs / 1000f)}s",
+                        style = MaterialTheme.typography.labelSmall.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 10.5.sp,
+                            color = if (userOffsetMs != 0L) SpotifyGreen else Color.White.copy(alpha = 0.85f)
                         )
-                        Text(
-                            text = if (userOffsetMs == 0L) "SYNC" else "${if (userOffsetMs > 0) "+" else ""}${"%.1f".format(java.util.Locale.US, userOffsetMs / 1000f)}s",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp,
-                                color = if (userOffsetMs != 0L) StarkGold else ArcCyanBright
-                            )
-                        )
-                    }
+                    )
                 }
             }
-
-            Icon(
-                imageVector = if (lyrics?.isSynced == true) Icons.Default.GraphicEq else Icons.Default.Mic,
-                contentDescription = null,
-                tint = ArcCyan.copy(alpha = 0.7f),
-                modifier = Modifier.size(16.dp)
-            )
         }
     }
 }
 
+/**
+ * Spotify fine sync timing calibration pill
+ */
 @Composable
-private fun LyricsCalibrationControls(
+private fun SpotifyCalibrationBar(
     userOffsetMs: Long,
     onAdjustOffset: (Long) -> Unit,
     onResetOffset: () -> Unit
@@ -324,22 +285,19 @@ private fun LyricsCalibrationControls(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 4.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(StarkCarbon.copy(alpha = 0.92f))
-            .border(1.dp, ArcCyan.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
-            .padding(horizontal = 10.dp, vertical = 5.dp),
+            .padding(vertical = 4.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color(0xFF2C2C2C))
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            text = "CALIBRATION",
+            text = "Offset",
             style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                color = TextSecondary,
-                fontWeight = FontWeight.Bold,
-                fontSize = 10.sp,
-                letterSpacing = 1.sp
+                color = Color.White.copy(alpha = 0.65f),
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 11.sp
             )
         )
 
@@ -347,55 +305,52 @@ private fun LyricsCalibrationControls(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // -0.5s Delay
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = ArcCyan.copy(alpha = 0.15f),
-                modifier = Modifier.clickable { onAdjustOffset(-500L) }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF383838))
+                    .clickable { onAdjustOffset(-300L) }
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text(
-                    text = "-0.5s",
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    text = "-0.3s",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = ArcCyanBright,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp
                     )
                 )
             }
 
-            // Current Offset / Tap to Reset
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = if (userOffsetMs != 0L) StarkGold.copy(alpha = 0.25f) else StarkSurface,
-                modifier = Modifier.clickable { onResetOffset() }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(if (userOffsetMs != 0L) SpotifyGreen.copy(alpha = 0.2f) else Color(0xFF383838))
+                    .clickable { onResetOffset() }
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text(
-                    text = if (userOffsetMs == 0L) "0.0s" else "${if (userOffsetMs > 0) "+" else ""}${"%.1f".format(java.util.Locale.US, userOffsetMs / 1000f)}s",
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    text = if (userOffsetMs == 0L) "Reset" else "${if (userOffsetMs > 0) "+" else ""}${"%.1f".format(java.util.Locale.US, userOffsetMs / 1000f)}s",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = if (userOffsetMs != 0L) StarkGold else TextPrimary,
+                        color = if (userOffsetMs != 0L) SpotifyGreen else Color.White.copy(alpha = 0.7f),
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp
                     )
                 )
             }
 
-            // +0.5s Advance
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = ArcCyan.copy(alpha = 0.15f),
-                modifier = Modifier.clickable { onAdjustOffset(500L) }
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color(0xFF383838))
+                    .clickable { onAdjustOffset(300L) }
+                    .padding(horizontal = 8.dp, vertical = 3.dp)
             ) {
                 Text(
-                    text = "+0.5s",
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                    text = "+0.3s",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        color = ArcCyanBright,
+                        color = Color.White,
                         fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp
                     )
                 )
@@ -404,11 +359,20 @@ private fun LyricsCalibrationControls(
     }
 }
 
+/**
+ * Spotify Signature Synced Lyrics Line List:
+ * - Left aligned
+ * - High-contrast white active singing line (22sp, ExtraBold)
+ * - Muted 38% opacity for past and future lines (18sp, Bold)
+ * - Tap to seek
+ * - Auto-scroll with 4-second resume timer and "Sync to music" capsule button
+ */
 @Composable
-private fun SyncedLinesContent(
+private fun SpotifySyncedLinesList(
     lines: List<LrcLine>,
     currentPositionMs: Long,
-    userOffsetMs: Long = 0L,
+    userOffsetMs: Long,
+    isPlaying: Boolean,
     onSeekTo: (Long) -> Unit
 ) {
     val listState = rememberLazyListState()
@@ -419,7 +383,7 @@ private fun SyncedLinesContent(
         LrcParser.findActiveLineIndex(lines, currentPositionMs)
     }
 
-    // Manual scroll detection: Pause auto-scroll for 4s if user drags
+    // Manual scroll detection: Pause auto-scroll for 4s if user drags/browses
     var lastUserInteractionTimeMs by remember { mutableLongStateOf(0L) }
     val isListDragged by listState.interactionSource.collectIsDraggedAsState()
 
@@ -433,12 +397,12 @@ private fun SyncedLinesContent(
         isListDragged || (System.currentTimeMillis() - lastUserInteractionTimeMs < 4000L)
     }
 
-    // Smooth auto-scroll to center the active line
+    // Smooth auto-scroll to center the active line at ~35% of viewport
     LaunchedEffect(activeLineIndex, isUserBrowsing) {
         if (!isUserBrowsing && activeLineIndex in lines.indices) {
             listState.animateScrollToItem(
                 index = activeLineIndex,
-                scrollOffset = -180
+                scrollOffset = -140
             )
         }
     }
@@ -447,56 +411,35 @@ private fun SyncedLinesContent(
         LazyColumn(
             state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(vertical = 120.dp, horizontal = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(top = 40.dp, bottom = 120.dp, start = 4.dp, end = 4.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
             itemsIndexed(lines, key = { index, item -> "${index}_${item.startTimeMs}" }) { index, line ->
                 val isActive = index == activeLineIndex
-                val isPast = activeLineIndex != -1 && index < activeLineIndex
 
-                val targetColor = when {
-                    isActive -> ArcCyanBright
-                    isPast -> TextSecondary.copy(alpha = 0.40f)
-                    else -> TextPrimary.copy(alpha = 0.75f)
+                val targetColor = if (isActive) {
+                    Color.White
+                } else {
+                    Color.White.copy(alpha = 0.38f)
                 }
 
                 val animatedTextColor by animateColorAsState(
                     targetValue = targetColor,
-                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                    label = "lyric_color"
-                )
-
-                val animatedBgColor by animateColorAsState(
-                    targetValue = if (isActive) ArcCyanGlow else Color.Transparent,
-                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                    label = "lyric_bg"
-                )
-
-                val animatedBorderColor by animateColorAsState(
-                    targetValue = if (isActive) ArcCyan.copy(alpha = 0.35f) else Color.Transparent,
-                    animationSpec = tween(durationMillis = 300, easing = FastOutSlowInEasing),
-                    label = "lyric_border"
+                    animationSpec = tween(durationMillis = 220, easing = FastOutSlowInEasing),
+                    label = "spotify_lyric_color"
                 )
 
                 val animatedScale by animateFloatAsState(
-                    targetValue = if (isActive) 1.05f else 1.0f,
+                    targetValue = if (isActive) 1.02f else 1.0f,
                     animationSpec = spring(
-                        dampingRatio = Spring.DampingRatioLowBouncy,
-                        stiffness = Spring.StiffnessLow
+                        dampingRatio = 0.85f,
+                        stiffness = 300f
                     ),
-                    label = "lyric_scale"
+                    label = "spotify_lyric_scale"
                 )
 
-                val fontSize = when {
-                    isActive -> 20.sp
-                    isPast -> 16.sp
-                    else -> 17.sp
-                }
-
-                val fontWeight = when {
-                    isActive -> FontWeight.ExtraBold
-                    else -> FontWeight.Medium
-                }
+                val fontSize = if (isActive) 22.sp else 18.sp
+                val fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.Bold
 
                 Box(
                     modifier = Modifier
@@ -505,15 +448,12 @@ private fun SyncedLinesContent(
                             scaleX = animatedScale
                             scaleY = animatedScale
                         }
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(animatedBgColor)
-                        .border(1.dp, animatedBorderColor, RoundedCornerShape(12.dp))
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onSeekTo(maxOf(0L, line.startTimeMs - userOffsetMs))
                         }
-                        .padding(horizontal = 14.dp, vertical = 8.dp),
-                    contentAlignment = Alignment.Center
+                        .padding(vertical = 4.dp),
+                    contentAlignment = Alignment.CenterStart
                 ) {
                     Text(
                         text = line.text,
@@ -522,8 +462,8 @@ private fun SyncedLinesContent(
                             fontWeight = fontWeight,
                             fontSize = fontSize,
                             color = animatedTextColor,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 28.sp
+                            textAlign = TextAlign.Start,
+                            lineHeight = if (isActive) 30.sp else 26.sp
                         ),
                         modifier = Modifier.fillMaxWidth()
                     )
@@ -531,50 +471,48 @@ private fun SyncedLinesContent(
             }
         }
 
-        // Floating "Resume Sync" Button if user scrolled away
-        val showResumeButton = isUserBrowsing && activeLineIndex in lines.indices &&
+        // Floating Spotify "Sync to music" capsule button if user scrolled away
+        val showSyncCapsule = isUserBrowsing && activeLineIndex in lines.indices &&
                 (listState.firstVisibleItemIndex !in (activeLineIndex - 2)..(activeLineIndex + 2))
 
         AnimatedVisibility(
-            visible = showResumeButton,
-            enter = fadeIn(),
-            exit = fadeOut(),
+            visible = showSyncCapsule,
+            enter = fadeIn(tween(150)),
+            exit = fadeOut(tween(150)),
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 12.dp)
+                .padding(bottom = 14.dp)
         ) {
             Surface(
-                color = StarkCarbon.copy(alpha = 0.92f),
-                shape = RoundedCornerShape(20.dp),
-                modifier = Modifier
-                    .border(1.dp, ArcCyanBright, RoundedCornerShape(20.dp))
-                    .clickable {
-                        lastUserInteractionTimeMs = 0L
-                        coroutineScope.launch {
-                            listState.animateScrollToItem(
-                                index = activeLineIndex,
-                                scrollOffset = -180
-                            )
-                        }
+                color = Color.Black.copy(alpha = 0.88f),
+                shape = CircleShape,
+                modifier = Modifier.clickable {
+                    lastUserInteractionTimeMs = 0L
+                    coroutineScope.launch {
+                        listState.animateScrollToItem(
+                            index = activeLineIndex,
+                            scrollOffset = -140
+                        )
                     }
+                }
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Sync,
-                        contentDescription = "Resume Sync",
-                        tint = ArcCyanBright,
-                        modifier = Modifier.size(16.dp)
+                        contentDescription = "Sync to music",
+                        tint = SpotifyGreen,
+                        modifier = Modifier.size(15.dp)
                     )
                     Text(
-                        text = "SYNC TO AUDIO",
+                        text = "Sync to music",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            color = ArcCyanBright
+                            color = Color.White,
+                            fontSize = 12.sp
                         )
                     )
                 }
@@ -583,224 +521,184 @@ private fun SyncedLinesContent(
     }
 }
 
+/**
+ * Spotify Plain Text Lyrics Fallback
+ */
 @Composable
-private fun PlainLyricsContent(plainLyrics: String) {
+private fun SpotifyPlainLyricsList(plainLyrics: String) {
     val scrollState = rememberScrollState()
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 8.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(vertical = 32.dp, horizontal = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                text = plainLyrics,
-                style = MaterialTheme.typography.bodyLarge.copy(
-                    fontSize = 17.sp,
-                    color = TextPrimary.copy(alpha = 0.9f),
-                    textAlign = TextAlign.Center,
-                    lineHeight = 30.sp,
-                    fontFamily = FontFamily.SansSerif
-                )
-            )
-        }
-    }
-}
-
-@Composable
-private fun InstrumentalLyricsView() {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val pulseAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.9f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseAlpha"
-    )
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(24.dp),
+            .fillMaxSize()
+            .verticalScroll(scrollState)
+            .padding(top = 20.dp, bottom = 80.dp, start = 4.dp, end = 4.dp)
+    ) {
+        Text(
+            text = plainLyrics,
+            style = MaterialTheme.typography.bodyLarge.copy(
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Medium,
+                color = Color.White.copy(alpha = 0.88f),
+                textAlign = TextAlign.Start,
+                lineHeight = 28.sp,
+                fontFamily = FontFamily.SansSerif
+            )
+        )
+    }
+}
+
+/**
+ * Spotify Instrumental Track Card
+ */
+@Composable
+private fun SpotifyInstrumentalView() {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Box(
-            modifier = Modifier.size(90.dp),
+            modifier = Modifier
+                .size(64.dp)
+                .clip(CircleShape)
+                .background(Color(0xFF2C2C2C)),
             contentAlignment = Alignment.Center
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCircle(
-                    color = ArcCyan.copy(alpha = pulseAlpha * 0.4f),
-                    radius = size.minDimension / 2f,
-                    style = Stroke(width = 3.dp.toPx())
-                )
-                drawCircle(
-                    color = StarkGold.copy(alpha = pulseAlpha),
-                    radius = size.minDimension / 2.8f,
-                    style = Stroke(width = 2.dp.toPx())
-                )
-            }
             Icon(
                 imageVector = Icons.Default.MusicNote,
                 contentDescription = null,
-                tint = ArcCyanBright,
-                modifier = Modifier.size(36.dp)
+                tint = SpotifyGreen,
+                modifier = Modifier.size(32.dp)
             )
         }
 
-        Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "INSTRUMENTAL COMPOSITION",
+            text = "This song is an instrumental",
             style = MaterialTheme.typography.titleMedium.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.ExtraBold,
-                color = ArcCyanBright,
-                letterSpacing = 1.2.sp
-            )
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = Color.White
+            ),
+            textAlign = TextAlign.Center
         )
 
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = "No vocal telemetry detected in audio stream.",
-            style = MaterialTheme.typography.bodySmall.copy(
-                color = TextSecondary,
-                fontFamily = FontFamily.Monospace
+            text = "Enjoy the music!",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = Color.White.copy(alpha = 0.6f),
+                fontSize = 13.sp
             ),
             textAlign = TextAlign.Center
         )
     }
 }
 
+/**
+ * Spotify Lyrics Loading Skeleton with pulsing gray bars
+ */
 @Composable
-private fun LyricsLoadingView() {
-    val infiniteTransition = rememberInfiniteTransition(label = "loading")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
+private fun SpotifyLyricsLoadingSkeleton() {
+    val infiniteTransition = rememberInfiniteTransition(label = "skeleton_pulse")
+    val alpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 0.65f,
         animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
         ),
-        label = "rotation"
+        label = "skeleton_alpha"
     )
 
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .fillMaxSize()
+            .padding(top = 40.dp, start = 4.dp, end = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp)
     ) {
-        Box(
-            modifier = Modifier.size(64.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawCircle(
-                    brush = Brush.sweepGradient(listOf(ArcCyan, StarkGold, Color.Transparent)),
-                    style = Stroke(width = 3.dp.toPx())
-                )
-            }
-            Icon(
-                imageVector = Icons.Default.GraphicEq,
-                contentDescription = null,
-                tint = ArcCyanBright,
-                modifier = Modifier.size(28.dp)
+        val barFractions = listOf(0.85f, 0.65f, 0.92f, 0.50f, 0.78f, 0.60f)
+        barFractions.forEach { fraction ->
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .height(20.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF383838).copy(alpha = alpha))
             )
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        Text(
-            text = "ACQUIRING SATELLITE TELEMETRY...",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                color = ArcCyanBright,
-                letterSpacing = 1.sp
-            )
-        )
     }
 }
 
+/**
+ * Spotify Lyrics Unavailable / Error View
+ */
 @Composable
-private fun LyricsErrorView(
-    errorMessage: String,
+private fun SpotifyLyricsUnavailableView(
+    errorMessage: String?,
     onRetry: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(24.dp),
+            .fillMaxSize()
+            .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(
-            imageVector = Icons.Default.Mic,
-            contentDescription = null,
-            tint = TextSecondary.copy(alpha = 0.5f),
-            modifier = Modifier.size(44.dp)
-        )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
         Text(
-            text = "LYRICS UNAVAILABLE",
-            style = MaterialTheme.typography.titleSmall.copy(
-                fontFamily = FontFamily.Monospace,
+            text = "Couldn't load lyrics for this song",
+            style = MaterialTheme.typography.titleMedium.copy(
                 fontWeight = FontWeight.Bold,
-                color = TextSecondary
-            )
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        Text(
-            text = "No matched lyrics in global catalog.",
-            style = MaterialTheme.typography.bodySmall.copy(
-                color = TextSecondary.copy(alpha = 0.7f),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp
+                fontSize = 15.sp,
+                color = Color.White
             ),
             textAlign = TextAlign.Center
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        Button(
-            onClick = onRetry,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = StarkSurface,
-                contentColor = ArcCyanBright
+        Text(
+            text = "Check your connection or try again later",
+            style = MaterialTheme.typography.bodyMedium.copy(
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 12.5.sp
             ),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier.border(1.dp, ArcCyan.copy(alpha = 0.4f), RoundedCornerShape(16.dp))
+            textAlign = TextAlign.Center
+        )
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        Box(
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Color.White)
+                .clickable { onRetry() }
+                .padding(horizontal = 20.dp, vertical = 10.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Refresh,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = "RETRY SCAN",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Retry",
+                    tint = Color.Black,
+                    modifier = Modifier.size(16.dp)
                 )
-            )
+                Text(
+                    text = "Try again",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = Color.Black,
+                        fontSize = 13.sp
+                    )
+                )
+            }
         }
     }
 }
-

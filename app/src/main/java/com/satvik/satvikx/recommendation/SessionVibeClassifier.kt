@@ -72,21 +72,34 @@ class SessionVibeClassifier @Inject constructor() {
             combined.contains("trap") || combined.contains("freestyle") ->
                 SessionVibeMode.RAP
 
-            // 6. Devotional Mode: Spiritual, bhajans, mantras, aartis, chalisa, stotram, govind, hare murari
+            // 6. Devotional Mode: Spiritual, bhajans, mantras, aartis, chalisa, stotram, govind, hare murari, ram, siya
             combined.contains("bhajan") || combined.contains("aarti") || combined.contains("mantra") ||
             combined.contains("krishna") || combined.contains("shiva") || combined.contains("hanuman") ||
             combined.contains("ram") || combined.contains("devotional") || combined.contains("spiritual") ||
             combined.contains("meditation") || combined.contains("peaceful chant") || combined.contains("chalisa") ||
-            combined.contains("stotram") || combined.contains("govind") || combined.contains("hare murari") ->
+            combined.contains("stotram") || combined.contains("govind") || combined.contains("hare murari") ||
+            combined.contains("siya") || combined.contains("sita") || combined.contains("shringar") ||
+            combined.contains("maithili thakur") || combined.contains("anup jalota") || combined.contains("ravindra jain") ||
+            combined.contains("anuradha paudwal") || combined.contains("bhakti") || combined.contains("kirtan") ||
+            combined.contains("sunderkand") || combined.contains("ramayan") || combined.contains("radha") ||
+            combined.contains("mahadev") || combined.contains("bhole") || combined.contains("ganesh") ||
+            combined.contains("shree ram") || combined.contains("jai shri ram") || combined.contains("hariharan") ||
+            combined.contains("swati mishra") ->
                 SessionVibeMode.DEVOTIONAL
 
-            // 7. Romantic Mode: Melodic Bollywood, acoustic love, romantic duets, global pop ballads
+            // 7. Romantic Mode: Melodic Bollywood, acoustic love, romantic duets, global pop ballads, golden-era classics
             combined.contains("arijit") || combined.contains("shreya") || combined.contains("atif") ||
             combined.contains("pritam") || combined.contains("jubin") || combined.contains("darshan raval") ||
             combined.contains("kesariya") || combined.contains("tum hi ho") || combined.contains("channa mereya") ||
             combined.contains("ishq") || combined.contains("love") || combined.contains("romantic") ||
             combined.contains("hawayein") || combined.contains("raataan") || combined.contains("sufi") ||
             combined.contains("ghazal") || combined.contains("jagjit") ||
+            combined.contains("pyaar") || combined.contains("pyar") || combined.contains("ikraar") ||
+            combined.contains("manna dey") || combined.contains("mukesh") || combined.contains("lata mangeshkar") ||
+            combined.contains("kishore kumar") || combined.contains("rafi") || combined.contains("mohammed rafi") ||
+            combined.contains("asha bhosle") || combined.contains("kumar sanu") || combined.contains("udit narayan") ||
+            combined.contains("alka yagnik") || combined.contains("sonu nigam") || combined.contains("shaan") ||
+            combined.contains("mohabbat") || combined.contains("humsafar") || combined.contains("deewana") ||
             combined.contains("ed sheeran") || combined.contains("taylor swift") || combined.contains("lewis capaldi") ||
             combined.contains("james arthur") || combined.contains("shawn mendes") || combined.contains("bruno mars") ||
             combined.contains("adele") || combined.contains("stephen sanchez") || combined.contains("dean lewis") ||

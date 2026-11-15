@@ -1,7 +1,6 @@
 package com.satvik.satvikx.ui.components
 
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -9,11 +8,11 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -49,16 +48,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.satvik.satvikx.playback.model.PlaybackState
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.StarkBorder
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
-import com.satvik.satvikx.ui.theme.StarkSurface
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.theme.TextSecondary
-import androidx.compose.foundation.border
-import androidx.compose.foundation.shape.CircleShape
 
+/**
+ * Spotify Signature Floating MiniPlayer.
+ * Features a dark elevated capsule (#242424), crisp square artwork,
+ * marquee song title, pure white controls, and a sleek bottom Spotify Green progress bar.
+ */
 @Composable
 fun BottomMiniPlayer(
     playbackState: PlaybackState,
@@ -70,14 +67,8 @@ fun BottomMiniPlayer(
     val track = playbackState.currentTrack ?: return
 
     val isNarrow = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 360
-    val thumbSize = if (isNarrow) 40.dp else 46.dp
-    val actionBtnSize = if (isNarrow) 40.dp else 48.dp
-
-    val animatedBorderColor by animateColorAsState(
-        targetValue = if (playbackState.isPlaying) ArcCyan else StarkBorder,
-        animationSpec = tween(durationMillis = 320, easing = FastOutSlowInEasing),
-        label = "mini_thumb_border"
-    )
+    val thumbSize = if (isNarrow) 38.dp else 42.dp
+    val actionBtnSize = if (isNarrow) 38.dp else 44.dp
 
     val animatedProgress by animateFloatAsState(
         targetValue = playbackState.progressFraction,
@@ -88,41 +79,50 @@ fun BottomMiniPlayer(
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = if (isNarrow) 6.dp else 10.dp, vertical = 4.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .border(1.dp, StarkBorder, RoundedCornerShape(12.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
+            .clip(RoundedCornerShape(8.dp))
             .clickable(
                 onClick = onExpand,
-                onClickLabel = "Open Stark Arc player"
+                onClickLabel = "Open player"
             ),
-        color = StarkSurface,
-        shadowElevation = 10.dp
+        color = Color(0xFF242424),
+        shadowElevation = 8.dp,
+        shape = RoundedCornerShape(8.dp)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .defaultMinSize(minHeight = 56.dp)
-                    .padding(horizontal = if (isNarrow) 8.dp else 10.dp, vertical = 6.dp),
+                    .height(56.dp)
+                    .padding(start = 8.dp, end = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Arc Reactor Album Thumbnail
+                // Square Album Thumbnail with 4dp rounded corners
                 Box(
                     modifier = Modifier
                         .size(thumbSize)
-                        .clip(CircleShape)
-                        .border(1.5.dp, animatedBorderColor, CircleShape),
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color(0xFF333333)),
                     contentAlignment = Alignment.Center
                 ) {
-                    AsyncImage(
-                        model = track.thumbnailUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    if (track.thumbnailUrl.isNotBlank()) {
+                        AsyncImage(
+                            model = track.thumbnailUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            tint = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
                 }
 
-                Spacer(modifier = Modifier.width(if (isNarrow) 8.dp else 12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
                 // Track Title & Artist
                 Column(
@@ -131,42 +131,29 @@ fun BottomMiniPlayer(
                         .semantics {
                             contentDescription = "Currently playing ${track.title} by ${track.artist}"
                             role = Role.Button
-                        }
+                        },
+                    verticalArrangement = Arrangement.Center
                 ) {
                     Text(
                         text = track.title,
-                        style = MaterialTheme.typography.titleMedium.copy(
+                        style = MaterialTheme.typography.bodyMedium.copy(
                             fontWeight = FontWeight.Bold,
-                            fontSize = if (isNarrow) 13.sp else 14.sp
+                            fontSize = if (isNarrow) 12.5.sp else 13.5.sp
                         ),
                         maxLines = 1,
                         color = Color.White,
                         modifier = Modifier.basicMarquee()
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            text = track.artist,
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = if (isNarrow) 11.sp else 12.sp,
-                                color = TextSecondary
-                            ),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "• 320K",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = ArcCyanBright
-                            ),
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    }
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = track.artist,
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = if (isNarrow) 11.sp else 11.5.sp,
+                            color = TextSecondary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
 
                 // Play / Pause / Buffering Action
@@ -177,7 +164,7 @@ fun BottomMiniPlayer(
                     if (playbackState.isBuffering) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(20.dp),
-                            color = ArcCyanBright,
+                            color = SpotifyGreen,
                             strokeWidth = 2.dp
                         )
                     } else {
@@ -193,8 +180,8 @@ fun BottomMiniPlayer(
                                 Icon(
                                     imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
                                     contentDescription = if (isPlaying) "Pause" else "Play",
-                                    tint = ArcCyanBright,
-                                    modifier = Modifier.size(if (isNarrow) 24.dp else 30.dp)
+                                    tint = Color.White,
+                                    modifier = Modifier.size(if (isNarrow) 24.dp else 28.dp)
                                 )
                             }
                         }
@@ -210,19 +197,19 @@ fun BottomMiniPlayer(
                         imageVector = Icons.Default.SkipNext,
                         contentDescription = "Skip next",
                         tint = Color.White,
-                        modifier = Modifier.size(if (isNarrow) 22.dp else 28.dp)
+                        modifier = Modifier.size(if (isNarrow) 22.dp else 26.dp)
                     )
                 }
             }
 
-            // Real-time Stark Progress Indicator Bar
+            // Clean 2dp Spotify Green Progress Bar
             LinearProgressIndicator(
                 progress = { animatedProgress },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(2.5.dp),
-                color = ArcCyan,
-                trackColor = StarkCarbon
+                    .height(2.dp),
+                color = SpotifyGreen,
+                trackColor = Color(0xFF383838)
             )
         }
     }

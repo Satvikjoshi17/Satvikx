@@ -2,7 +2,7 @@ package com.satvik.satvikx.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,28 +22,23 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,9 +48,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -63,18 +60,11 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
+import com.satvik.satvikx.ui.components.OpticallyCenteredPlayIcon
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
 import com.satvik.satvikx.ui.components.isolateHorizontalScroll
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.ArcCyanGlow
-import com.satvik.satvikx.ui.theme.StarkBorder
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkSurface
-import com.satvik.satvikx.ui.theme.TextPrimary
-import com.satvik.satvikx.ui.theme.TextSecondary
-import com.satvik.satvikx.ui.theme.TextTertiary
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -112,223 +102,195 @@ fun RecentsScreen(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(top = 8.dp)
+            .background(Color(0xFF121212))
     ) {
-        // 1. Header with Spotify/YouTube Music style listening history title
+        // 1. Spotify Top Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Listening History",
-                    style = MaterialTheme.typography.headlineLarge.copy(
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.5).sp
-                    ),
-                    color = TextPrimary
-                )
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(ArcCyanBright)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "J.A.R.V.I.S. TIMELINE • ${recentTracks.size} TRACKS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = 0.8.sp,
-                            color = ArcCyanBright
-                        )
+            Text(
+                text = "Recently played",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color.White
+            )
+
+            if (recentTracks.isNotEmpty()) {
+                IconButton(onClick = { showClearConfirmDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.DeleteSweep,
+                        contentDescription = "Clear History",
+                        tint = Color(0xFFA7A7A7),
+                        modifier = Modifier.size(24.dp)
                     )
                 }
             }
+        }
 
-            if (recentTracks.isNotEmpty()) {
-                Surface(
-                    shape = CircleShape,
-                    color = StarkSurface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder)
-                ) {
+        // 2. Search Bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .height(42.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF282828))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = Color(0xFFA7A7A7),
+                    modifier = Modifier.size(20.dp)
+                )
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    cursorBrush = SolidColor(SpotifyGreen),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { innerTextField ->
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Find in recently played",
+                                style = TextStyle(
+                                    color = Color(0xFFA7A7A7),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            )
+                        }
+                        innerTextField()
+                    }
+                )
+
+                if (searchQuery.isNotEmpty()) {
                     IconButton(
-                        onClick = { showClearConfirmDialog = true },
-                        modifier = Modifier.size(38.dp)
+                        onClick = { searchQuery = "" },
+                        modifier = Modifier.size(24.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.DeleteSweep,
-                            contentDescription = "Clear History",
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(20.dp)
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = "Clear",
+                            tint = Color(0xFFA7A7A7),
+                            modifier = Modifier.size(16.dp)
                         )
                     }
                 }
             }
         }
 
-        // 2. Action Controls (Play All / Resume History & Shuffle)
+        // 3. Sort Filter Pills
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .isolateHorizontalScroll()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("All", "A-Z", "By Artist").forEach { filter ->
+                val isSelected = selectedFilter == filter
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) SpotifyGreen else Color(0xFF282828),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { selectedFilter = filter }
+                ) {
+                    Text(
+                        text = filter,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.5.sp
+                        ),
+                        color = if (isSelected) Color.Black else Color.White,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+
+        // 4. Action Row (Track Count, Shuffle, and 52dp Play Button)
         if (recentTracks.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = { viewModel.playAllRecent(shuffled = false) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ArcCyan,
-                        contentColor = StarkCarbon
+                Text(
+                    text = "${filteredTracks.size} songs",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 13.5.sp
                     ),
-                    shape = RoundedCornerShape(24.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "RESUME ALL",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 0.5.sp
-                        )
-                    )
-                }
+                    color = Color(0xFFA7A7A7)
+                )
 
-                OutlinedButton(
-                    onClick = { viewModel.playAllRecent(shuffled = true) },
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = ArcCyanBright
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder),
-                    shape = RoundedCornerShape(24.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-                    modifier = Modifier.weight(1f)
+                Spacer(modifier = Modifier.weight(1f))
+
+                IconButton(
+                    onClick = {
+                        if (filteredTracks.isNotEmpty()) {
+                            viewModel.playTrack(filteredTracks.random(), filteredTracks)
+                            Toast.makeText(context, "Shuffle playing recent tracks", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Shuffle,
-                        contentDescription = null,
-                        tint = ArcCyanBright,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "SHUFFLE",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 0.5.sp
-                        )
+                        contentDescription = "Shuffle",
+                        tint = Color(0xFFA7A7A7),
+                        modifier = Modifier.size(24.dp)
                     )
                 }
-            }
 
-            // In-History Search & Filter Bar
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "Search in history...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextTertiary
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear search",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .shadow(8.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(SpotifyGreen)
+                        .clickable {
+                            if (filteredTracks.isNotEmpty()) {
+                                viewModel.playTrack(filteredTracks.first(), filteredTracks)
+                                Toast.makeText(context, "Playing recent tracks", Toast.LENGTH_SHORT).show()
                             }
-                        }
-                    },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = StarkSurface,
-                        unfocusedContainerColor = StarkSurface,
-                        focusedIndicatorColor = ArcCyanBright,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .border(1.dp, StarkBorder, RoundedCornerShape(12.dp))
-                )
-
-                // Quick Filter Chips
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .isolateHorizontalScroll()
-                        .padding(top = 8.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    listOf("All", "A-Z", "By Artist").forEach { filter ->
-                        val isSelected = selectedFilter == filter
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedFilter = filter },
-                            label = {
-                                Text(
-                                    text = if (filter == "All") "ALL (${recentTracks.size})" else filter,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = ArcCyanBright,
-                                selectedLabelColor = StarkCarbon,
-                                containerColor = StarkSurface,
-                                labelColor = TextSecondary
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = StarkBorder,
-                                selectedBorderColor = ArcCyanBright
-                            ),
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                    }
+                    OpticallyCenteredPlayIcon(
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.Black
+                    )
                 }
             }
         }
 
-        // 3. Track List or Empty State
+        // 5. Track List or Empty State
         if (recentTracks.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -336,46 +298,39 @@ fun RecentsScreen(
                     .padding(32.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
-                            .size(80.dp)
+                            .size(64.dp)
                             .clip(CircleShape)
-                            .background(ArcCyanGlow.copy(alpha = 0.12f))
-                            .border(1.5.dp, ArcCyanBright.copy(alpha = 0.4f), CircleShape),
+                            .background(Color(0xFF282828)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.History,
                             contentDescription = null,
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(36.dp)
+                            tint = Color(0xFFA7A7A7),
+                            modifier = Modifier.size(32.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "Your Listening History is Empty",
+                        text = "No listening history yet",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         ),
-                        color = TextPrimary
+                        color = Color.White
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Tracks, mixes, and playlists you play will show up here so you can easily jump back into your favorite sessions.",
-                        color = TextSecondary,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            lineHeight = 18.sp
-                        ),
-                        modifier = Modifier.padding(horizontal = 24.dp),
+                        text = "Tracks, mixes, and playlists you play will show up here.",
+                        color = Color(0xFFA7A7A7),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
@@ -388,15 +343,15 @@ fun RecentsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No songs found matching \"$searchQuery\"",
+                    text = "No songs matching \"$searchQuery\"",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = Color(0xFFA7A7A7)
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 120.dp)
+                contentPadding = PaddingValues(bottom = 80.dp)
             ) {
                 items(
                     items = filteredTracks,
@@ -420,17 +375,22 @@ fun RecentsScreen(
     if (showClearConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showClearConfirmDialog = false },
+            containerColor = Color(0xFF282828),
             title = {
                 Text(
-                    text = "Clear Listening History?",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    text = "Clear listening history?",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    ),
+                    color = Color.White
                 )
             },
             text = {
                 Text(
-                    text = "This will permanently remove all tracks from your playback history. Your liked tracks and downloaded songs will remain untouched.",
+                    text = "This will remove all songs from your listening history. Your saved library and playlists will not be affected.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = Color(0xFFA7A7A7)
                 )
             },
             confirmButton = {
@@ -441,20 +401,19 @@ fun RecentsScreen(
                         Toast.makeText(context, "Listening history cleared", Toast.LENGTH_SHORT).show()
                     },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFF5252),
+                        containerColor = Color(0xFFE91429),
                         contentColor = Color.White
-                    )
+                    ),
+                    shape = RoundedCornerShape(20.dp)
                 ) {
-                    Text("Clear All")
+                    Text("Clear", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearConfirmDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = Color(0xFFA7A7A7))
                 }
-            },
-            containerColor = StarkSurface,
-            textContentColor = TextPrimary
+            }
         )
     }
 

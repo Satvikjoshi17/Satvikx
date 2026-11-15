@@ -3,6 +3,8 @@ package com.satvik.satvikx.ui.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.satvik.satvikx.data.download.DownloadRepository
+import com.satvik.satvikx.data.local.dao.PlaylistDao
+import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.distinctSongs
 import com.satvik.satvikx.data.local.entity.isSameSong
@@ -46,6 +48,7 @@ data class HomeUiState(
     val vaultFavoritesTracks: List<TrackEntity> = emptyList(),
     val trendingTracks: List<TrackEntity> = emptyList(),
     val moodTracks: List<TrackEntity> = emptyList(),
+    val isLoadingMood: Boolean = false,
     val selectedMood: String = "All",
     val autopilotTargetSinger: String = "GLOBAL ICONS",
     val autopilotTargetGenre: String = "ALL CATEGORIES",
@@ -56,7 +59,9 @@ data class HomeUiState(
 class HomeViewModel @Inject constructor(
     private val recommendationRepository: RecommendationRepository,
     private val playbackConnectionManager: PlaybackConnectionManager,
-    private val downloadRepository: DownloadRepository
+    private val downloadRepository: DownloadRepository,
+    private val recentPlaybackDao: RecentPlaybackDao,
+    private val playlistDao: PlaylistDao
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(HomeUiState())
@@ -66,17 +71,91 @@ class HomeViewModel @Inject constructor(
 
     init {
         loadHomeData()
+        observeRecentPlayback()
+        observeLikedSongs()
+    }
+
+    private fun observeRecentPlayback() {
+        viewModelScope.launch {
+            recentPlaybackDao.getRecentTracks(50).collect { recentList ->
+                val validRecents = recentList
+                    .filter { it.id.isNotBlank() && it.title.isNotBlank() }
+                    .distinctBy { it.id }
+                if (validRecents.isNotEmpty()) {
+                    _uiState.update { state ->
+                        val updatedQuick = (validRecents.take(6) + state.quickPicks)
+                            .distinctBy { it.id }
+                            .take(6)
+                        state.copy(
+                            jumpBackInTracks = validRecents,
+                            quickPicks = updatedQuick
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun observeLikedSongs() {
+        viewModelScope.launch {
+            try {
+                val likedPlaylist = withContext(Dispatchers.IO) {
+                    playlistDao.getPlaylistByNameSync("Liked Songs")
+                }
+                if (likedPlaylist != null) {
+                    playlistDao.getPlaylistWithTracks(likedPlaylist.playlistId).collect { playlistWithTracks ->
+                        val tracks = playlistWithTracks?.tracks.orEmpty()
+                        _uiState.update { it.copy(likedTracks = tracks) }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun refreshRecentPlayback() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val recents = recentPlaybackDao.getRecentTracksSync(50)
+                    .filter { it.id.isNotBlank() && it.title.isNotBlank() }
+                    .distinctBy { it.id }
+                if (recents.isNotEmpty()) {
+                    _uiState.update { state ->
+                        val updatedQuick = (recents.take(6) + state.quickPicks)
+                            .distinctBy { it.id }
+                            .take(6)
+                        state.copy(
+                            jumpBackInTracks = recents,
+                            quickPicks = updatedQuick
+                        )
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     private fun HomeUiState.applyRecommendations(data: HomeRecommendationCategories): HomeUiState {
+        val liveRecents = this.jumpBackInTracks
+        val finalRecents = if (liveRecents.isNotEmpty()) {
+            (liveRecents + data.jumpBackInTracks).distinctBy { it.id }
+        } else {
+            data.jumpBackInTracks
+        }
+
+        val liveLiked = this.likedTracks
+        val finalLiked = if (liveLiked.isNotEmpty()) liveLiked else data.likedTracks
+
+        val finalQuick = (finalRecents.take(6) + data.quickPicks)
+            .distinctBy { it.id }
+            .take(6)
+
         return this.copy(
             greeting = data.timeOfDayTitle,
             telemetryStatus = data.timeOfDaySubtitle,
-            quickPicks = data.quickPicks,
+            quickPicks = if (finalQuick.isNotEmpty()) finalQuick else data.quickPicks,
             dailyMixes = data.dailyMixes,
             topArtists = data.topArtists,
-            likedTracks = data.likedTracks,
-            jumpBackInTracks = data.jumpBackInTracks,
+            likedTracks = finalLiked,
+            jumpBackInTracks = finalRecents,
             becauseYouLikedTitle = data.becauseYouLikedTitle,
             becauseYouLikedSubtitle = data.becauseYouLikedSubtitle,
             becauseYouLikedTracks = data.becauseYouLikedTracks,
@@ -147,40 +226,53 @@ class HomeViewModel @Inject constructor(
     }
 
     fun selectMood(mood: String) {
-        if (_uiState.value.selectedMood == mood && _uiState.value.moodTracks.isNotEmpty()) return
+        if (_uiState.value.selectedMood == mood) {
+            // Tapping the active mood chip toggles it back to "All" (Standard Spotify UX)
+            if (mood != "All") {
+                selectMood("All")
+            }
+            return
+        }
 
         viewModelScope.launch {
             _uiState.update { it.copy(selectedMood = mood) }
 
+            if (mood == "All") {
+                _uiState.update { it.copy(isLoadingMood = false) }
+                return@launch
+            }
+
             // 1. Instant cache check for mood
             val cached = recommendationRepository.getCachedRecommendations(mood)
             if (cached != null && cached.moodTracks.isNotEmpty()) {
-                _uiState.update { it.copy(moodTracks = cached.moodTracks) }
+                _uiState.update { it.copy(moodTracks = cached.moodTracks, isLoadingMood = false) }
                 if (recommendationRepository.isHomeCacheFresh(mood)) {
                     return@launch
                 }
+            } else {
+                _uiState.update { it.copy(isLoadingMood = true) }
             }
 
-            // 2. Revalidate mood feed in background
+            // 2. Fast targeted single-category query (~1s) instead of heavy 6-category reload
             try {
-                val updatedData = recommendationRepository.loadHomeRecommendations(mood)
-                _uiState.update { it.copy(moodTracks = updatedData.moodTracks) }
+                val freshMoodTracks = recommendationRepository.fetchMoodTracks(mood)
+                _uiState.update { it.copy(moodTracks = freshMoodTracks, isLoadingMood = false) }
             } catch (e: Exception) {
-                // Silently keep existing mood tracks on network failure
+                _uiState.update { it.copy(isLoadingMood = false) }
             }
         }
     }
 
     fun playDailyMix(mix: DailyMix) {
         if (mix.tracks.isNotEmpty()) {
-            playbackConnectionManager.playTrack(mix.tracks.first(), mix.tracks)
+            playbackConnectionManager.playTrack(mix.tracks.first(), mix.tracks, isUserPlaylist = true)
         }
     }
 
     fun playLikedSongs() {
         val liked = _uiState.value.likedTracks
         if (liked.isNotEmpty()) {
-            playbackConnectionManager.playTrack(liked.first(), liked)
+            playbackConnectionManager.playTrack(liked.first(), liked, isUserPlaylist = true)
         }
     }
 
@@ -189,7 +281,7 @@ class HomeViewModel @Inject constructor(
             try {
                 val tracks = recommendationRepository.getArtistTracks(artistName)
                 if (tracks.isNotEmpty()) {
-                    playbackConnectionManager.playTrack(tracks.first(), tracks)
+                    playbackConnectionManager.playTrack(tracks.first(), tracks, isUserPlaylist = false)
                 }
             } catch (_: Exception) {}
         }
@@ -216,48 +308,35 @@ class HomeViewModel @Inject constructor(
                     .distinctSongs()
             }
         } else {
-            val fallback = (_uiState.value.quickPicks + _uiState.value.trendingTracks)
-                .filter { it.id != track.id && !it.isSameSong(track) && it.isSongOnly() }
-                .distinctSongs()
-                .take(10)
-            listOf(track) + fallback
+            emptyList()
         }
 
-        playbackConnectionManager.playTrack(track, initialQueue)
-
-        // Asynchronously enrich the queue with deeper algorithmic suggestions without playback interruptions
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val deepRecommendations = recommendationRepository.generateRecommendationQueue(track)
-                val filtered = deepRecommendations
-                    .filter { it.isSongOnly() && !it.isSameSong(track) }
-                    .distinctSongs()
-                if (filtered.isNotEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        playbackConnectionManager.updateUpcomingQueue(filtered)
-                    }
-                }
-            } catch (e: Exception) {
-                // Fail gracefully, existing context queue remains
-            }
-        }
+        playbackConnectionManager.playTrack(track, initialQueue, isUserPlaylist = false)
     }
 
     /**
-     * Autopilot / J.A.R.V.I.S. Smart Mix:
-     * Assembles a 25+ track dynamic queue combining user affinity, liked/heavy rotation tracks,
-     * and discovery recommendations, then immediately begins playback from the first track.
+     * Autopilot / AI DJ Mix:
+     * Phase 1: Starts playback INSTANTLY (< 100ms) using user's favorite anchor tracks from their listening history.
+     * Phase 2: Concurrently generates 35+ customized algorithmic recommendations in the background and
+     *          seamlessly extends the upcoming queue without interrupting active playback.
      */
     fun playAutopilotMix() {
         viewModelScope.launch {
             _uiState.update { it.copy(isAutopilotEngaging = true) }
             try {
-                val queue = withContext(Dispatchers.IO) {
+                // Phase 1: Instant Start (< 100ms) with songs the user loves
+                val quickSeeds = recommendationRepository.getImmediateAutopilotSeeds(5)
+                val seedTrack = quickSeeds.firstOrNull()
+                if (seedTrack != null) {
+                    playbackConnectionManager.playTrack(seedTrack, quickSeeds, isUserPlaylist = false)
+                }
+
+                // Phase 2: Background Algorithmic Expansion
+                val fullQueue = withContext(Dispatchers.IO) {
                     recommendationRepository.generateAutopilotQueue(35).distinctSongs()
                 }
-                if (queue.isNotEmpty()) {
-                    val first = queue.first()
-                    playbackConnectionManager.playTrack(first, queue)
+                if (fullQueue.isNotEmpty()) {
+                    playbackConnectionManager.updateUpcomingQueue(fullQueue)
                 }
             } catch (e: Exception) {
                 val state = _uiState.value
@@ -265,7 +344,7 @@ class HomeViewModel @Inject constructor(
                     .distinctBy { it.id }
                     .shuffled()
                 if (fallback.isNotEmpty()) {
-                    playbackConnectionManager.playTrack(fallback.first(), fallback)
+                    playbackConnectionManager.playTrack(fallback.first(), fallback, isUserPlaylist = false)
                 }
             } finally {
                 _uiState.update { it.copy(isAutopilotEngaging = false) }

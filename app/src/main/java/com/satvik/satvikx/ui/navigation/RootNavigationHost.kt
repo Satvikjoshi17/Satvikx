@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
@@ -34,8 +35,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -123,10 +127,10 @@ fun RootNavigationHost(
                     )
                 }
 
-                // Modern Navigation Bar
+                // Spotify Signature Navigation Bar (Clean dark, no M3 oval pill indicator)
                 NavigationBar(
-                    containerColor = SurfaceDark,
-                    tonalElevation = 8.dp,
+                    containerColor = Color(0xFF121212),
+                    tonalElevation = 0.dp,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Screen.bottomNavItems.forEachIndexed { index, screen ->
@@ -169,9 +173,19 @@ fun RootNavigationHost(
                                     text = screen.title,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp)
+                                    style = TextStyle(
+                                        fontSize = 10.5.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                    )
                                 )
-                            }
+                            },
+                            colors = NavigationBarItemDefaults.colors(
+                                selectedIconColor = Color.White,
+                                selectedTextColor = Color.White,
+                                unselectedIconColor = Color(0xFFA7A7A7),
+                                unselectedTextColor = Color(0xFFA7A7A7),
+                                indicatorColor = Color.Transparent
+                            )
                         )
                     }
                 }

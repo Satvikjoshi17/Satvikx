@@ -4,6 +4,7 @@ import com.satvik.satvikx.data.local.dao.PlaybackTelemetryDao
 import com.satvik.satvikx.data.local.entity.PlaybackTelemetryEntity
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.cleanArtistName
+import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.remote.model.AudioStreamResult
 import com.satvik.satvikx.data.remote.newpipe.NewPipeYouTubeEngine
 import com.satvik.satvikx.data.remote.saavn.SaavnMediaEngine
@@ -612,6 +613,293 @@ class RecommendationEngineTest {
         val tempAfter = sessionManager.getSessionProfile().explorationTemperature
 
         assertTrue(tempAfter < tempBefore)
+    }
+
+    // =========================================================================
+    // 7. Advanced Modernization: Circadian, Cold-Start & Elastic Flow Tests
+    // =========================================================================
+
+    @Test
+    fun circadianEnergy_targetMatchesTimeOfDayCurve() {
+        assertEquals(0.35f, RankingScoringEngine.getCircadianTargetEnergy(2), 0.001f) // 2 AM late night
+        assertEquals(0.35f, RankingScoringEngine.getCircadianTargetEnergy(23), 0.001f) // 11 PM late night
+        assertEquals(0.50f, RankingScoringEngine.getCircadianTargetEnergy(7), 0.001f) // 7 AM morning
+        assertEquals(0.65f, RankingScoringEngine.getCircadianTargetEnergy(14), 0.001f) // 2 PM midday
+        assertEquals(0.80f, RankingScoringEngine.getCircadianTargetEnergy(19), 0.001f) // 7 PM workout/evening
+        assertEquals(0.52f, RankingScoringEngine.getCircadianTargetEnergy(22), 0.001f) // 10 PM wind down
+    }
+
+    @Test
+    fun rankingScoring_newUserColdStart_anchorsTasteToSeedAndProvidesPositiveScores() = runBlocking {
+        val seed = TrackEntity(id = "seed_arijit", title = "Kesariya", artist = "Arijit Singh")
+        sessionManager.onTrackStarted(seed)
+        val sessionProfile = sessionManager.getSessionProfile()
+
+        // Brand new user with zero listening history or saved vault tracks
+        val emptyLongTermProfile = LongTermProfile()
+        assertTrue("Profile must identify as new user", emptyLongTermProfile.isNewUser)
+
+        val candidateSameGenre = TrackEntity(id = "c_same", title = "Apna Bana Le", artist = "Arijit Singh", thumbnailUrl = "https://example.com/art.jpg")
+        val candidateDifferentGenre = TrackEntity(id = "c_diff", title = "Animals Dance EDM Club", artist = "Martin Garrix")
+
+        val ranked = rankingScoringEngine.scoreAndRankCandidates(
+            candidates = listOf(candidateDifferentGenre, candidateSameGenre),
+            sessionProfile = sessionProfile,
+            longTermProfile = emptyLongTermProfile,
+            recentHistory = emptyList()
+        )
+
+        val sameScore = ranked.first { it.track.id == candidateSameGenre.id }
+        assertTrue("New user cold start should have positive taste match (> 0.5)", sameScore.tasteMatch > 0.50f)
+        assertFalse("Trending same-genre candidate for new user should be placed in familiar core, not discovery", sameScore.isDiscovery)
+        assertTrue("Seed-aligned candidate must outrank disparate candidate", ranked.first().track.id == candidateSameGenre.id)
+    }
+
+    @Test
+    fun sequencer_enforcesMaxThreeTotalTracksBySameArtistInQueue() {
+        val drakeTitles = listOf("God's Plan", "Hotline Bling", "In My Feelings", "One Dance", "Nonstop", "Passionfruit")
+        val drakeTracks = drakeTitles.indices.map { i ->
+            TrackEntity(id = "drake_$i", title = drakeTitles[i], artist = "Drake", durationSeconds = 200L + i * 10L)
+        }
+        val otherTitles = listOf(
+            "Starboy", "Believer", "Lucid Dreams", "Circles", "Sunflower",
+            "Industry Baby", "Blinding Lights", "Without Me", "Stay", "Peaches",
+            "Levitating", "Save Your Tears", "Counting Stars", "Happier", "Closer"
+        )
+        val otherArtists = listOf(
+            "The Weeknd", "Imagine Dragons", "Juice WRLD", "Post Malone", "Swae Lee",
+            "Lil Nas X", "Kavinsky", "Halsey", "The Kid LAROI", "Justin Bieber",
+            "Dua Lipa", "Metro Boomin", "OneRepublic", "Marshmello", "The Chainsmokers"
+        )
+        val otherTracks = otherTitles.indices.map { i ->
+            TrackEntity(id = "other_$i", title = otherTitles[i], artist = otherArtists[i], durationSeconds = 180L + i * 10L)
+        }
+
+        val allCandidates = (drakeTracks + otherTracks).map { track ->
+            CandidateScore(
+                track = track,
+                sessionMatch = if (track.artist == "Drake") 0.95f else 0.85f,
+                tasteMatch = 0.85f,
+                completionProbability = 0.80f,
+                replayProbability = 0.70f,
+                discoveryPotential = 0.10f,
+                freshness = 0.90f,
+                trendMomentum = 0.80f,
+                skipProbability = 0.10f,
+                finalScore = if (track.artist == "Drake") 0.92f else 0.80f,
+                isDiscovery = false
+            )
+        }
+
+        val queue = queueSequencer.sequenceQueue(allCandidates, seedTrack = null, limit = 15)
+
+        assertEquals(15, queue.size)
+        val drakeCount = queue.count { it.cleanArtistName().equals("Drake", ignoreCase = true) }
+        assertTrue("Queue must not contain more than 3 tracks by the same artist across 15 tracks to prevent fatigue, but had $drakeCount", drakeCount <= 3)
+    }
+
+    @Test
+    fun sequencer_elasticDiscovery_adaptsCadenceBasedOnSkipsAndReplays() {
+        val familiarTitles = listOf(
+            "Kesariya", "Tum Hi Ho", "Raataan Lambiyan", "Apna Bana Le", "Channa Mereya",
+            "Tera Hone Laga", "Zara Sa", "Deva Deva", "Kal Ho Naa Ho", "Agar Tum Saath",
+            "Pehla Nasha", "Tujh Mein Rab", "Jeena Jeena", "Sun Saathiya", "Samjhawan",
+            "Gerua", "Zaalima", "Hawayein", "Shayad", "Mast Magan"
+        )
+        val familiarArtists = listOf(
+            "Arijit Singh", "Mithoon", "Jubin Nautiyal", "Sachin-Jigar", "Pritam",
+            "Atif Aslam", "KK", "Amit Trivedi", "Sonu Nigam", "Alka Yagnik",
+            "Udit Narayan", "Roop Kumar", "Mohit Chauhan", "Divya Kumar", "Shreya Ghoshal",
+            "Badshah", "Diljit Dosanjh", "Karan Aujla", "AP Dhillon", "Sidhu Moose Wala"
+        )
+        val familiar = familiarTitles.indices.map { i ->
+            CandidateScore(
+                track = TrackEntity(id = "fam_$i", title = familiarTitles[i], artist = familiarArtists[i], durationSeconds = 210L + i * 5L),
+                sessionMatch = 0.9f, tasteMatch = 0.9f, completionProbability = 0.8f,
+                replayProbability = 0.7f, discoveryPotential = 0.1f, freshness = 0.9f,
+                trendMomentum = 0.8f, skipProbability = 0.1f, finalScore = 0.9f - (i * 0.01f),
+                isDiscovery = false
+            )
+        }
+        val discoveryTitles = listOf(
+            "Blinding Lights", "Starboy", "Sunset", "Nightcall", "Resonance",
+            "Midnight City", "Days of Thunder", "After Hours", "Save Your Tears", "Stargazing"
+        )
+        val discoveryArtists = listOf(
+            "The Weeknd", "Daft Punk", "The Midnight", "Kavinsky", "HOME",
+            "M83", "Gunship", "Carpenter Brut", "Trevor Something", "Travis Scott"
+        )
+        val discovery = discoveryTitles.indices.map { i ->
+            CandidateScore(
+                track = TrackEntity(id = "disc_$i", title = discoveryTitles[i], artist = discoveryArtists[i], durationSeconds = 220L + i * 5L),
+                sessionMatch = 0.7f, tasteMatch = 0.5f, completionProbability = 0.7f,
+                replayProbability = 0.4f, discoveryPotential = 0.95f, freshness = 0.95f,
+                trendMomentum = 0.8f, skipProbability = 0.15f, finalScore = 0.8f - (i * 0.01f),
+                isDiscovery = true
+            )
+        }
+
+        // 1. Skip streak (consecutiveSkips >= 2) -> discovery throttle to every 9th track (index 8)
+        val skipSession = ShortTermSessionProfile(consecutiveSkips = 2)
+        val skipQueue = queueSequencer.sequenceQueue(familiar + discovery, seedTrack = null, limit = 15, sessionProfile = skipSession)
+        assertEquals(15, skipQueue.size)
+        assertTrue("Index 8 should be discovery under skip throttle", skipQueue[8].id.startsWith("disc_"))
+        assertFalse("Index 4 should NOT be discovery under skip throttle", skipQueue[4].id.startsWith("disc_"))
+
+        // 2. Replay flow (consecutiveReplays >= 1) -> discovery accelerated to every 3rd track (index 2)
+        val flowSession = ShortTermSessionProfile(consecutiveReplays = 1)
+        val flowQueue = queueSequencer.sequenceQueue(familiar + discovery, seedTrack = null, limit = 15, sessionProfile = flowSession)
+        assertEquals(15, flowQueue.size)
+        assertTrue("Index 2 should be discovery in flow mode", flowQueue[2].id.startsWith("disc_"))
+
+        // 3. New user mode -> conservative discovery every 7th track (index 6) to build initial trust
+        val newUserQueue = queueSequencer.sequenceQueue(familiar + discovery, seedTrack = null, limit = 15, isNewUser = true)
+        assertEquals(15, newUserQueue.size)
+        assertTrue("Index 6 should be discovery for new user", newUserQueue[6].id.startsWith("disc_"))
+        assertFalse("Index 4 should NOT be discovery for new user", newUserQueue[4].id.startsWith("disc_"))
+    }
+
+    @Test
+    fun sequencer_smoothEnergyContinuity_prefersGradualEnergyTransitions() {
+        val seed = TrackEntity(id = "seed", title = "Calm Acoustic Morning", artist = "Soft Singer") // ~0.35 energy
+        val jarringTrack = TrackEntity(id = "jarring", title = "Hard Phonk Gym Rave Bass", artist = "Bass Artist") // ~0.90+ energy
+        val bridgeTrack = TrackEntity(id = "bridge", title = "Melodic Slow Pop Rhythm", artist = "Pop Singer") // ~0.50 energy
+
+        val candidates = listOf(
+            CandidateScore(
+                track = jarringTrack,
+                sessionMatch = 0.95f, tasteMatch = 0.9f, completionProbability = 0.8f,
+                replayProbability = 0.7f, discoveryPotential = 0.1f, freshness = 0.9f,
+                trendMomentum = 0.8f, skipProbability = 0.1f, finalScore = 0.95f,
+                isDiscovery = false
+            ),
+            CandidateScore(
+                track = bridgeTrack,
+                sessionMatch = 0.85f, tasteMatch = 0.85f, completionProbability = 0.8f,
+                replayProbability = 0.7f, discoveryPotential = 0.1f, freshness = 0.9f,
+                trendMomentum = 0.8f, skipProbability = 0.1f, finalScore = 0.88f,
+                isDiscovery = false
+            )
+        )
+
+        val queue = queueSequencer.sequenceQueue(candidates, seedTrack = seed, limit = 2)
+
+        assertEquals("Bridge track with gradual energy delta must be sequenced before jarring jump", "bridge", queue.first().id)
+    }
+
+    // =========================================================================
+    // 7. Native Graph First & Genre Coherence Tests (Pyaar Hua Ikraar Hua & Tum Utho Siya Sringar Karo)
+    // =========================================================================
+
+    @Test
+    fun isSongOnly_rejectsTvAndFilmClips() {
+        val sceneTrack = TrackEntity(
+            id = "netflix_clip",
+            title = "The Full Dustin and Suzie NeverEnding Story Scene | Stranger Things | Netflix",
+            artist = "Still Watching Netflix",
+            durationSeconds = 180L
+        )
+        assertFalse("TV show clips, movie scenes, and Netflix promos must be rejected by isSongOnly", sceneTrack.isSongOnly())
+    }
+
+    @Test
+    fun vibeClassifier_classifiesTumUthoSiyaSringarKaro_asDevotional() {
+        val track = TrackEntity(
+            id = "siya_1",
+            title = "Tum Utho Siya Sringar Karo",
+            artist = "Maithili Thakur",
+            durationSeconds = 240L
+        )
+        val vibe = vibeClassifier.classifyTrackVibe(track)
+        assertEquals(SessionVibeMode.DEVOTIONAL, vibe)
+    }
+
+    @Test
+    fun vibeClassifier_classifiesPyaarHuaIkraarHua_asRomantic() {
+        val track = TrackEntity(
+            id = "pyaar_1",
+            title = "Pyaar Hua Ikraar Hua",
+            artist = "Manna Dey, Lata Mangeshkar",
+            durationSeconds = 260L
+        )
+        val vibe = vibeClassifier.classifyTrackVibe(track)
+        assertEquals(SessionVibeMode.ROMANTIC, vibe)
+    }
+
+    @Test
+    fun nativeGraph_pyaarHuaIkraarHua_sequencesGoldenEraClassicsAndRejectsPollution() = runBlocking {
+        val seedTrack = TrackEntity(
+            id = "pyaar_seed",
+            title = "Pyaar Hua Ikraar Hua",
+            artist = "Manna Dey, Lata Mangeshkar",
+            durationSeconds = 260L
+        )
+
+        // Native watch-next tracks returned by YouTube / JioSaavn
+        val nativeTracks = listOf(
+            TrackEntity("nat_1", "Yeh Raat Bheegi Bheegi", "Manna Dey, Lata Mangeshkar", 270L, "http://thumb"),
+            TrackEntity("nat_2", "Mera Joota Hai Japani", "Mukesh", 260L, "http://thumb"),
+            TrackEntity("nat_3", "Ajeeb Dastan Hai Yeh", "Lata Mangeshkar", 310L, "http://thumb"),
+            TrackEntity("nat_4", "Awaara Hoon", "Mukesh", 195L, "http://thumb"),
+            TrackEntity("nat_5", "Ramaiya Vastavaiya", "Lata Mangeshkar, Mohammed Rafi, Mukesh", 350L, "http://thumb"),
+            TrackEntity("nat_6", "Mud Mud Ke Na Dekh", "Asha Bhosle, Manna Dey", 345L, "http://thumb"),
+            TrackEntity("nat_7", "Pyar Deewana Hota Hai", "Kishore Kumar", 280L, "http://thumb"),
+            TrackEntity("nat_8", "Pal Pal Dil Ke Paas", "Kishore Kumar", 310L, "http://thumb"),
+            TrackEntity("nat_9", "Lag Ja Gale", "Lata Mangeshkar", 255L, "http://thumb"),
+            TrackEntity("nat_10", "Chaudhvin Ka Chand Ho", "Mohammed Rafi", 220L, "http://thumb"),
+            TrackEntity("nat_11", "Dum Bhar Jo Udhar Munh Phere", "Mukesh, Lata Mangeshkar", 260L, "http://thumb"),
+            TrackEntity("nat_12", "Eena Meena Deeka", "Kishore Kumar", 210L, "http://thumb")
+        )
+        val nativeIds = nativeTracks.map { it.id }.toSet()
+
+        // Cross-genre polluters (soundtracks, EDM, trap from unrelated history)
+        val polluters = listOf(
+            TrackEntity("pollute_1", "Alan Silvestri - Portals (Avengers Endgame)", "MarvelMusicVEVO", 220L),
+            TrackEntity("pollute_2", "Animals", "Martin Garrix", 190L),
+            TrackEntity("pollute_3", "SICKO MODE", "Travis Scott", 312L)
+        )
+
+        val allCandidates = nativeTracks + polluters
+
+        val sessionProfile = ShortTermSessionProfile(
+            currentVibe = SessionVibeMode.ROMANTIC,
+            currentEnergyLevel = 0.50f,
+            sessionTracks = listOf(seedTrack)
+        )
+        val longTermProfile = LongTermProfile(
+            topArtists = listOf("Martin Garrix", "Travis Scott", "Alan Silvestri"),
+            artistScores = mapOf("martin garrix" to 10f, "travis scott" to 8f, "alan silvestri" to 7f),
+            topGenres = listOf("edm", "hip hop", "soundtrack")
+        )
+
+        val scored = rankingScoringEngine.scoreAndRankCandidates(
+            candidates = allCandidates,
+            sessionProfile = sessionProfile,
+            longTermProfile = longTermProfile,
+            recentHistory = emptyList(),
+            forceFresh = false,
+            nativeRelatedIds = nativeIds
+        )
+
+        val queue = queueSequencer.sequenceQueue(
+            scoredCandidates = scored,
+            seedTrack = seedTrack,
+            limit = 10,
+            sessionProfile = sessionProfile
+        )
+
+        assertEquals("Queue should return requested 10 items", 10, queue.size)
+
+        // Verify all 10 tracks are from the native golden era cluster
+        val returnedIds = queue.map { it.id }.toSet()
+        for (polluter in polluters) {
+            assertFalse("Unrelated polluter ${polluter.title} must NOT be in queue", returnedIds.contains(polluter.id))
+        }
+
+        // Verify top tracks are native watch-next tracks
+        assertTrue("Track 1 must be from native watch-next graph", nativeIds.contains(queue[0].id))
+        assertTrue("Track 2 must be from native watch-next graph", nativeIds.contains(queue[1].id))
+        assertTrue("Track 3 must be from native watch-next graph", nativeIds.contains(queue[2].id))
     }
 }
 

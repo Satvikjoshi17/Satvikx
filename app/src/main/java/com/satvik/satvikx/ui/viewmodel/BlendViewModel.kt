@@ -191,7 +191,7 @@ class BlendViewModel @Inject constructor(
         if (tracks.isEmpty()) return
 
         val queue = if (shuffle) tracks.shuffled() else tracks
-        playbackConnectionManager.playTrack(queue.first(), queue)
+        playbackConnectionManager.playTrack(queue.first(), queue, isUserPlaylist = true)
     }
 
     fun playTrackInBlend(track: TrackEntity, allTracks: List<TrackEntity>) {
@@ -201,7 +201,7 @@ class BlendViewModel @Inject constructor(
         } else {
             listOf(track) + allTracks
         }
-        playbackConnectionManager.playTrack(track, queue)
+        playbackConnectionManager.playTrack(track, queue, isUserPlaylist = true)
     }
 
     fun deleteBlend(blendId: String) {

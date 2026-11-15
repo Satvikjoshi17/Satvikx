@@ -108,7 +108,31 @@ object LrcParser {
             }
         }
 
-        return parsedLines.sortedBy { it.startTimeMs }
+        return sanitizeLines(parsedLines.sortedBy { it.startTimeMs })
+    }
+
+    /**
+     * Sanitizes timed lyrics by suppressing exact duplicate lines occurring at the same timestamp
+     * or rapid identical repetitions (< 800ms).
+     */
+    fun sanitizeLines(lines: List<LrcLine>): List<LrcLine> {
+        if (lines.size <= 1) return lines
+        val result = ArrayList<LrcLine>(lines.size)
+        for (curr in lines) {
+            val last = result.lastOrNull()
+            if (last == null) {
+                result.add(curr)
+                continue
+            }
+            if (curr.startTimeMs == last.startTimeMs && curr.text.equals(last.text, ignoreCase = true)) {
+                continue
+            }
+            if (curr.text.isNotBlank() && curr.text.equals(last.text, ignoreCase = true) && (curr.startTimeMs - last.startTimeMs < 800L)) {
+                continue
+            }
+            result.add(curr)
+        }
+        return result
     }
 
     /**

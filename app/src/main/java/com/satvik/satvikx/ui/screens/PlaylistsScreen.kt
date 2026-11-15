@@ -2,15 +2,16 @@ package com.satvik.satvikx.ui.screens
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -19,60 +20,45 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.ElectricBolt
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.GroupAdd
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Stars
-import com.satvik.satvikx.data.local.entity.BlendEntity
-import com.satvik.satvikx.ui.components.CreateBlendDialog
-import com.satvik.satvikx.ui.components.CuratedArtistBlendSheet
-import com.satvik.satvikx.ui.components.DownloadQualityDialog
-import com.satvik.satvikx.ui.components.JoinBlendDialog
-import com.satvik.satvikx.ui.screens.BlendDetailScreen
-import com.satvik.satvikx.ui.viewmodel.BlendViewModel
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PushPin
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.style.TextOverflow
-import coil3.compose.AsyncImage
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -80,33 +66,33 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import com.satvik.satvikx.data.local.entity.BlendEntity
 import com.satvik.satvikx.data.local.entity.PlaylistWithTracks
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
+import com.satvik.satvikx.ui.components.CreateBlendDialog
+import com.satvik.satvikx.ui.components.CuratedArtistBlendSheet
+import com.satvik.satvikx.ui.components.DownloadQualityDialog
+import com.satvik.satvikx.ui.components.JoinBlendDialog
+import com.satvik.satvikx.ui.components.OpticallyCenteredPlayIcon
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
 import com.satvik.satvikx.ui.components.isolateHorizontalScroll
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.ui.draw.clip
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
-import com.satvik.satvikx.ui.theme.PrimaryNeon
-import com.satvik.satvikx.ui.theme.SurfaceDark
-import com.satvik.satvikx.ui.theme.SurfaceElevated
-import com.satvik.satvikx.ui.theme.SurfaceVariantDark
-import com.satvik.satvikx.ui.theme.TextPrimary
-import com.satvik.satvikx.ui.theme.TextSecondary
+import com.satvik.satvikx.ui.theme.SpotifyGreen
+import com.satvik.satvikx.ui.viewmodel.BlendViewModel
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -123,10 +109,15 @@ fun PlaylistsScreen(
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     var selectedBlendId by remember { mutableStateOf<String?>(null) }
 
-    // Stark Blend Dialog & Sheet States
+    // Filter Chips: "All", "Playlists", "Blends", "Downloaded"
+    var selectedFilter by remember { mutableStateOf("All") }
+
+    // Blend Hub Sheet & Dialog States
+    var showBlendHubSheet by remember { mutableStateOf(false) }
     var showCreateBlendDialog by remember { mutableStateOf(false) }
     var showJoinBlendDialog by remember { mutableStateOf(false) }
     var showArtistBlendSheet by remember { mutableStateOf(false) }
+    val blendHubSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val artistSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
 
     // Dialog & Sheet States
@@ -136,14 +127,22 @@ fun PlaylistsScreen(
     var renameInput by remember { mutableStateOf("") }
     var newPlaylistName by remember { mutableStateOf("") }
 
-    // 3-Dots Track Action Sheet State
+    // Track Action Sheet State
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
     var trackForAddToAnotherPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val trackSheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+    // Separate Liked Songs playlist from custom playlists
+    val likedSongsPlaylist = remember(playlists) {
+        playlists.find { it.playlist.name.equals("Liked Songs", ignoreCase = true) }
+    }
+    val customPlaylists = remember(playlists) {
+        playlists.filterNot { it.playlist.name.equals("Liked Songs", ignoreCase = true) }
+    }
 
     val activePlaylist = playlists.find { it.playlist.playlistId == selectedPlaylistId }
 
-    // Fluid back navigation: Back button in blend detail or playlist detail takes user back to overview
+    // Back button navigation: Exit detail views cleanly
     BackHandler(enabled = selectedBlendId != null || selectedPlaylistId != null) {
         if (selectedBlendId != null) {
             selectedBlendId = null
@@ -159,8 +158,9 @@ fun PlaylistsScreen(
         )
     } else if (activePlaylist != null) {
         // ==========================================
-        // PLAYLIST DETAIL VIEW (SPOTIFY & CYBER VISION)
+        // PURE SPOTIFY PLAYLIST DETAIL VIEW
         // ==========================================
+        val isLikedSongs = activePlaylist.playlist.name.equals("Liked Songs", ignoreCase = true)
         var showPlaylistHeaderMenu by remember { mutableStateOf(false) }
 
         val totalSeconds = remember(activePlaylist.tracks) {
@@ -176,45 +176,41 @@ fun PlaylistsScreen(
             } else ""
         }
 
+        val playlistThumbs = remember(activePlaylist.tracks) {
+            activePlaylist.tracks
+                .mapNotNull { it.thumbnailUrl.takeIf { t -> t.isNotBlank() && t.startsWith("http") } }
+                .distinct()
+                .take(4)
+        }
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
-                .padding(top = 8.dp)
+                .background(Color(0xFF121212))
         ) {
-            // Top Navigation & Action Bar
+            // Top Navigation Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 IconButton(onClick = { selectedPlaylistId = null }) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Back to Playlists",
-                        tint = TextPrimary
+                        contentDescription = "Back",
+                        tint = Color.White
                     )
                 }
 
-                Text(
-                    text = "PLAYLIST ARCHIVE",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.sp,
-                        color = ArcCyan
-                    )
-                )
-
-                // 3-Dots Playlist Options Menu
                 Box {
                     IconButton(onClick = { showPlaylistHeaderMenu = true }) {
                         Icon(
                             imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Playlist Options",
-                            tint = TextSecondary
+                            contentDescription = "Options",
+                            tint = Color.White
                         )
                     }
 
@@ -224,16 +220,16 @@ fun PlaylistsScreen(
                     ) {
                         if (activePlaylist.tracks.isNotEmpty()) {
                             DropdownMenuItem(
-                                text = { Text("Download All Tracks", fontFamily = FontFamily.Monospace) },
-                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryNeon) },
+                                text = { Text("Download All Tracks") },
+                                leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = SpotifyGreen) },
                                 onClick = {
                                     showPlaylistHeaderMenu = false
                                     playlistToDownload = activePlaylist
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Shuffle Play", fontFamily = FontFamily.Monospace) },
-                                leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = ArcCyanBright) },
+                                text = { Text("Shuffle Play") },
+                                leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = SpotifyGreen) },
                                 onClick = {
                                     showPlaylistHeaderMenu = false
                                     viewModel.playPlaylistShuffled(activePlaylist)
@@ -241,8 +237,8 @@ fun PlaylistsScreen(
                                 }
                             )
                             DropdownMenuItem(
-                                text = { Text("Add All to Queue", fontFamily = FontFamily.Monospace) },
-                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = PrimaryNeon) },
+                                text = { Text("Add All to Queue") },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = SpotifyGreen) },
                                 onClick = {
                                     showPlaylistHeaderMenu = false
                                     activePlaylist.tracks.forEach { viewModel.addTrackToQueue(it) }
@@ -250,496 +246,566 @@ fun PlaylistsScreen(
                                 }
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("Rename Playlist", fontFamily = FontFamily.Monospace) },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryNeon) },
-                            onClick = {
-                                showPlaylistHeaderMenu = false
-                                playlistToRename = activePlaylist
-                                renameInput = activePlaylist.playlist.name
-                            }
-                        )
-                        if (activePlaylist.tracks.isNotEmpty()) {
+                        if (!isLikedSongs) {
                             DropdownMenuItem(
-                                text = { Text("Clear All Tracks", fontFamily = FontFamily.Monospace) },
-                                leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFFFB74D)) },
+                                text = { Text("Rename Playlist") },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White) },
                                 onClick = {
                                     showPlaylistHeaderMenu = false
-                                    viewModel.clearPlaylist(activePlaylist.playlist.playlistId)
-                                    Toast.makeText(context, "Cleared tracks", Toast.LENGTH_SHORT).show()
+                                    playlistToRename = activePlaylist
+                                    renameInput = activePlaylist.playlist.name
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete Playlist", color = Color(0xFFFF5252)) },
+                                leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252)) },
+                                onClick = {
+                                    showPlaylistHeaderMenu = false
+                                    selectedPlaylistId = null
+                                    viewModel.deletePlaylist(activePlaylist.playlist.playlistId)
+                                    Toast.makeText(context, "Deleted playlist", Toast.LENGTH_SHORT).show()
                                 }
                             )
                         }
-                        DropdownMenuItem(
-                            text = { Text("Delete Playlist", fontFamily = FontFamily.Monospace, color = Color(0xFFFF5252)) },
-                            leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252)) },
-                            onClick = {
-                                showPlaylistHeaderMenu = false
-                                selectedPlaylistId = null
-                                viewModel.deletePlaylist(activePlaylist.playlist.playlistId)
-                                Toast.makeText(context, "Deleted playlist", Toast.LENGTH_SHORT).show()
-                            }
-                        )
                     }
                 }
             }
 
-            // Spotify-Inspired Playlist Hero Section (Large Artwork, Title, Details & Quick Controls)
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 20.dp, vertical = 6.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp)
             ) {
-                val firstThumbnail = activePlaylist.tracks.firstOrNull { it.thumbnailUrl.isNotBlank() }?.thumbnailUrl
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = SurfaceElevated,
-                    modifier = Modifier
-                        .size(136.dp)
-                        .shadow(12.dp, RoundedCornerShape(16.dp))
-                        .border(1.5.dp, ArcCyanBright.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
-                ) {
-                    if (!firstThumbnail.isNullOrBlank()) {
-                        AsyncImage(
-                            model = firstThumbnail,
-                            contentDescription = activePlaylist.playlist.name,
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(Brush.verticalGradient(listOf(SurfaceElevated, SurfaceDark))),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null,
-                                tint = PrimaryNeon,
-                                modifier = Modifier.size(48.dp)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                Text(
-                    text = activePlaylist.playlist.name,
-                    style = MaterialTheme.typography.headlineMedium.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Spacer(modifier = Modifier.height(3.dp))
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Text(
-                        text = "${activePlaylist.tracks.size} tracks",
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                        color = PrimaryNeon
-                    )
-                    if (totalPlaytimeText.isNotBlank()) {
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "•  $totalPlaytimeText",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(14.dp))
-
-                // Prominent Action Buttons Bar (Spotify & YouTube Music style)
-                if (activePlaylist.tracks.isNotEmpty()) {
-                    val isNarrowScreen = LocalConfiguration.current.screenWidthDp < 360
-                    Row(
+                item {
+                    // Spotify Playlist Hero Header
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .isolateHorizontalScroll(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                            .padding(horizontal = 24.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Play Button
-                        Button(
-                            onClick = {
-                                viewModel.playPlaylist(activePlaylist)
-                                Toast.makeText(context, "Playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = PrimaryNeon,
-                                contentColor = StarkCarbon
-                            ),
-                            shape = RoundedCornerShape(24.dp),
-                            contentPadding = PaddingValues(horizontal = if (isNarrowScreen) 14.dp else 22.dp, vertical = 9.dp)
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Play", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Shuffle Button
-                        OutlinedButton(
-                            onClick = {
-                                viewModel.playPlaylistShuffled(activePlaylist)
-                                Toast.makeText(context, "Shuffle playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
-                            },
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = ArcCyanBright
-                            ),
-                            border = BorderStroke(1.dp, ArcCyanBright),
-                            shape = RoundedCornerShape(24.dp),
-                            contentPadding = PaddingValues(horizontal = if (isNarrowScreen) 12.dp else 18.dp, vertical = 9.dp)
-                        ) {
-                            Icon(Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Shuffle", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        }
-
-                        Spacer(modifier = Modifier.width(8.dp))
-
-                        // Download All Button
-                        IconButton(
-                            onClick = { playlistToDownload = activePlaylist },
+                        // Artwork Cover
+                        Box(
                             modifier = Modifier
-                                .size(42.dp)
-                                .background(SurfaceElevated, CircleShape)
-                                .border(1.dp, SurfaceVariantDark, CircleShape)
+                                .size(172.dp)
+                                .shadow(16.dp, RoundedCornerShape(8.dp))
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isLikedSongs) {
+                                        Brush.linearGradient(listOf(Color(0xFF450AF5), Color(0xFF8E8EE5)))
+                                    } else {
+                                        Brush.linearGradient(listOf(Color(0xFF282828), Color(0xFF181818)))
+                                    }
+                                ),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = "Download All", tint = PrimaryNeon, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
-
-            HorizontalDivider(
-                color = SurfaceVariantDark,
-                thickness = 1.dp,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-            )
-
-            // Playlist Track List
-            if (activePlaylist.tracks.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = SurfaceElevated,
-                            modifier = Modifier
-                                .size(72.dp)
-                                .border(1.dp, SurfaceVariantDark, RoundedCornerShape(12.dp))
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
+                            if (isLikedSongs) {
                                 Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
+                                    imageVector = Icons.Default.Favorite,
                                     contentDescription = null,
-                                    tint = PrimaryNeon,
-                                    modifier = Modifier.size(36.dp)
+                                    tint = Color.White,
+                                    modifier = Modifier.size(68.dp)
+                                )
+                            } else if (playlistThumbs.size >= 4) {
+                                // 2x2 Collage
+                                Column(modifier = Modifier.fillMaxSize().background(Color(0xFF242424))) {
+                                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                        AsyncImage(
+                                            model = playlistThumbs[0],
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.weight(1f).fillMaxHeight()
+                                        )
+                                        AsyncImage(
+                                            model = playlistThumbs[1],
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.weight(1f).fillMaxHeight()
+                                        )
+                                    }
+                                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                                        AsyncImage(
+                                            model = playlistThumbs[2],
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.weight(1f).fillMaxHeight()
+                                        )
+                                        AsyncImage(
+                                            model = playlistThumbs[3],
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.weight(1f).fillMaxHeight()
+                                        )
+                                    }
+                                }
+                            } else if (playlistThumbs.isNotEmpty()) {
+                                AsyncImage(
+                                    model = playlistThumbs.first(),
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.MusicNote,
+                                    contentDescription = null,
+                                    tint = Color(0xFFA7A7A7),
+                                    modifier = Modifier.size(56.dp)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Spacer(modifier = Modifier.height(18.dp))
+
                         Text(
-                            text = "[ PLAYLIST_BUFFER_EMPTY ]",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold
+                            text = activePlaylist.playlist.name,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 24.sp
                             ),
-                            color = TextPrimary
+                            color = Color.White,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
                         )
+
                         Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Add tracks from Search, Downloads, or Recents using the 3-dots action menu.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            modifier = Modifier.padding(horizontal = 32.dp)
-                        )
-                    }
-                }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    itemsIndexed(
-                        items = activePlaylist.tracks,
-                        key = { _, item -> item.id }
-                    ) { index, track ->
+
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "SatvikX",
+                                style = MaterialTheme.typography.bodyMedium.copy(
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp
+                                ),
+                                color = Color.White
+                            )
+                            Text(
+                                text = " • ${activePlaylist.tracks.size} songs",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                color = Color(0xFFA7A7A7)
+                            )
+                            if (totalPlaytimeText.isNotBlank()) {
+                                Text(
+                                    text = ", $totalPlaytimeText",
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+                                    color = Color(0xFFA7A7A7)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Spotify Action Row (Download, 3-dots, Shuffle, and Big Green Play Button)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // Monospace Track Index Counter (Coding Style: 01, 02, 03...)
-                            Text(
-                                text = String.format("%02d", index + 1),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    color = TextSecondary.copy(alpha = 0.6f)
-                                ),
-                                modifier = Modifier.padding(start = 16.dp, end = 2.dp)
-                            )
+                            if (activePlaylist.tracks.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { playlistToDownload = activePlaylist },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Download,
+                                        contentDescription = "Download All",
+                                        tint = Color(0xFFA7A7A7),
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
 
-                            Box(modifier = Modifier.weight(1f)) {
-                                TrackItem(
-                                    track = track,
-                                    onClick = { viewModel.playTrack(track, activePlaylist.tracks) },
-                                    onOptionClick = {
-                                        selectedTrackForOptions = track
+                            Spacer(modifier = Modifier.weight(1f))
+
+                            if (activePlaylist.tracks.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        viewModel.playPlaylistShuffled(activePlaylist)
+                                        Toast.makeText(context, "Shuffle playing", Toast.LENGTH_SHORT).show()
                                     },
-                                    onDownloadClick = {
-                                        viewModel.downloadTrack(track)
-                                        Toast.makeText(context, "Download enqueued", Toast.LENGTH_SHORT).show()
-                                    }
+                                    modifier = Modifier.size(38.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Shuffle,
+                                        contentDescription = "Shuffle",
+                                        tint = Color(0xFFA7A7A7),
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(16.dp))
+
+                                // Spotify 52dp Floating Green Play Button with Optically Centered Play Triangle
+                                Box(
+                                    modifier = Modifier
+                                        .size(52.dp)
+                                        .shadow(8.dp, CircleShape)
+                                        .clip(CircleShape)
+                                        .background(SpotifyGreen)
+                                        .clickable {
+                                            viewModel.playPlaylist(activePlaylist)
+                                            Toast.makeText(context, "Playing ${activePlaylist.playlist.name}", Toast.LENGTH_SHORT).show()
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    OpticallyCenteredPlayIcon(
+                                        modifier = Modifier.size(20.dp),
+                                        tint = Color.Black
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+
+                if (activePlaylist.tracks.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 48.dp, horizontal = 24.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "This playlist is empty",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp
+                                    ),
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Find songs in Search and add them to this playlist.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFA7A7A7)
                                 )
                             }
                         }
+                    }
+                } else {
+                    items(
+                        items = activePlaylist.tracks,
+                        key = { it.id }
+                    ) { track ->
+                        TrackItem(
+                            track = track,
+                            onClick = { viewModel.playTrack(track, activePlaylist.tracks) },
+                            onOptionClick = { selectedTrackForOptions = track },
+                            onDownloadClick = {
+                                viewModel.downloadTrack(track)
+                                Toast.makeText(context, "Download started for ${track.title}", Toast.LENGTH_SHORT).show()
+                            }
+                        )
                     }
                 }
             }
         }
     } else {
         // ==========================================
-        // PLAYLISTS COLLECTION LIST (CODING & VISION)
+        // PURE SPOTIFY "YOUR LIBRARY" SCREEN
         // ==========================================
-        Scaffold(
-            floatingActionButton = {
-                FloatingActionButton(
-                    onClick = { showCreateDialog = true },
-                    containerColor = ArcCyan,
-                    contentColor = StarkCarbon,
-                    shape = RoundedCornerShape(16.dp),
-                    modifier = Modifier.border(1.dp, ArcCyanBright, RoundedCornerShape(16.dp))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = "New Playlist")
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "NEW PLAYLIST",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.ExtraBold
-                            )
-                        )
-                    }
-                }
-            },
-            containerColor = Color.Transparent
-        ) { padding ->
-            Column(
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .background(Color(0xFF121212))
+        ) {
+            // Spotify Top App Bar
+            Row(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .statusBarsPadding()
-                    .padding(top = 8.dp)
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Header (Stark HUD Aesthetic)
-                Column(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "Playlists & Blends",
-                        style = MaterialTheme.typography.displayMedium,
-                        color = TextPrimary
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Profile Avatar Pill
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF535353)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(ArcCyanBright)
-                        )
-                        Spacer(modifier = Modifier.width(7.dp))
                         Text(
-                            text = "J.A.R.V.I.S. HUD • STARK AUDIO DIRECTORY",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.ExtraBold,
-                                letterSpacing = 0.8.sp,
-                                color = ArcCyan
-                            )
+                            text = "S",
+                            style = MaterialTheme.typography.titleSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            ),
+                            color = Color.White
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "• ${playlists.size} VAULTS",
-                            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                            color = StarkGold
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Text(
+                        text = "Your Library",
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = Color.White
+                    )
+                }
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showCreateDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Create Playlist",
+                            tint = Color.White,
+                            modifier = Modifier.size(28.dp)
                         )
                     }
                 }
+            }
 
-                HorizontalDivider(
-                    color = SurfaceVariantDark,
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 84.dp)
-                ) {
-                    // Item 1: Stark Blend Taste Fusion Matrix
-                    item {
-                        StarkBlendSection(
-                            blends = blends,
-                            onInviteClick = { showCreateBlendDialog = true },
-                            onJoinClick = { showJoinBlendDialog = true },
-                            onArtistBlendClick = { showArtistBlendSheet = true },
-                            onBlendClick = { blendId -> selectedBlendId = blendId }
+            // Spotify Filter Pills
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .isolateHorizontalScroll()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf("All", "Playlists", "Blends", "Downloaded").forEach { filter ->
+                    val isSelected = selectedFilter == filter
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isSelected) SpotifyGreen else Color(0xFF282828),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(20.dp))
+                            .clickable { selectedFilter = filter }
+                    ) {
+                        Text(
+                            text = filter,
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.5.sp
+                            ),
+                            color = if (isSelected) Color.Black else Color.White,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
                         )
                     }
+                }
+            }
 
-                    // Item 2: Playlists Header Divider
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Sort Row (Spotify "Recents" Style)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Sort,
+                        contentDescription = "Sort",
+                        tint = Color(0xFFA7A7A7),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Recents",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 12.5.sp
+                        ),
+                        color = Color(0xFFA7A7A7)
+                    )
+                }
+
+                Text(
+                    text = "${playlists.size + blends.size} items",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color(0xFF757575)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Library Items List
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp)
+            ) {
+                // 1. PINNED "LIKED SONGS" ROW (Authentic Spotify #1 Item)
+                if (selectedFilter in listOf("All", "Playlists")) {
                     item {
-                        Spacer(modifier = Modifier.height(18.dp))
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
+                                .clickable {
+                                    if (likedSongsPlaylist != null) {
+                                        selectedPlaylistId = likedSongsPlaylist.playlist.playlistId
+                                    } else {
+                                        viewModel.createPlaylist("Liked Songs")
+                                        Toast.makeText(context, "Liked Songs ready", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                    contentDescription = null,
-                                    tint = PrimaryNeon,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = "PLAYLIST VAULTS",
-                                    style = MaterialTheme.typography.labelMedium.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        letterSpacing = 0.8.sp,
-                                        color = TextPrimary
-                                    )
-                                )
-                            }
-                            Text(
-                                text = "${playlists.size} VAULTS",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    color = TextSecondary
-                                )
-                            )
-                        }
-                        Spacer(modifier = Modifier.height(4.dp))
-                    }
-
-                    if (playlists.isEmpty()) {
-                        item {
+                            // Purple-Blue Gradient Cover with Centered Heart
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 32.dp, horizontal = 24.dp),
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(
+                                        Brush.linearGradient(
+                                            listOf(Color(0xFF450AF5), Color(0xFF8E8EE5))
+                                        )
+                                    ),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Surface(
-                                        shape = RoundedCornerShape(14.dp),
-                                        color = SurfaceElevated,
-                                        modifier = Modifier
-                                            .size(56.dp)
-                                            .border(1.dp, SurfaceVariantDark, RoundedCornerShape(14.dp))
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                                                contentDescription = null,
-                                                tint = PrimaryNeon,
-                                                modifier = Modifier.size(28.dp)
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                    Text(
-                                        text = "NO PLAYLISTS INITIALIZED",
-                                        color = TextPrimary,
-                                        style = MaterialTheme.typography.titleSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold
-                                        )
+                                Icon(
+                                    imageVector = Icons.Default.Favorite,
+                                    contentDescription = "Liked Songs",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Liked Songs",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.5.sp
+                                    ),
+                                    color = Color.White,
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.PushPin,
+                                        contentDescription = "Pinned",
+                                        tint = SpotifyGreen,
+                                        modifier = Modifier.size(13.dp)
                                     )
-                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "Create custom playlists with the + NEW PLAYLIST button below.",
-                                        color = TextSecondary,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        text = "Playlist • ${likedSongsPlaylist?.tracks?.size ?: 0} songs",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                                        color = Color(0xFFA7A7A7),
+                                        maxLines = 1
                                     )
                                 }
                             }
                         }
-                    } else {
-                        items(
-                            items = playlists,
-                            key = { it.playlist.playlistId }
-                        ) { playlistWithTracks ->
-                            var showRowMenu by remember { mutableStateOf(false) }
+                    }
+                }
 
-                            PlaylistCyberRow(
-                                playlistWithTracks = playlistWithTracks,
-                                onClick = { selectedPlaylistId = playlistWithTracks.playlist.playlistId },
-                                onPlayAll = {
-                                    if (playlistWithTracks.tracks.isNotEmpty()) {
-                                        viewModel.playPlaylist(playlistWithTracks)
-                                        Toast.makeText(context, "Playing ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                onShufflePlay = {
-                                    if (playlistWithTracks.tracks.isNotEmpty()) {
-                                        viewModel.playPlaylistShuffled(playlistWithTracks)
-                                        Toast.makeText(context, "Shuffle playing ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
-                                    }
-                                },
-                                onDownload = {
-                                    playlistToDownload = playlistWithTracks
-                                },
-                                onMenuClick = { showRowMenu = true },
-                                isMenuExpanded = showRowMenu,
-                                onDismissMenu = { showRowMenu = false },
-                                onRename = {
-                                    showRowMenu = false
-                                    playlistToRename = playlistWithTracks
-                                    renameInput = playlistWithTracks.playlist.name
-                                },
-                                onClear = {
-                                    showRowMenu = false
-                                    viewModel.clearPlaylist(playlistWithTracks.playlist.playlistId)
-                                    Toast.makeText(context, "Cleared tracks", Toast.LENGTH_SHORT).show()
-                                },
-                                onDelete = {
-                                    showRowMenu = false
-                                    viewModel.deletePlaylist(playlistWithTracks.playlist.playlistId)
-                                    Toast.makeText(context, "Deleted ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
-                                }
-                            )
+                // 2. SPOTIFY BLENDS HUB SECTION
+                if (selectedFilter in listOf("All", "Blends")) {
+                    item {
+                        // "Create a Blend" Spotify Action Tile
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showBlendHubSheet = true }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF282828)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.GroupAdd,
+                                    contentDescription = "Create a Blend",
+                                    tint = SpotifyGreen,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Create a Blend",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.5.sp
+                                    ),
+                                    color = Color.White,
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = "Blend music taste with a friend or top artist",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                                    color = Color(0xFFA7A7A7),
+                                    maxLines = 1
+                                )
+                            }
                         }
+                    }
+
+                    // Existing Blends
+                    items(blends, key = { it.blendId }) { blend ->
+                        SpotifyBlendRow(
+                            blend = blend,
+                            onClick = { selectedBlendId = blend.blendId }
+                        )
+                    }
+                }
+
+                // 3. CUSTOM PLAYLISTS
+                if (selectedFilter in listOf("All", "Playlists", "Downloaded")) {
+                    val filteredPlaylists = if (selectedFilter == "Downloaded") {
+                        customPlaylists.filter { pl -> pl.tracks.any { it.isDownloaded } }
+                    } else {
+                        customPlaylists
+                    }
+
+                    items(filteredPlaylists, key = { it.playlist.playlistId }) { playlistWithTracks ->
+                        var showRowMenu by remember { mutableStateOf(false) }
+
+                        SpotifyPlaylistRow(
+                            playlistWithTracks = playlistWithTracks,
+                            onClick = { selectedPlaylistId = playlistWithTracks.playlist.playlistId },
+                            onMenuClick = { showRowMenu = true },
+                            isMenuExpanded = showRowMenu,
+                            onDismissMenu = { showRowMenu = false },
+                            onPlayAll = {
+                                viewModel.playPlaylist(playlistWithTracks)
+                                Toast.makeText(context, "Playing ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
+                            },
+                            onShufflePlay = {
+                                viewModel.playPlaylistShuffled(playlistWithTracks)
+                                Toast.makeText(context, "Shuffle playing ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
+                            },
+                            onDownload = { playlistToDownload = playlistWithTracks },
+                            onRename = {
+                                showRowMenu = false
+                                playlistToRename = playlistWithTracks
+                                renameInput = playlistWithTracks.playlist.name
+                            },
+                            onDelete = {
+                                showRowMenu = false
+                                viewModel.deletePlaylist(playlistWithTracks.playlist.playlistId)
+                                Toast.makeText(context, "Deleted ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
+                            }
+                        )
                     }
                 }
             }
@@ -747,34 +813,163 @@ fun PlaylistsScreen(
     }
 
     // ==========================================
-    // 3-DOTS TRACK OPTIONS BOTTOM SHEET
+    // SPOTIFY BLEND CREATION BOTTOM SHEET
     // ==========================================
-    if (selectedTrackForOptions != null) {
+    if (showBlendHubSheet) {
+        ModalBottomSheet(
+            onDismissRequest = { showBlendHubSheet = false },
+            sheetState = blendHubSheetState,
+            containerColor = Color(0xFF242424)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 16.dp)
+            ) {
+                Text(
+                    text = "Create a Blend",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp
+                    ),
+                    color = Color.White
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "A shared playlist made for two, updated daily with songs you both love.",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                    color = Color(0xFFA7A7A7)
+                )
+
+                Spacer(modifier = Modifier.height(20.dp))
+
+                // Invite Friend
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF2E2E2E),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showBlendHubSheet = false
+                            showCreateBlendDialog = true
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(SpotifyGreen.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.GroupAdd, contentDescription = null, tint = SpotifyGreen, modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Invite a Friend", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                            Text("Share an invite code or join an active room", style = MaterialTheme.typography.bodySmall, color = Color(0xFFA7A7A7))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Join with Code
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF2E2E2E),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showBlendHubSheet = false
+                            showJoinBlendDialog = true
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF38BDF8).copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Hub, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Enter Invite Code", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                            Text("Join a friend's blend with their 6-digit code", style = MaterialTheme.typography.bodySmall, color = Color(0xFFA7A7A7))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Artist Blend
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF2E2E2E),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            showBlendHubSheet = false
+                            showArtistBlendSheet = true
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFF59E0B).copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Stars, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(22.dp))
+                        }
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Artist Blend", style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold), color = Color.White)
+                            Text("Blend your music taste with verified flagship artists", style = MaterialTheme.typography.bodySmall, color = Color(0xFFA7A7A7))
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+
+    // ==========================================
+    // TRACK ACTION BOTTOM SHEET
+    // ==========================================
+    selectedTrackForOptions?.let { track ->
         TrackActionBottomSheet(
-            track = selectedTrackForOptions,
-            sheetState = sheetState,
+            track = track,
+            sheetState = trackSheetState,
             onDismiss = { selectedTrackForOptions = null },
-            onPlayNow = {
-                viewModel.playTrack(it, activePlaylist?.tracks.orEmpty())
-            },
+            onPlayNow = { viewModel.playTrack(it, activePlaylist?.tracks.orEmpty()) },
             onPlayNext = {
                 viewModel.playNext(it)
-                Toast.makeText(context, "Playing next", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Playing next: ${it.title}", Toast.LENGTH_SHORT).show()
             },
             onAddToQueue = {
                 viewModel.addTrackToQueue(it)
-                Toast.makeText(context, "Added to playback queue", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Added to queue", Toast.LENGTH_SHORT).show()
             },
             onDownload = {
                 viewModel.downloadTrack(it)
-                Toast.makeText(context, "Download started", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Downloading ${it.title}", Toast.LENGTH_SHORT).show()
             },
-            onAddToPlaylist = {
-                trackForAddToAnotherPlaylist = it
-            },
-            onShare = {
-                Toast.makeText(context, "Track ID: ${it.id}", Toast.LENGTH_SHORT).show()
-            },
+            onAddToPlaylist = { trackForAddToAnotherPlaylist = it },
             onRemoveFromPlaylist = if (activePlaylist != null) {
                 { trackToRemove ->
                     viewModel.removeTrackFromPlaylist(activePlaylist.playlist.playlistId, trackToRemove.id)
@@ -783,8 +978,9 @@ fun PlaylistsScreen(
             } else null,
             onDeleteDownload = { trackToDelete ->
                 viewModel.deleteDownload(trackToDelete.id)
-                Toast.makeText(context, "Deleted ${trackToDelete.title} from offline storage", Toast.LENGTH_SHORT).show()
-            }
+                Toast.makeText(context, "Deleted download", Toast.LENGTH_SHORT).show()
+            },
+            onShare = { /* Share */ }
         )
     }
 
@@ -797,131 +993,121 @@ fun PlaylistsScreen(
         )
     }
 
-    // Create New Playlist Dialog (Coding Vision UI)
+    // ==========================================
+    // SPOTIFY CREATE PLAYLIST DIALOG
+    // ==========================================
     if (showCreateDialog) {
         AlertDialog(
             onDismissRequest = { showCreateDialog = false },
+            containerColor = Color(0xFF282828),
             title = {
                 Text(
-                    text = "INITIALIZE PLAYLIST",
+                    text = "Give your playlist a name",
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
                     ),
-                    color = PrimaryNeon
+                    color = Color.White
                 )
             },
             text = {
-                Column {
-                    Text(
-                        text = "Enter a title for this playlist vault:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = newPlaylistName,
-                        onValueChange = { newPlaylistName = it },
-                        placeholder = { Text("e.g. Cyber Synth 2026", color = Color.Gray) },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryNeon,
-                            unfocusedBorderColor = SurfaceVariantDark,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                OutlinedTextField(
+                    value = newPlaylistName,
+                    onValueChange = { newPlaylistName = it },
+                    placeholder = { Text("My playlist #1", color = Color(0xFFA7A7A7)) },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = SpotifyGreen,
+                        unfocusedBorderColor = Color(0xFF3E3E3E),
+                        focusedContainerColor = Color(0xFF1E1E1E),
+                        unfocusedContainerColor = Color(0xFF1E1E1E),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
                         if (newPlaylistName.isNotBlank()) {
                             viewModel.createPlaylist(newPlaylistName.trim())
-                            Toast.makeText(context, "Playlist initialized", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Playlist created", Toast.LENGTH_SHORT).show()
                             newPlaylistName = ""
                             showCreateDialog = false
                         }
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SpotifyGreen,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(20.dp)
                 ) {
-                    Text(
-                        "CREATE",
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryNeon
-                    )
+                    Text("Create", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) {
-                    Text("CANCEL", fontFamily = FontFamily.Monospace, color = Color.Gray)
+                    Text("Cancel", color = Color(0xFFA7A7A7))
                 }
-            },
-            containerColor = SurfaceDark
+            }
         )
     }
 
-    // Rename Playlist Dialog (Coding Vision UI)
+    // Rename Playlist Dialog
     if (playlistToRename != null) {
         AlertDialog(
             onDismissRequest = { playlistToRename = null },
+            containerColor = Color(0xFF282828),
             title = {
                 Text(
-                    text = "RENAME PLAYLIST",
+                    text = "Rename playlist",
                     style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
                     ),
-                    color = PrimaryNeon
+                    color = Color.White
                 )
             },
             text = {
-                Column {
-                    Text(
-                        text = "Modify playlist title:",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TextSecondary
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = renameInput,
-                        onValueChange = { renameInput = it },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PrimaryNeon,
-                            unfocusedBorderColor = SurfaceVariantDark,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
+                OutlinedTextField(
+                    value = renameInput,
+                    onValueChange = { renameInput = it },
+                    singleLine = true,
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = SpotifyGreen,
+                        unfocusedBorderColor = Color(0xFF3E3E3E),
+                        focusedContainerColor = Color(0xFF1E1E1E),
+                        unfocusedContainerColor = Color(0xFF1E1E1E),
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                )
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
                         if (renameInput.isNotBlank()) {
                             viewModel.renamePlaylist(playlistToRename!!.playlist.playlistId, renameInput.trim())
                             Toast.makeText(context, "Playlist renamed", Toast.LENGTH_SHORT).show()
                             playlistToRename = null
                         }
-                    }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = SpotifyGreen,
+                        contentColor = Color.Black
+                    ),
+                    shape = RoundedCornerShape(20.dp)
                 ) {
-                    Text(
-                        "SAVE",
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = PrimaryNeon
-                    )
+                    Text("Save", fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { playlistToRename = null }) {
-                    Text("CANCEL", fontFamily = FontFamily.Monospace, color = Color.Gray)
+                    Text("Cancel", color = Color(0xFFA7A7A7))
                 }
-            },
-            containerColor = SurfaceDark
+            }
         )
     }
 
@@ -931,7 +1117,7 @@ fun PlaylistsScreen(
         DownloadQualityDialog(
             initialQuality = currentQuality,
             title = "Download Playlist",
-            subtitle = "VAULT: ${playlistToDownload!!.playlist.name.uppercase()}",
+            subtitle = playlistToDownload!!.playlist.name,
             trackCount = playlistToDownload!!.tracks.size,
             confirmButtonText = "Download All",
             onConfirm = { quality, setAsDefault ->
@@ -941,8 +1127,8 @@ fun PlaylistsScreen(
                 viewModel.downloadPlaylist(playlistToDownload!!, quality)
                 Toast.makeText(
                     context,
-                    "Downloading ${playlistToDownload!!.tracks.size} tracks (${quality.label})",
-                    Toast.LENGTH_LONG
+                    "Downloading ${playlistToDownload!!.tracks.size} tracks",
+                    Toast.LENGTH_SHORT
                 ).show()
                 playlistToDownload = null
             },
@@ -950,7 +1136,7 @@ fun PlaylistsScreen(
         )
     }
 
-    // Stark Blend Dialogs & Sheets
+    // Blend Dialogs
     if (showCreateBlendDialog) {
         CreateBlendDialog(
             viewModel = blendViewModel,
@@ -983,58 +1169,90 @@ fun PlaylistsScreen(
     }
 }
 
+/**
+ * Authentic Spotify Custom Playlist Row
+ */
 @Composable
-private fun PlaylistCyberRow(
+private fun SpotifyPlaylistRow(
     playlistWithTracks: PlaylistWithTracks,
     onClick: () -> Unit,
-    onPlayAll: () -> Unit,
-    onShufflePlay: () -> Unit,
-    onDownload: () -> Unit,
     onMenuClick: () -> Unit,
     isMenuExpanded: Boolean,
     onDismissMenu: () -> Unit,
+    onPlayAll: () -> Unit,
+    onShufflePlay: () -> Unit,
+    onDownload: () -> Unit,
     onRename: () -> Unit,
-    onClear: () -> Unit,
     onDelete: () -> Unit
 ) {
+    val thumbs = remember(playlistWithTracks.tracks) {
+        playlistWithTracks.tracks
+            .mapNotNull { it.thumbnailUrl.takeIf { t -> t.isNotBlank() && t.startsWith("http") } }
+            .distinct()
+            .take(4)
+    }
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val firstThumbnail = playlistWithTracks.tracks.firstOrNull { it.thumbnailUrl.isNotBlank() }?.thumbnailUrl
-        val rowSeconds = playlistWithTracks.tracks.sumOf { it.durationSeconds }
-        val rowDurationText = if (rowSeconds >= 3600) {
-            "${rowSeconds / 3600}h ${(rowSeconds % 3600) / 60}m"
-        } else if (rowSeconds > 0) {
-            "${rowSeconds / 60}m"
-        } else null
-
-        Surface(
-            color = SurfaceElevated,
-            shape = RoundedCornerShape(12.dp),
+        // Artwork Thumbnail
+        Box(
             modifier = Modifier
-                .size(56.dp)
-                .border(1.dp, if (!firstThumbnail.isNullOrBlank()) ArcCyanBright.copy(alpha = 0.5f) else SurfaceVariantDark, RoundedCornerShape(12.dp))
+                .size(64.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(Color(0xFF282828)),
+            contentAlignment = Alignment.Center
         ) {
-            if (!firstThumbnail.isNullOrBlank()) {
+            if (thumbs.size >= 4) {
+                // 2x2 Collage
+                Column(modifier = Modifier.fillMaxSize().background(Color(0xFF242424))) {
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AsyncImage(
+                            model = thumbs[0],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                        AsyncImage(
+                            model = thumbs[1],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                    }
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AsyncImage(
+                            model = thumbs[2],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                        AsyncImage(
+                            model = thumbs[3],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight()
+                        )
+                    }
+                }
+            } else if (thumbs.isNotEmpty()) {
                 AsyncImage(
-                    model = firstThumbnail,
-                    contentDescription = playlistWithTracks.playlist.name,
+                    model = thumbs.first(),
+                    contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                Box(contentAlignment = Alignment.Center) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.QueueMusic,
-                        contentDescription = null,
-                        tint = PrimaryNeon,
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.MusicNote,
+                    contentDescription = null,
+                    tint = Color(0xFFA7A7A7),
+                    modifier = Modifier.size(28.dp)
+                )
             }
         }
 
@@ -1045,54 +1263,31 @@ private fun PlaylistCyberRow(
                 text = playlistWithTracks.playlist.name,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 15.5.sp
                 ),
-                color = TextPrimary,
+                color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.padding(top = 2.dp)
-            ) {
-                Text(
-                    text = "${playlistWithTracks.tracks.size} tracks",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = PrimaryNeon
-                )
-                if (rowDurationText != null) {
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "• $rowDurationText",
-                        style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                        color = TextSecondary
-                    )
-                }
-            }
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            Text(
+                text = "Playlist • ${playlistWithTracks.tracks.size} songs",
+                style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                color = Color(0xFFA7A7A7),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
         }
 
-        // Quick Shuffle button right on the row if tracks are present
-        if (playlistWithTracks.tracks.isNotEmpty()) {
-            IconButton(onClick = onShufflePlay) {
-                Icon(
-                    imageVector = Icons.Default.Shuffle,
-                    contentDescription = "Shuffle Playlist",
-                    tint = ArcCyanBright,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-        }
-
-        // 3-Dots Action Menu for each playlist card
+        // 3-Dots Action Menu
         Box {
             IconButton(onClick = onMenuClick) {
                 Icon(
                     imageVector = Icons.Default.MoreVert,
                     contentDescription = "Options",
-                    tint = TextSecondary
+                    tint = Color(0xFFA7A7A7)
                 )
             }
 
@@ -1102,44 +1297,37 @@ private fun PlaylistCyberRow(
             ) {
                 if (playlistWithTracks.tracks.isNotEmpty()) {
                     DropdownMenuItem(
-                        text = { Text("Download All", fontFamily = FontFamily.Monospace) },
-                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = PrimaryNeon) },
-                        onClick = {
-                            onDismissMenu()
-                            onDownload()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Play All", fontFamily = FontFamily.Monospace) },
-                        leadingIcon = { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = PrimaryNeon) },
+                        text = { Text("Play All") },
+                        leadingIcon = { Icon(Icons.Default.MusicNote, contentDescription = null, tint = SpotifyGreen) },
                         onClick = {
                             onDismissMenu()
                             onPlayAll()
                         }
                     )
                     DropdownMenuItem(
-                        text = { Text("Shuffle Play", fontFamily = FontFamily.Monospace) },
-                        leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = ArcCyanBright) },
+                        text = { Text("Shuffle Play") },
+                        leadingIcon = { Icon(Icons.Default.Shuffle, contentDescription = null, tint = SpotifyGreen) },
                         onClick = {
                             onDismissMenu()
                             onShufflePlay()
                         }
                     )
-                }
-                DropdownMenuItem(
-                    text = { Text("Rename", fontFamily = FontFamily.Monospace) },
-                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = PrimaryNeon) },
-                    onClick = onRename
-                )
-                if (playlistWithTracks.tracks.isNotEmpty()) {
                     DropdownMenuItem(
-                        text = { Text("Clear Tracks", fontFamily = FontFamily.Monospace) },
-                        leadingIcon = { Icon(Icons.Default.DeleteSweep, contentDescription = null, tint = Color(0xFFFFB74D)) },
-                        onClick = onClear
+                        text = { Text("Download All") },
+                        leadingIcon = { Icon(Icons.Default.Download, contentDescription = null, tint = SpotifyGreen) },
+                        onClick = {
+                            onDismissMenu()
+                            onDownload()
+                        }
                     )
                 }
                 DropdownMenuItem(
-                    text = { Text("Delete", fontFamily = FontFamily.Monospace, color = Color(0xFFFF5252)) },
+                    text = { Text("Rename") },
+                    leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White) },
+                    onClick = onRename
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete", color = Color(0xFFFF5252)) },
                     leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252)) },
                     onClick = onDelete
                 )
@@ -1148,433 +1336,100 @@ private fun PlaylistCyberRow(
     }
 }
 
+/**
+ * Authentic Spotify Blend Row with overlapping member avatars and match score
+ */
 @Composable
-private fun StarkBlendSection(
-    blends: List<BlendEntity>,
-    onInviteClick: () -> Unit,
-    onJoinClick: () -> Unit,
-    onArtistBlendClick: () -> Unit,
-    onBlendClick: (String) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Section Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = CircleShape,
-                    color = ArcCyan.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, ArcCyanBright),
-                    modifier = Modifier.size(24.dp)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.ElectricBolt,
-                            contentDescription = null,
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(14.dp)
-                        )
-                    }
-                }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "STARK BLEND",
-                    style = MaterialTheme.typography.titleMedium.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.ExtraBold,
-                        letterSpacing = 1.sp,
-                        color = TextPrimary
-                    )
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Surface(
-                    shape = RoundedCornerShape(4.dp),
-                    color = ArcCyan.copy(alpha = 0.15f),
-                    border = BorderStroke(0.5.dp, ArcCyanBright.copy(alpha = 0.5f))
-                ) {
-                    Text(
-                        text = "TASTE FUSION",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 9.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = ArcCyanBright
-                        ),
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                    )
-                }
-            }
-
-            if (blends.isNotEmpty()) {
-                Text(
-                    text = "${blends.size} BLENDS",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        color = StarkGold
-                    )
-                )
-            }
-        }
-
-        Text(
-            text = "Synthesize shared music taste with friends & flagship artists.",
-            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
-            color = TextSecondary,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)
-        )
-
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Quick Actions Row
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            // Invite Friend Button
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = ArcCyan.copy(alpha = 0.1f),
-                border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.6f)),
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onInviteClick)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.GroupAdd,
-                        contentDescription = null,
-                        tint = ArcCyanBright,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "INVITE",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = ArcCyanBright
-                        ),
-                        maxLines = 1
-                    )
-                }
-            }
-
-            // Join with Code Button
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = PrimaryNeon.copy(alpha = 0.08f),
-                border = BorderStroke(1.dp, PrimaryNeon.copy(alpha = 0.6f)),
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(onClick = onJoinClick)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Hub,
-                        contentDescription = null,
-                        tint = PrimaryNeon,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "JOIN CODE",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = PrimaryNeon
-                        ),
-                        maxLines = 1
-                    )
-                }
-            }
-
-            // Artist Blend Button
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = StarkGold.copy(alpha = 0.08f),
-                border = BorderStroke(1.dp, StarkGold.copy(alpha = 0.6f)),
-                modifier = Modifier
-                    .weight(1.15f)
-                    .clickable(onClick = onArtistBlendClick)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Stars,
-                        contentDescription = null,
-                        tint = StarkGold,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Spacer(modifier = Modifier.width(5.dp))
-                    Text(
-                        text = "ARTIST BLEND",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = StarkGold
-                        ),
-                        maxLines = 1
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Existing Blends Horizontal Carousel or Holographic Starter Banner
-        if (blends.isNotEmpty()) {
-            LazyRow(
-                contentPadding = PaddingValues(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .isolateHorizontalScroll()
-            ) {
-                items(blends, key = { it.blendId }) { blend ->
-                    StarkBlendCard(
-                        modifier = Modifier.animateItem(),
-                        blend = blend,
-                        onClick = { onBlendClick(blend.blendId) }
-                    )
-                }
-            }
-        } else {
-            // Minimal Empty State Card
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = SurfaceElevated,
-                border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.25f)),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp)
-                    .clickable(onClick = onArtistBlendClick)
-            ) {
-                Row(
-                    modifier = Modifier.padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = CircleShape,
-                        color = ArcCyan.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, ArcCyanBright),
-                        modifier = Modifier.size(44.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Stars,
-                                contentDescription = null,
-                                tint = ArcCyanBright,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "START YOUR FIRST BLEND",
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                color = ArcCyanBright
-                            )
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = "Pick 1-3 flagship artists across Bollywood, Pop, Punjabi, Hip-Hop, Rock, or Sufi to calculate your match score.",
-                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                            color = TextSecondary,
-                            lineHeight = 15.sp
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StarkBlendCard(
-    modifier: Modifier = Modifier,
+private fun SpotifyBlendRow(
     blend: BlendEntity,
     onClick: () -> Unit
 ) {
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = SurfaceElevated,
-        border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.45f)),
-        modifier = modifier
-            .width(240.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
             .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(
+        // Dual Avatar Overlapping Circles Tile
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp)
+                .size(64.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(
+                    Brush.linearGradient(
+                        listOf(Color(0xFF1E3A8A), Color(0xFF6D28D9))
+                    )
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            // Top Row: Match Gauge Pill & Type Badge
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
+            Box(modifier = Modifier.size(width = 46.dp, height = 30.dp)) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = PrimaryNeon.copy(alpha = 0.15f),
-                    border = BorderStroke(0.5.dp, PrimaryNeon)
+                    shape = CircleShape,
+                    color = Color(0xFF38BDF8),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1E1E1E)),
+                    modifier = Modifier.size(28.dp).align(Alignment.CenterStart)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.ElectricBolt,
-                            contentDescription = null,
-                            tint = PrimaryNeon,
-                            modifier = Modifier.size(10.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
+                    Box(contentAlignment = Alignment.Center) {
                         Text(
-                            text = "${blend.matchScore}% MATCH",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 10.sp,
-                                color = PrimaryNeon
-                            )
+                            text = blend.creatorName.take(1).uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = Color.Black)
                         )
                     }
                 }
-
                 Surface(
-                    shape = RoundedCornerShape(6.dp),
-                    color = SurfaceVariantDark
+                    shape = CircleShape,
+                    color = SpotifyGreen,
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF1E1E1E)),
+                    modifier = Modifier.size(28.dp).align(Alignment.CenterEnd)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = blend.partnerName.take(1).uppercase(),
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = Color.Black)
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = blend.title,
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.5.sp
+                ),
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = SpotifyGreen.copy(alpha = 0.2f),
+                    modifier = Modifier.padding(end = 6.dp)
                 ) {
                     Text(
-                        text = if (blend.isArtistBlend) "ARTIST" else "FRIEND",
+                        text = "${blend.matchScore}% Match",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 8.sp,
+                            fontSize = 10.5.sp,
                             fontWeight = FontWeight.Bold,
-                            color = StarkGold
+                            color = SpotifyGreen
                         ),
-                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp)
                     )
                 }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Middle: Overlapping Avatar Circles + Names
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Dual Avatar Overlap
-                Box(modifier = Modifier.size(width = 44.dp, height = 30.dp)) {
-                    Surface(
-                        shape = CircleShape,
-                        color = ArcCyanBright,
-                        border = BorderStroke(1.dp, SurfaceElevated),
-                        modifier = Modifier
-                            .size(28.dp)
-                            .align(Alignment.CenterStart)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = blend.creatorName.take(1).uppercase(),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = StarkCarbon,
-                                    fontSize = 11.sp
-                                )
-                            )
-                        }
-                    }
-                    Surface(
-                        shape = CircleShape,
-                        color = StarkGold,
-                        border = BorderStroke(1.dp, SurfaceElevated),
-                        modifier = Modifier
-                            .size(28.dp)
-                            .align(Alignment.CenterEnd)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(
-                                text = blend.partnerName.take(1).uppercase(),
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = StarkCarbon,
-                                    fontSize = 11.sp
-                                )
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = blend.title,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${blend.creatorName} & ${blend.partnerName}",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            color = TextSecondary,
-                            fontSize = 10.sp
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            // Bottom: Tracks Count and Shared Anthem info
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "35 tracks",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        color = ArcCyan
-                    )
-                )
 
                 Text(
-                    text = blend.topSharedGenre.ifBlank { "Fusion" },
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        color = TextSecondary,
-                        fontSize = 9.sp
-                    ),
+                    text = "Blend • 35 songs",
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                    color = Color(0xFFA7A7A7),
                     maxLines = 1
                 )
             }

@@ -98,6 +98,12 @@ class PlaybackConnectionManager @Inject constructor(
     private var isCrossfadingOut = false
     private var isCrossfadingIn = false
 
+    // Playlist playback lock: when true, prevents recommendations from mutating or appending to the queue
+    private var isPlaylistPlayback = false
+
+    // Background pre-warming state tracking: ensures candidate harvesting triggers once per track at 60% progress
+    private var lastPrewarmedTrackId: String? = null
+
     init {
         restoreLastSession()
         initializeController()
@@ -112,6 +118,7 @@ class PlaybackConnectionManager @Inject constructor(
         val session = playbackSessionManager.getLastPlaybackSession()
         if (session != null) {
             currentPlaylist = session.queue.toMutableList()
+            isPlaylistPlayback = session.isPlaylist
             _playbackState.update {
                 it.copy(
                     currentTrack = session.track,
@@ -120,18 +127,21 @@ class PlaybackConnectionManager @Inject constructor(
                     playbackPositionMs = session.positionMs,
                     durationMs = session.track.durationSeconds * 1000L,
                     isPlaying = false,
-                    isBuffering = false
+                    isBuffering = false,
+                    isPlaylistPlayback = isPlaylistPlayback
                 )
             }
             scope.launch {
                 val fullQueue = playbackSessionManager.restoreFullQueue()
                 if (fullQueue.isNotEmpty()) {
                     currentPlaylist = fullQueue.toMutableList()
+                    isPlaylistPlayback = session.isPlaylist
                     val safeIdx = session.queueIndex.coerceIn(0, fullQueue.size - 1)
                     _playbackState.update {
                         it.copy(
                             queue = fullQueue,
-                            currentQueueIndex = safeIdx
+                            currentQueueIndex = safeIdx,
+                            isPlaylistPlayback = isPlaylistPlayback
                         )
                     }
                 }
@@ -174,7 +184,11 @@ class PlaybackConnectionManager @Inject constructor(
      * Plays a track immediately. If a playlist is supplied, replaces the current queue.
      * The mini player UI appears instantaneously with track metadata & buffering state.
      */
-    fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {
+    fun playTrack(
+        track: TrackEntity,
+        playlist: List<TrackEntity> = emptyList(),
+        isUserPlaylist: Boolean = false
+    ) {
         val filteredPlaylist = if (playlist.isNotEmpty()) {
             val clean = playlist
                 .filter { it.id == track.id || (!it.isSameSong(track) && it.isSongOnly()) }
@@ -183,6 +197,8 @@ class PlaybackConnectionManager @Inject constructor(
         } else {
             emptyList()
         }
+        val isPlaylist = isUserPlaylist
+        isPlaylistPlayback = isPlaylist
         val initialQueue = if (filteredPlaylist.isNotEmpty()) filteredPlaylist else listOf(track)
         val initialIndex = initialQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
 
@@ -195,7 +211,8 @@ class PlaybackConnectionManager @Inject constructor(
                 queue = initialQueue,
                 currentQueueIndex = initialIndex,
                 isPlaying = true,
-                isBuffering = true
+                isBuffering = true,
+                isPlaylistPlayback = isPlaylist
             )
         }
 
@@ -246,8 +263,8 @@ class PlaybackConnectionManager @Inject constructor(
             // Telemetry: record start of track listening
             recordTrackStartTelemetry(playableTrack)
 
-            // If queue is single track, asynchronously load YouTube-like up next recommendations
-            if (currentPlaylist.size <= 1) {
+            // If queue is single track and NOT playing a playlist, asynchronously load YouTube-like up next recommendations
+            if (!isPlaylistPlayback && currentPlaylist.size <= 1) {
                 extendAutoplayQueue(playableTrack, forceFresh = true)
             }
 
@@ -257,7 +274,8 @@ class PlaybackConnectionManager @Inject constructor(
                     queue = currentPlaylist.toList(),
                     currentQueueIndex = targetIndex,
                     isPlaying = true,
-                    isBuffering = false
+                    isBuffering = false,
+                    isPlaylistPlayback = isPlaylistPlayback
                 )
             }
             startProgressUpdates()
@@ -270,13 +288,20 @@ class PlaybackConnectionManager @Inject constructor(
      * Resumes playback from a restored session (e.g. when app reopens and user taps Play).
      * Re-resolves stream URL to avoid expired tokens and resumes at the saved position.
      */
-    fun resumePlayback(track: TrackEntity, playlist: List<TrackEntity> = emptyList(), startPositionMs: Long = 0L) {
+    fun resumePlayback(
+        track: TrackEntity,
+        playlist: List<TrackEntity> = emptyList(),
+        startPositionMs: Long = 0L,
+        isUserPlaylist: Boolean = false
+    ) {
         ensureServiceStarted()
         val filteredPlaylist = if (playlist.isNotEmpty()) {
             playlist.filter { it.id == track.id || it.isSongOnly() }
         } else {
             emptyList()
         }
+        val isPlaylist = isUserPlaylist
+        isPlaylistPlayback = isPlaylist
         val initialQueue = if (filteredPlaylist.isNotEmpty()) filteredPlaylist else listOf(track)
         val initialIndex = initialQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
 
@@ -287,7 +312,8 @@ class PlaybackConnectionManager @Inject constructor(
                 currentQueueIndex = initialIndex,
                 isPlaying = true,
                 isBuffering = true,
-                playbackPositionMs = startPositionMs
+                playbackPositionMs = startPositionMs,
+                isPlaylistPlayback = isPlaylist
             )
         }
 
@@ -323,7 +349,7 @@ class PlaybackConnectionManager @Inject constructor(
                 } catch (_: Exception) {}
             }
 
-            if (currentPlaylist.size <= 1) {
+            if (!isPlaylistPlayback && currentPlaylist.size <= 1) {
                 extendAutoplayQueue(playableTrack, forceFresh = true)
             }
 
@@ -333,7 +359,8 @@ class PlaybackConnectionManager @Inject constructor(
                     queue = currentPlaylist.toList(),
                     currentQueueIndex = targetIndex,
                     isPlaying = true,
-                    isBuffering = false
+                    isBuffering = false,
+                    isPlaylistPlayback = isPlaylistPlayback
                 )
             }
             startProgressUpdates()
@@ -351,7 +378,9 @@ class PlaybackConnectionManager @Inject constructor(
 
         return kotlinx.coroutines.withContext(Dispatchers.IO) {
             try {
-                future.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                val controller = future.get(5, java.util.concurrent.TimeUnit.SECONDS)
+                mediaController = controller
+                controller
             } catch (e: Exception) {
                 Log.e(TAG, "MediaController await error: ${e.message}", e)
                 mediaController
@@ -465,8 +494,13 @@ class PlaybackConnectionManager @Inject constructor(
     /**
      * Replaces the upcoming queue items with freshly generated algorithmic recommendations,
      * maintaining uninterrupted playback of the current track and preserving playback position.
+     * Skipped entirely if currently playing a user playlist.
      */
     fun updateUpcomingQueue(newQueue: List<TrackEntity>) {
+        if (isPlaylistPlayback) {
+            Log.d(TAG, "updateUpcomingQueue ignored: playlist playback is active")
+            return
+        }
         scope.launch {
             val controller = mediaController ?: return@launch
             val currentIdx = controller.currentMediaItemIndex
@@ -511,20 +545,84 @@ class PlaybackConnectionManager @Inject constructor(
                 )
             }
             savePlaybackSession()
+            prefetchAdjacentTracks(currentIdx)
         }
     }
 
     /**
      * Refreshes the upcoming recommendations queue on demand using the active seed track and vibe.
+     * Guaranteed to produce fresh, non-duplicate recommendations distinct from current upcoming queue.
+     * Skipped entirely if currently playing a user playlist.
      */
-    fun refreshQueueRecommendations() {
-        scope.launch {
-            val currentTrack = _playbackState.value.currentTrack ?: return@launch
-            val freshRecs = recommendationRepositoryProvider.get().generateRecommendationQueue(currentTrack, 15)
-            if (freshRecs.isNotEmpty()) {
-                updateUpcomingQueue(freshRecs)
+    suspend fun refreshQueueRecommendations(): Boolean = withContext(Dispatchers.Main) {
+        if (isPlaylistPlayback) {
+            Log.d(TAG, "refreshQueueRecommendations ignored: playlist playback is active")
+            return@withContext false
+        }
+        val controller = mediaController ?: return@withContext false
+        val currentIdx = controller.currentMediaItemIndex
+        val currentTrack = if (currentIdx in currentPlaylist.indices) currentPlaylist[currentIdx] else _playbackState.value.currentTrack
+        if (currentTrack == null) return@withContext false
+
+        // Collect existing upcoming track IDs to explicitly avoid recommending the exact same upcoming tracks
+        val existingUpcoming = if (currentIdx + 1 < currentPlaylist.size) {
+            currentPlaylist.subList(currentIdx + 1, currentPlaylist.size)
+        } else emptyList()
+        val excludeIds = existingUpcoming.map { it.id }.toSet()
+
+        val freshRecs = withContext(Dispatchers.IO) {
+            try {
+                recommendationRepositoryProvider.get().generateRecommendationQueue(
+                    baseTrack = currentTrack,
+                    limit = 15,
+                    excludeTrackIds = excludeIds,
+                    forceFresh = true
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to generate fresh recommendations: ${e.message}")
+                emptyList()
             }
         }
+
+        if (freshRecs.isEmpty()) return@withContext false
+
+        val filteredUpcoming = freshRecs
+            .filter { candidate ->
+                candidate.id != currentTrack.id &&
+                !candidate.isSameSong(currentTrack) &&
+                candidate.isSongOnly()
+            }
+            .distinctSongs()
+
+        if (filteredUpcoming.isEmpty()) return@withContext false
+
+        val existingUpcomingIds = existingUpcoming.map { it.id }
+        val newUpcomingIds = filteredUpcoming.map { it.id }
+        if (existingUpcomingIds == newUpcomingIds) {
+            return@withContext false
+        }
+
+        // Keep all tracks played so far including the current track, and replace only what comes next
+        val updatedPlaylist = (currentPlaylist.take(currentIdx + 1) + filteredUpcoming).toMutableList()
+        currentPlaylist = updatedPlaylist
+
+        // Remove only upcoming items from ExoPlayer and append the new ones so the playing track NEVER pauses or hitches!
+        val totalItems = controller.mediaItemCount
+        if (totalItems > currentIdx + 1) {
+            controller.removeMediaItems(currentIdx + 1, totalItems)
+        }
+        val newMediaItems = filteredUpcoming.map { buildMediaItem(it) }
+        controller.addMediaItems(newMediaItems)
+
+        _playbackState.update {
+            it.copy(
+                queue = currentPlaylist.toList(),
+                currentQueueIndex = currentIdx
+            )
+        }
+        savePlaybackSession()
+        prefetchAdjacentTracks(currentIdx)
+        true
     }
 
     fun playNext(track: TrackEntity) {
@@ -711,10 +809,15 @@ class PlaybackConnectionManager @Inject constructor(
      * replacing placeholder URIs in ExoPlayer ahead of time. This enables true gapless playback
      * with 0ms silence, eliminating playback stalls and buffering interruptions.
      */
+    /**
+     * Pipelined asynchronous stream resolution for upcoming tracks.
+     * Resolves stream URLs for upcoming tracks sequentially in the background without blocking the UI,
+     * immediately updating ExoPlayer and _playbackState as each individual track resolves like a streaming pipeline.
+     */
     private fun prefetchAdjacentTracks(currentIndex: Int) {
         prefetchJob?.cancel()
         prefetchJob = scope.launch(Dispatchers.IO) {
-            // Pre-resolve up to 4 tracks ahead
+            // Pipeline resolution: resolve up to 4 upcoming tracks ahead
             for (offset in 1..4) {
                 val nextIndex = currentIndex + offset
                 if (nextIndex in currentPlaylist.indices) {
@@ -722,14 +825,17 @@ class PlaybackConnectionManager @Inject constructor(
                     val isExpired = StreamUrlValidator.isExpired(nextTrack.streamUrl)
                     if ((nextTrack.streamUrl.isNullOrBlank() || isExpired) && !nextTrack.isDownloaded) {
                         val resolved = resolveTrackForPlayback(nextTrack, forceFresh = isExpired)
-                        if (resolved != null) {
+                        if (resolved != null && !resolved.streamUrl.isNullOrBlank()) {
                             currentPlaylist[nextIndex] = resolved
-                            launch(Dispatchers.Main) {
-                                mediaController?.let { controller ->
-                                    if (nextIndex < controller.mediaItemCount) {
-                                        controller.replaceMediaItem(nextIndex, buildMediaItem(resolved))
-                                    }
+                            try {
+                                trackDao.insertTrack(resolved)
+                            } catch (_: Exception) {}
+                            withContext(Dispatchers.Main) {
+                                val controller = getOrAwaitController()
+                                if (controller != null && nextIndex < controller.mediaItemCount) {
+                                    controller.replaceMediaItem(nextIndex, buildMediaItem(resolved))
                                 }
+                                _playbackState.update { it.copy(queue = currentPlaylist.toList()) }
                             }
                         }
                     }
@@ -754,7 +860,11 @@ class PlaybackConnectionManager @Inject constructor(
         val metadata = MediaMetadata.Builder()
             .setTitle(track.title)
             .setArtist(track.artist)
+            .setAlbumTitle("SatvikX")
             .setArtworkUri(if (track.thumbnailUrl.isNotBlank()) Uri.parse(track.thumbnailUrl) else null)
+            .setExtras(android.os.Bundle().apply {
+                putLong("duration_seconds", track.durationSeconds)
+            })
             .build()
 
         return MediaItem.Builder()
@@ -803,7 +913,8 @@ class PlaybackConnectionManager @Inject constructor(
                 shuffleModeEnabled = controller.shuffleModeEnabled,
                 repeatMode = controller.repeatMode,
                 currentQueueIndex = controller.currentMediaItemIndex,
-                queue = currentPlaylist.toList()
+                queue = currentPlaylist.toList(),
+                isPlaylistPlayback = isPlaylistPlayback
             )
         }
 
@@ -849,6 +960,18 @@ class PlaybackConnectionManager @Inject constructor(
                             controller.volume = 1.0f
                         }
 
+                        // Background Candidate Harvesting & Sliding Pre-Resolution at 60% playback progress:
+                        // Pre-warms candidate pool and pre-resolves the next 4 upcoming tracks.
+                        // If upcoming queue is low (< 4 tracks), proactively extends the queue so playback never halts.
+                        val currentTrack = _playbackState.value.currentTrack
+                        if (currentTrack != null && duration > 15000L) {
+                            val progressRatio = currentPos.toFloat() / duration.toFloat()
+                            if (progressRatio >= 0.60f && lastPrewarmedTrackId != currentTrack.id) {
+                                lastPrewarmedTrackId = currentTrack.id
+                                triggerBackgroundPrewarming(currentTrack, controller.currentMediaItemIndex)
+                            }
+                        }
+
                         val now = System.currentTimeMillis()
                         if (now - lastSaveTimeMs > 2500L) {
                             lastSaveTimeMs = now
@@ -861,13 +984,45 @@ class PlaybackConnectionManager @Inject constructor(
         }
     }
 
+    /**
+     * Proactive Background Pre-warming & Sliding Buffer Engine:
+     * Triggered at 60% playback completion to eliminate cold-start latency.
+     * 1. Pre-resolves sliding 4-track audio URLs for upcoming items.
+     * 2. Asynchronously harvests the 300+ candidate pool for the active seed in background cache.
+     * 3. Proactively extends the queue if fewer than 4 tracks remain so playback never stalls.
+     */
+    private fun triggerBackgroundPrewarming(currentTrack: TrackEntity, currentIndex: Int) {
+        scope.launch(Dispatchers.IO) {
+            try {
+                // 1. Sliding 4-track audio URL pre-resolution for upcoming items
+                prefetchAdjacentTracks(currentIndex)
+
+                // 2. Proactive candidate harvest & queue replenishment if not playing custom user playlist
+                if (!isPlaylistPlayback) {
+                    recommendationRepositoryProvider.get().prewarmCandidates(currentTrack)
+
+                    val upcomingCount = (currentPlaylist.size - (currentIndex + 1)).coerceAtLeast(0)
+                    if (upcomingCount < 4) {
+                        Log.d(TAG, "Upcoming queue low ($upcomingCount tracks) at 60% playback; proactively extending queue")
+                        extendAutoplayQueue(currentTrack)
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.w(TAG, "Background pre-warming non-fatal: ${e.message}")
+                }
+            }
+        }
+    }
+
     private fun savePlaybackSession() {
         val track = _playbackState.value.currentTrack ?: return
         playbackSessionManager.saveSession(
             track = track,
             queue = currentPlaylist,
             queueIndex = _playbackState.value.currentQueueIndex,
-            positionMs = _playbackState.value.playbackPositionMs
+            positionMs = _playbackState.value.playbackPositionMs,
+            isPlaylist = isPlaylistPlayback
         )
     }
 
@@ -906,28 +1061,28 @@ class PlaybackConnectionManager @Inject constructor(
             scope.launch {
                 _playbackState.update { it.copy(isBuffering = true) }
                 trackDao.updateStreamUrl(currentTrack.id, null)
-                val refreshed = streamRepository.resolveAudioStream(currentTrack.id, forceFresh = true).firstOrNull()?.getOrNull()
+                val refreshed = resolveTrackForPlayback(currentTrack, forceFresh = true)
                 if (refreshed != null && !refreshed.streamUrl.isNullOrBlank()) {
-                    val updatedTrack = currentTrack.copy(streamUrl = refreshed.streamUrl)
-                    currentPlaylist[currentIndex] = updatedTrack
-                    trackDao.insertTrack(updatedTrack)
-                    controller.replaceMediaItem(currentIndex, buildMediaItem(updatedTrack))
+                    currentPlaylist[currentIndex] = refreshed
+                    trackDao.insertTrack(refreshed)
+                    controller.replaceMediaItem(currentIndex, buildMediaItem(refreshed))
                     controller.seekTo(currentIndex, currentPos)
                     controller.prepare()
                     controller.play()
                     _playbackState.update {
                         it.copy(
-                            currentTrack = updatedTrack,
+                            currentTrack = refreshed,
                             isBuffering = false,
                             isPlaying = true
                         )
                     }
                     savePlaybackSession()
+                    prefetchAdjacentTracks(currentIndex)
                     Log.i(TAG, "Successfully auto-recovered '${currentTrack.title}' with fresh stream URL!")
                 } else {
-                    Log.w(TAG, "Auto-recovery failed to obtain fresh stream for '${currentTrack.title}'. Skipping.")
+                    Log.w(TAG, "Auto-recovery failed to obtain fresh stream for '${currentTrack.title}'. Advancing.")
                     if (currentIndex < currentPlaylist.size - 1) {
-                        skipToNext()
+                        playTrackAtIndex(currentIndex + 1)
                     } else {
                         _playbackState.update { it.copy(isBuffering = false, isPlaying = false) }
                     }
@@ -947,11 +1102,30 @@ class PlaybackConnectionManager @Inject constructor(
         override fun onPlaybackStateChanged(playbackState: Int) {
             syncPlaybackState()
             handleBufferingWatchdog(playbackState == Player.STATE_BUFFERING)
+
+            if (playbackState == Player.STATE_ENDED && !isPlaylistPlayback) {
+                Log.i(TAG, "ExoPlayer reached STATE_ENDED in autoplay mode. Reviving continuous playback...")
+                scope.launch {
+                    val controller = getOrAwaitController() ?: return@launch
+                    val currentIdx = controller.currentMediaItemIndex
+                    if (currentIdx + 1 < currentPlaylist.size) {
+                        playTrackAtIndex(currentIdx + 1)
+                    } else {
+                        val currentTrack = _playbackState.value.currentTrack
+                        if (currentTrack != null) {
+                            extendAutoplayQueue(currentTrack, forceFresh = true)
+                        }
+                    }
+                }
+            }
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             val controller = mediaController ?: return
             val currentIndex = controller.currentMediaItemIndex
+
+            // Reset pre-warming anchor for the new track
+            lastPrewarmedTrackId = null
 
             // Complete telemetry for previous song if transitioning
             finalizeActiveTrackTelemetry(isSkipped = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK)
@@ -980,20 +1154,23 @@ class PlaybackConnectionManager @Inject constructor(
                 val isExpired = StreamUrlValidator.isExpired(track.streamUrl)
                 if ((track.streamUrl.isNullOrBlank() || isExpired) && !track.isDownloaded) {
                     scope.launch {
+                        _playbackState.update { it.copy(isBuffering = true) }
                         val resolved = resolveTrackForPlayback(track, forceFresh = isExpired)
-                        if (resolved != null) {
+                        if (resolved != null && !resolved.streamUrl.isNullOrBlank()) {
                             currentPlaylist[currentIndex] = resolved
                             controller.replaceMediaItem(currentIndex, buildMediaItem(resolved))
+                            controller.prepare()
                             controller.play()
+                            _playbackState.update { it.copy(currentTrack = resolved, isBuffering = false) }
                         }
                     }
                 }
                 prefetchAdjacentTracks(currentIndex)
                 savePlaybackSession()
 
-                // YouTube-like Infinite Autoplay: regenerate every 5 tracks or when nearing queue end
+                // YouTube-like Infinite Autoplay: regenerate every 5 tracks or when nearing queue end (only if not playing a playlist)
                 val shouldRegenerateCadence = (lastAutoplayGenerationIndex != -1 && currentIndex - lastAutoplayGenerationIndex >= 5)
-                if (currentIndex >= currentPlaylist.size - 2 || shouldRegenerateCadence) {
+                if (!isPlaylistPlayback && (currentIndex >= currentPlaylist.size - 2 || shouldRegenerateCadence)) {
                     extendAutoplayQueue(track)
                 }
             }
@@ -1028,8 +1205,13 @@ class PlaybackConnectionManager @Inject constructor(
     /**
      * Synthesizes and appends fresh high-affinity recommendations to the active ExoPlayer queue,
      * delivering seamless infinite continuous playback just like YouTube Autoplay.
+     * Skipped entirely when playing a playlist.
      */
     fun extendAutoplayQueue(seedTrack: TrackEntity, forceFresh: Boolean = false) {
+        if (isPlaylistPlayback) {
+            Log.d(TAG, "extendAutoplayQueue ignored: playlist playback is active")
+            return
+        }
         if (forceFresh) {
             autoplayQueueJob?.cancel()
         } else if (autoplayQueueJob?.isActive == true) {
@@ -1041,26 +1223,47 @@ class PlaybackConnectionManager @Inject constructor(
             try {
                 val recommendationRepo = recommendationRepositoryProvider.get()
                 val nextBatch = recommendationRepo.generateRecommendationQueue(seedTrack, 15)
+                val currentIdx = controller?.currentMediaItemIndex ?: 0
+                val upcomingAndRecent = if (currentPlaylist.isNotEmpty()) {
+                    val startIndex = (currentIdx - 5).coerceAtLeast(0)
+                    currentPlaylist.subList(startIndex, currentPlaylist.size)
+                } else emptyList()
+
                 val uniqueNew = nextBatch
                     .filter { candidate ->
                         candidate.isSongOnly() &&
                         !candidate.isSameSong(seedTrack) &&
-                        currentPlaylist.none { existing -> candidate.isSameSong(existing) }
+                        upcomingAndRecent.none { existing -> candidate.isSameSong(existing) }
                     }
                     .distinctSongs()
 
-                if (uniqueNew.isNotEmpty()) {
-                    // Pre-resolve the first autoplay track on background thread so it never lands in ExoPlayer with Uri.EMPTY
-                    val firstTrack = uniqueNew.first()
-                    val resolvedFirst = resolveTrackForPlayback(firstTrack) ?: firstTrack
-                    val finalNew = listOf(resolvedFirst) + uniqueNew.drop(1)
+                val candidatePool = if (uniqueNew.isNotEmpty()) {
+                    uniqueNew
+                } else {
+                    try {
+                        val fallbackSearch = streamRepository.searchTracks("${seedTrack.artist} top hits").firstOrNull()?.getOrNull().orEmpty()
+                        val filteredFallback = fallbackSearch
+                            .filter { it.isSongOnly() && !it.isSameSong(seedTrack) && upcomingAndRecent.none { c -> it.isSameSong(c) } }
+                            .distinctSongs()
+                        filteredFallback.ifEmpty {
+                            nextBatch.filter { it.isSongOnly() && !it.isSameSong(seedTrack) }.distinctSongs()
+                        }
+                    } catch (_: Exception) {
+                        nextBatch.filter { it.isSongOnly() && !it.isSameSong(seedTrack) }.distinctSongs()
+                    }
+                }
+
+                if (candidatePool.isNotEmpty()) {
+                    val finalNew = candidatePool.distinctSongs()
 
                     withContext(Dispatchers.Main) {
+                        val controller = getOrAwaitController()
                         currentPlaylist.addAll(finalNew)
                         val mediaItems = finalNew.map { buildMediaItem(it) }
-                        mediaController?.addMediaItems(mediaItems)
+                        controller?.addMediaItems(mediaItems)
                         _playbackState.update { it.copy(queue = currentPlaylist.toList()) }
                         savePlaybackSession()
+                        prefetchAdjacentTracks(controller?.currentMediaItemIndex ?: 0)
                     }
                 }
             } catch (e: Exception) {
@@ -1105,10 +1308,12 @@ class PlaybackConnectionManager @Inject constructor(
                     artist = track.artist
                 )
                 val trigger = recommendationRepositoryProvider.get().onTrackStarted(track)
-                if (trigger == SessionAdaptationTrigger.MAJOR_GENRE_SWITCH) {
-                    recalculateUpcomingQueue(track, reason = "Major genre switch")
-                } else if (trigger == SessionAdaptationTrigger.TWO_REPLAYS) {
-                    recalculateUpcomingQueue(track, reason = "2 consecutive replays")
+                if (!isPlaylistPlayback) {
+                    if (trigger == SessionAdaptationTrigger.MAJOR_GENRE_SWITCH) {
+                        recalculateUpcomingQueue(track, reason = "Major genre switch")
+                    } else if (trigger == SessionAdaptationTrigger.TWO_REPLAYS) {
+                        recalculateUpcomingQueue(track, reason = "2 consecutive replays")
+                    }
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Telemetry start non-fatal: ${e.message}")
@@ -1136,7 +1341,7 @@ class PlaybackConnectionManager @Inject constructor(
                     skipped = if (isQuickSkip) 1 else 0
                 )
 
-                if (isQuickSkip || isSkipped) {
+                if (!isPlaylistPlayback && (isQuickSkip || isSkipped)) {
                     val trigger = recommendationRepositoryProvider.get().onTrackSkipped(currentTrack, listenedMs)
                     if (trigger == SessionAdaptationTrigger.THREE_SKIPS) {
                         recalculateUpcomingQueue(currentTrack, reason = "3 consecutive skips")
@@ -1183,11 +1388,17 @@ class PlaybackConnectionManager @Inject constructor(
         updateTrackLikeStatusInTelemetry(track.id, true)
         scope.launch(Dispatchers.IO) {
             recommendationRepositoryProvider.get().onTrackLiked(track)
-            recalculateUpcomingQueue(track, reason = "Track liked")
+            if (!isPlaylistPlayback) {
+                recalculateUpcomingQueue(track, reason = "Track liked")
+            }
         }
     }
 
     fun recalculateUpcomingQueue(seedTrack: TrackEntity, reason: String) {
+        if (isPlaylistPlayback) {
+            Log.d(TAG, "recalculateUpcomingQueue ignored ($reason): playlist playback is active")
+            return
+        }
         scope.launch(Dispatchers.IO) {
             try {
                 Log.i(TAG, "Dynamic session adaptation triggered ($reason) for: ${seedTrack.title}")

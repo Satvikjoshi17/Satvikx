@@ -18,7 +18,8 @@ data class RestoredPlaybackSession(
     val track: TrackEntity,
     val queue: List<TrackEntity>,
     val queueIndex: Int,
-    val positionMs: Long
+    val positionMs: Long,
+    val isPlaylist: Boolean = false
 )
 
 /**
@@ -44,6 +45,7 @@ class PlaybackSessionManager @Inject constructor(
         private const val KEY_POSITION_MS = "last_position_ms"
         private const val KEY_QUEUE_INDEX = "last_queue_index"
         private const val KEY_QUEUE_IDS = "last_queue_ids"
+        private const val KEY_IS_PLAYLIST = "last_is_playlist"
     }
 
     private val prefs: SharedPreferences =
@@ -75,11 +77,14 @@ class PlaybackSessionManager @Inject constructor(
             isDownloaded = isDownloaded
         )
 
+        val isPlaylist = prefs.getBoolean(KEY_IS_PLAYLIST, false)
+
         return RestoredPlaybackSession(
             track = track,
             queue = listOf(track),
             queueIndex = queueIndex,
-            positionMs = positionMs
+            positionMs = positionMs,
+            isPlaylist = isPlaylist
         )
     }
 
@@ -113,7 +118,8 @@ class PlaybackSessionManager @Inject constructor(
         track: TrackEntity?,
         queue: List<TrackEntity>,
         queueIndex: Int,
-        positionMs: Long
+        positionMs: Long,
+        isPlaylist: Boolean = false
     ) {
         if (track == null) return
 
@@ -130,6 +136,7 @@ class PlaybackSessionManager @Inject constructor(
                 .putLong(KEY_POSITION_MS, positionMs)
                 .putInt(KEY_QUEUE_INDEX, queueIndex)
                 .putString(KEY_QUEUE_IDS, queueIds)
+                .putBoolean(KEY_IS_PLAYLIST, isPlaylist)
                 .apply()
         } catch (e: Exception) {
             Log.w(TAG, "Failed to persist playback session: ${e.message}")

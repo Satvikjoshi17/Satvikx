@@ -163,7 +163,7 @@ class PlayerViewModel @Inject constructor(
 
     fun removeFromQueue(index: Int) = playbackConnectionManager.removeFromQueue(index)
     fun moveQueueItem(fromIndex: Int, toIndex: Int) = playbackConnectionManager.moveQueueItem(fromIndex, toIndex)
-    fun refreshQueue() = playbackConnectionManager.refreshQueueRecommendations()
+    suspend fun refreshQueue(): Boolean = playbackConnectionManager.refreshQueueRecommendations()
 
     fun startSleepTimer(minutes: Int) = playbackConnectionManager.startSleepTimer(minutes)
 

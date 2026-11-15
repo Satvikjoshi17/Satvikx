@@ -23,9 +23,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -92,6 +94,7 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.repository.ArtistAffinity
 import com.satvik.satvikx.data.repository.DailyMix
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
+import com.satvik.satvikx.ui.components.OpticallyCenteredPlayIcon
 import com.satvik.satvikx.ui.components.SatvikXLogo
 import com.satvik.satvikx.ui.components.ShimmerTrackList
 import com.satvik.satvikx.ui.components.StarkAuthDialog
@@ -157,7 +160,7 @@ fun HomeScreen(
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                homeViewModel.loadHomeData(forceRefresh = false)
+                homeViewModel.refreshRecentPlayback()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -166,27 +169,27 @@ fun HomeScreen(
         }
     }
 
-    // J.A.R.V.I.S. Holographic Ambient Background Glow
+    // Spotify Subtle Ambient Background Mesh
     val ambientGradient = remember(uiState.greeting) {
         when {
             uiState.greeting.contains("morning", ignoreCase = true) -> listOf(
-                Color(0xFF042436).copy(alpha = 0.75f),
-                Color(0xFF061521).copy(alpha = 0.45f),
+                Color(0xFF332015).copy(alpha = 0.55f),
+                Color(0xFF1E1510).copy(alpha = 0.25f),
                 BackgroundDark
             )
             uiState.greeting.contains("afternoon", ignoreCase = true) -> listOf(
-                Color(0xFF052B3E).copy(alpha = 0.75f),
-                Color(0xFF071926).copy(alpha = 0.45f),
+                Color(0xFF1E2838).copy(alpha = 0.55f),
+                Color(0xFF141A22).copy(alpha = 0.25f),
                 BackgroundDark
             )
             uiState.greeting.contains("evening", ignoreCase = true) -> listOf(
-                Color(0xFF0A223B).copy(alpha = 0.75f),
-                Color(0xFF071424).copy(alpha = 0.45f),
+                Color(0xFF261838).copy(alpha = 0.55f),
+                Color(0xFF181022).copy(alpha = 0.25f),
                 BackgroundDark
             )
             else -> listOf(
-                Color(0xFF021D2E).copy(alpha = 0.85f),
-                Color(0xFF04111D).copy(alpha = 0.5f),
+                Color(0xFF1A2620).copy(alpha = 0.55f),
+                Color(0xFF121A16).copy(alpha = 0.25f),
                 BackgroundDark
             )
         }
@@ -201,243 +204,153 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(340.dp)
+                .height(300.dp)
                 .background(Brush.verticalGradient(ambientGradient))
         )
 
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .statusBarsPadding()
-                .padding(top = 8.dp),
+                .statusBarsPadding(),
             contentPadding = PaddingValues(bottom = 120.dp)
         ) {
-            // 1. J.A.R.V.I.S. Holographic Command Header
+            // 1. Spotify Top Header: Profile Avatar + Filter Chips + Quick Actions
             item {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                        .padding(top = 10.dp)
                 ) {
-                    val resolvedUserName = remember(currentUser) {
-                        currentUser?.displayName?.trim()?.takeIf { it.isNotBlank() } ?: "Sir"
-                    }
-                    val greetingTime = remember(uiState.greeting) {
-                        uiState.greeting.replace(", Tony", "").trim()
-                    }
-                    val greetingTitle = remember(greetingTime, resolvedUserName) {
-                        "$greetingTime, $resolvedUserName"
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(end = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Official SatvikX Holographic Logo
-                            SatvikXLogo(sizeDp = 44.dp)
-
-                            Spacer(modifier = Modifier.width(10.dp))
-
-                            Column(modifier = Modifier.weight(1f)) {
-                                // J.A.R.V.I.S. HUD Status Badge
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .clip(CircleShape)
-                                            .background(ArcCyanBright)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = "J.A.R.V.I.S. HUD • MARK LXXXV AUDIO CORE",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 9.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = 1.1.sp
-                                        ),
-                                        color = ArcCyanBright,
-                                        maxLines = 1
-                                    )
-                                }
-
-                                // User Personalized Greeting
-                                Text(
-                                    text = greetingTitle,
-                                    style = MaterialTheme.typography.titleLarge.copy(
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 19.sp,
-                                        letterSpacing = (-0.4).sp
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = TextPrimary
-                                )
-
-                                // Telemetry Subtitle
-                                Text(
-                                    text = if (currentUser != null && !currentUser!!.isGuest) {
-                                        "STARK ID: VERIFIED • 48.2 kHz ARC CORES"
-                                    } else {
-                                        "NEURAL CORES NOMINAL • ACOUSTIC MATRIX"
-                                    },
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 9.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        letterSpacing = 0.5.sp
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    color = ArcCyan.copy(alpha = 0.75f)
-                                )
-                            }
-                        }
-
-                        // Stark Arc Glassmorphic Action Capsule
-                        Surface(
-                            shape = RoundedCornerShape(22.dp),
-                            color = StarkSurface.copy(alpha = 0.85f),
-                            border = androidx.compose.foundation.BorderStroke(
-                                1.dp,
-                                Brush.horizontalGradient(
-                                    listOf(ArcCyan.copy(alpha = 0.45f), StarkBorder)
-                                )
-                            )
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
-                            ) {
-                                // 1. Refresh Feed Action
-                                IconButton(
-                                    onClick = { homeViewModel.loadHomeData(forceRefresh = true) },
-                                    enabled = !uiState.isRefreshing,
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    if (uiState.isRefreshing) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(15.dp),
-                                            color = ArcCyanBright,
-                                            strokeWidth = 2.dp
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Refresh,
-                                            contentDescription = "Refresh Feed",
-                                            tint = ArcCyan.copy(alpha = 0.85f),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-
-                                // Subtle Capsule Divider
-                                Box(
-                                    modifier = Modifier
-                                        .width(1.dp)
-                                        .height(16.dp)
-                                        .background(StarkBorder)
-                                )
-
-                                // 2. System Update Check Action
-                                IconButton(
-                                    onClick = { playerViewModel.checkForUpdates(isManual = true) },
-                                    modifier = Modifier.size(34.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.SystemUpdate,
-                                        contentDescription = "Check for Updates",
-                                        tint = ArcCyan.copy(alpha = 0.85f),
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                }
-
-                                // Subtle Capsule Divider
-                                Box(
-                                    modifier = Modifier
-                                        .width(1.dp)
-                                        .height(16.dp)
-                                        .background(StarkBorder)
-                                )
-
-                                Spacer(modifier = Modifier.width(3.dp))
-
-                                // 3. Operative Avatar Profile Button
-                                Box(
-                                    modifier = Modifier
-                                        .size(32.dp)
-                                        .clip(CircleShape)
-                                        .background(ArcCyan.copy(alpha = 0.2f))
-                                        .border(
-                                            width = 1.5.dp,
-                                            color = ArcCyanBright,
-                                            shape = CircleShape
-                                        )
-                                        .clickable { showAuthDialog = true },
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    if (currentUser != null && currentUser!!.avatarUrl.isNotBlank()) {
-                                        Text(
-                                            text = currentUser!!.avatarUrl,
-                                            fontSize = 15.sp
-                                        )
-                                    } else {
-                                        Icon(
-                                            imageVector = Icons.Default.Person,
-                                            contentDescription = "Stark ID Profile",
-                                            tint = ArcCyanBright,
-                                            modifier = Modifier.size(17.dp)
-                                        )
-                                    }
-                                }
-                                Spacer(modifier = Modifier.width(2.dp))
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    // J.A.R.V.I.S. Hologram Pill Filter Row
+                    // Top Action Bar
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState())
-                            .isolateHorizontalScroll(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        homeViewModel.availableMoods.forEach { mood ->
-                            val isSelected = uiState.selectedMood == mood
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = if (isSelected) ArcCyan else StarkSurface.copy(alpha = 0.8f),
-                                border = if (isSelected) androidx.compose.foundation.BorderStroke(1.dp, ArcCyanBright) else androidx.compose.foundation.BorderStroke(1.dp, StarkBorder),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(20.dp))
-                                    .clickable { homeViewModel.selectMood(mood) }
-                            ) {
+                        // Profile Avatar
+                        Box(
+                            modifier = Modifier
+                                .size(36.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF282828))
+                                .clickable { showAuthDialog = true },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (currentUser != null && currentUser!!.avatarUrl.isNotBlank()) {
                                 Text(
-                                    text = mood.uppercase(),
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = if (isSelected) FontFamily.Monospace else FontFamily.Default,
-                                        fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
-                                        fontSize = 11.5.sp,
-                                        letterSpacing = if (isSelected) 0.8.sp else 0.sp
-                                    ),
-                                    color = if (isSelected) Color(0xFF04121E) else TextSecondary,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                    text = currentUser!!.avatarUrl,
+                                    fontSize = 16.sp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Person,
+                                    contentDescription = "Profile",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        // Filter Chips (Pills)
+                        Row(
+                            modifier = Modifier
+                                .weight(1f)
+                                .horizontalScroll(rememberScrollState())
+                                .isolateHorizontalScroll(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            homeViewModel.availableMoods.forEach { mood ->
+                                val isSelected = uiState.selectedMood == mood
+                                val labelText = if (isSelected && mood != "All") "$mood ✕" else mood
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = if (isSelected) SpotifyGreen else Color(0xFF282828),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(20.dp))
+                                        .clickable { homeViewModel.selectMood(mood) }
+                                ) {
+                                    Text(
+                                        text = labelText,
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                            fontSize = 13.sp
+                                        ),
+                                        color = if (isSelected) Color(0xFF121212) else Color.White,
+                                        maxLines = 1,
+                                        softWrap = false,
+                                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        // Actions: Refresh Feed & Update Check
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { homeViewModel.loadHomeData(forceRefresh = true) },
+                                enabled = !uiState.isRefreshing,
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                if (uiState.isRefreshing) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier
+                            .size(16.dp)
+                            .offset(x = 1.dp),
+                                        color = SpotifyGreen,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.Refresh,
+                                        contentDescription = "Refresh Feed",
+                                        tint = TextSecondary,
+                                        modifier = Modifier.size(19.dp)
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = { playerViewModel.checkForUpdates(isManual = true) },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.SystemUpdate,
+                                    contentDescription = "Check for Updates",
+                                    tint = TextSecondary,
+                                    modifier = Modifier.size(19.dp)
                                 )
                             }
                         }
                     }
+
+                    // Bold Spotify Greeting
+                    val greetingTitle = remember(uiState.greeting) {
+                        val raw = uiState.greeting.replace(", Tony", "").trim()
+                        when {
+                            raw.contains("morning", ignoreCase = true) -> "Good morning"
+                            raw.contains("afternoon", ignoreCase = true) -> "Good afternoon"
+                            raw.contains("evening", ignoreCase = true) -> "Good evening"
+                            raw.contains("night", ignoreCase = true) -> "Good evening"
+                            else -> raw
+                        }
+                    }
+
+                    Text(
+                        text = greetingTitle,
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp,
+                            letterSpacing = (-0.5).sp
+                        ),
+                        color = Color.White,
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 18.dp, bottom = 8.dp)
+                    )
                 }
             }
 
@@ -451,8 +364,8 @@ fun HomeScreen(
                         add(QuickTileItem.LikedSongs(count = uiState.likedTracks.size))
                         // Tile 2: Daily Mix 1
                         uiState.dailyMixes.firstOrNull()?.let { add(QuickTileItem.Mix(it)) }
-                        // Remaining tiles from quickPicks or heavyRotation
-                        val trackCandidates = (uiState.quickPicks + uiState.heavyRotationTracks)
+                        // Remaining tiles from user's actual recent songs, heavy rotation, or quick picks
+                        val trackCandidates = (uiState.jumpBackInTracks + uiState.heavyRotationTracks + uiState.quickPicks)
                             .distinctBy { it.id }
                             .take(4)
                         trackCandidates.forEach { add(QuickTileItem.Track(it)) }
@@ -472,7 +385,7 @@ fun HomeScreen(
                                         when (tile) {
                                             is QuickTileItem.LikedSongs -> homeViewModel.playLikedSongs()
                                             is QuickTileItem.Mix -> homeViewModel.playDailyMix(tile.mix)
-                                            is QuickTileItem.Track -> homeViewModel.playTrackWithSuggestionQueue(tile.track, uiState.quickPicks)
+                                            is QuickTileItem.Track -> homeViewModel.playTrackWithSuggestionQueue(tile.track, uiState.jumpBackInTracks.ifEmpty { uiState.quickPicks })
                                         }
                                     },
                                     modifier = Modifier.weight(1f)
@@ -486,161 +399,10 @@ fun HomeScreen(
                 }
             }
 
-            // 3. J.A.R.V.I.S. Smart Mix / Autopilot Banner
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = StarkSurface,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp)
-                        .border(
-                            1.dp,
-                            Brush.horizontalGradient(
-                                listOf(ArcCyan.copy(alpha = 0.5f), StarkBorder, ArcCyan.copy(alpha = 0.25f))
-                            ),
-                            RoundedCornerShape(16.dp)
-                        )
-                        .clickable { homeViewModel.playAutopilotMix() }
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color(0xFF071B28),
-                                        Color(0xFF0B2B3D),
-                                        Color(0xFF05121D)
-                                    )
-                                )
-                            )
-                            .padding(14.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(ArcCyan.copy(alpha = 0.15f))
-                                        .border(1.dp, ArcCyanBright, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    JarvisHologramReactor(sizeDp = 34)
-                                }
-
-                                Spacer(modifier = Modifier.width(12.dp))
-
-                                Column {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = "J.A.R.V.I.S. AUTOPILOT",
-                                            style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = FontFamily.Monospace,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                letterSpacing = 1.2.sp
-                                            ),
-                                            color = ArcCyanBright
-                                        )
-                                    }
-                                    Text(
-                                        text = "Autonomous Acoustic Stream",
-                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.5.sp
-                                        ),
-                                        color = TextPrimary,
-                                        modifier = Modifier.padding(top = 1.dp)
-                                    )
-                                    Text(
-                                        text = "${uiState.autopilotTargetSinger} • ${uiState.autopilotTargetGenre}",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontSize = 10.sp
-                                        ),
-                                        color = ArcCyan.copy(alpha = 0.8f),
-                                        modifier = Modifier.padding(top = 1.dp)
-                                    )
-                                }
-                            }
-
-                            Button(
-                                onClick = { homeViewModel.playAutopilotMix() },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = ArcCyan,
-                                    contentColor = Color(0xFF05101A)
-                                ),
-                                shape = RoundedCornerShape(20.dp),
-                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
-                                enabled = !uiState.isAutopilotEngaging
-                            ) {
-                                if (uiState.isAutopilotEngaging) {
-                                    CircularProgressIndicator(
-                                        modifier = Modifier.size(14.dp),
-                                        color = Color(0xFF05101A),
-                                        strokeWidth = 2.dp
-                                    )
-                                } else {
-                                    Icon(
-                                        imageVector = Icons.Default.PlayArrow,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "ENGAGE",
-                                        style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            letterSpacing = 0.6.sp
-                                        )
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 4. Active Mood Picks (when a mood filter other than 'All' is active)
-            if (uiState.selectedMood != "All" && uiState.moodTracks.isNotEmpty()) {
-                item {
-                    Spacer(modifier = Modifier.height(20.dp))
-                    SpotifySectionHeader(
-                        title = "${uiState.selectedMood} Picks",
-                        subtitle = "Curated tracks matching your active vibe"
-                    )
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(14.dp),
-                        modifier = Modifier
-                            .padding(top = 10.dp)
-                            .isolateHorizontalScroll()
-                    ) {
-                        items(uiState.moodTracks, key = { "mood_${it.id}" }) { track ->
-                            SpotifyRecommendationCard(
-                                track = track,
-                                onClick = { homeViewModel.playTrackWithSuggestionQueue(track, uiState.moodTracks) },
-                                onOptionsClick = { selectedTrackForOptions = track }
-                            )
-                        }
-                    }
-                }
-            }
-
-            // 5. Jump Back In (Recently played / resume listening)
+            // 3. Jump Back In (Recently played / resume listening - placed prominently right after quick tiles)
             if (uiState.jumpBackInTracks.isNotEmpty()) {
                 item {
-                    Spacer(modifier = Modifier.height(22.dp))
+                    Spacer(modifier = Modifier.height(18.dp))
                     SpotifySectionHeader(
                         title = "Jump back in",
                         subtitle = "Pick up where you left off"
@@ -658,6 +420,152 @@ fun HomeScreen(
                                 onClick = { homeViewModel.playTrackWithSuggestionQueue(track, uiState.jumpBackInTracks) },
                                 onOptionsClick = { selectedTrackForOptions = track }
                             )
+                        }
+                    }
+                }
+            }
+
+            // 4. AI DJ / SatvikX Autopilot Mix
+            item {
+                Spacer(modifier = Modifier.height(20.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF182230),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                        .clickable { homeViewModel.playAutopilotMix() }
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                Brush.horizontalGradient(
+                                    colors = listOf(
+                                        Color(0xFF1B2433),
+                                        Color(0xFF161D29),
+                                        Color(0xFF12161E)
+                                    )
+                                )
+                            )
+                            .padding(horizontal = 16.dp, vertical = 14.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(44.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF0D2538)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = "DJ",
+                                        tint = SpotifyGreen,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(14.dp))
+
+                                Column {
+                                    Text(
+                                        text = "AI DJ",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.2.sp,
+                                            fontSize = 10.5.sp
+                                        ),
+                                        color = SpotifyGreen
+                                    )
+                                    Text(
+                                        text = "SatvikX Autopilot Mix",
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp
+                                        ),
+                                        color = Color.White,
+                                        modifier = Modifier.padding(top = 1.dp)
+                                    )
+                                    Text(
+                                        text = "${uiState.autopilotTargetSinger} • ${uiState.autopilotTargetGenre}",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 11.sp
+                                        ),
+                                        color = TextSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(top = 1.dp)
+                                    )
+                                }
+                            }
+
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(SpotifyGreen)
+                                    .clickable { homeViewModel.playAutopilotMix() },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (uiState.isAutopilotEngaging) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        color = Color.Black,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    OpticallyCenteredPlayIcon(
+                                        modifier = Modifier.size(15.dp),
+                                        tint = Color.Black
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Active Mood Picks (when a mood filter other than 'All' is active)
+            if (uiState.selectedMood != "All") {
+                if (uiState.isLoadingMood) {
+                    item {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        SpotifySectionHeader(
+                            title = "${uiState.selectedMood} Picks",
+                            subtitle = "Fetching fresh curated tracks for you..."
+                        )
+                        ShimmerTrackList(count = 4, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+                    }
+                } else if (uiState.moodTracks.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(20.dp))
+                        SpotifySectionHeader(
+                            title = "${uiState.selectedMood} Picks",
+                            subtitle = "Curated tracks matching your active vibe"
+                        )
+                        LazyRow(
+                            contentPadding = PaddingValues(horizontal = 16.dp),
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier
+                                .padding(top = 10.dp)
+                                .isolateHorizontalScroll()
+                        ) {
+                            items(uiState.moodTracks, key = { "mood_${it.id}" }) { track ->
+                                SpotifyRecommendationCard(
+                                    track = track,
+                                    onClick = { homeViewModel.playTrackWithSuggestionQueue(track, uiState.moodTracks) },
+                                    onOptionsClick = { selectedTrackForOptions = track }
+                                )
+                            }
                         }
                     }
                 }
@@ -984,12 +892,11 @@ private fun SpotifyQuickTile(
     val thumbSize = if (isNarrow) 48.dp else 56.dp
 
     Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = StarkSurface.copy(alpha = 0.85f),
-        border = androidx.compose.foundation.BorderStroke(0.8.dp, StarkBorder),
+        shape = RoundedCornerShape(6.dp),
+        color = Color(0xFF282828),
         modifier = modifier
             .defaultMinSize(minHeight = thumbSize)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(RoundedCornerShape(6.dp))
             .clickable(onClick = onClick)
     ) {
         Row(
@@ -1004,6 +911,7 @@ private fun SpotifyQuickTile(
                     Box(
                         modifier = Modifier
                             .size(thumbSize)
+                            .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
                             .background(
                                 Brush.linearGradient(
                                     colors = listOf(Color(0xFF450AF5), Color(0xFF8E8EE5))
@@ -1023,6 +931,7 @@ private fun SpotifyQuickTile(
                     Box(
                         modifier = Modifier
                             .size(thumbSize)
+                            .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
                             .background(
                                 Brush.linearGradient(
                                     tile.mix.gradientColors.map { Color(it) }
@@ -1052,6 +961,7 @@ private fun SpotifyQuickTile(
                     Box(
                         modifier = Modifier
                             .size(thumbSize)
+                            .clip(RoundedCornerShape(topStart = 6.dp, bottomStart = 6.dp))
                             .background(Color(0xFF1E1E1E)),
                         contentAlignment = Alignment.Center
                     ) {
@@ -1078,7 +988,7 @@ private fun SpotifyQuickTile(
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(horizontal = if (isNarrow) 6.dp else 8.dp),
+                    .padding(horizontal = if (isNarrow) 8.dp else 10.dp),
                 verticalArrangement = Arrangement.Center
             ) {
                 val title = when (tile) {
@@ -1112,22 +1022,20 @@ private fun SpotifyQuickTile(
                 )
             }
 
-            // Spotify Signature Play Button on Right Edge (hidden on narrow devices to preserve full title width)
+            // Spotify Signature Play Button on Right Edge
             if (!isNarrow) {
                 Box(
                     modifier = Modifier
                         .padding(end = 8.dp)
-                        .size(26.dp)
+                        .size(30.dp)
                         .clip(CircleShape)
                         .background(SpotifyGreen)
                         .clickable(onClick = onClick),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = "Play",
-                        tint = Color.Black,
-                        modifier = Modifier.size(15.dp)
+                    OpticallyCenteredPlayIcon(
+                        modifier = Modifier.size(14.dp),
+                        tint = Color.Black
                     )
                 }
             }
@@ -1190,13 +1098,13 @@ private fun SpotifyRecommendationCard(
             .width(148.dp)
             .clickable(onClick = onClick)
     ) {
-        // Square artwork with 8dp rounded corners and floating play button
+        // Square artwork with 6dp rounded corners and floating play button
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFF1E1E1E)),
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF282828)),
             contentAlignment = Alignment.BottomEnd
         ) {
             if (track.thumbnailUrl.isNotBlank()) {
@@ -1223,18 +1131,16 @@ private fun SpotifyRecommendationCard(
             // Spotify Green floating play button
             Box(
                 modifier = Modifier
-                    .padding(8.dp)
-                    .size(32.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 8.dp, bottom = 8.dp)
+                    .size(34.dp)
                     .clip(CircleShape)
-                    .background(SpotifyGreen)
-                    .shadow(4.dp, CircleShape),
+                    .background(SpotifyGreen),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Play",
-                    tint = Color.Black,
-                    modifier = Modifier.size(18.dp)
+                OpticallyCenteredPlayIcon(
+                    modifier = Modifier.size(15.dp),
+                    tint = Color.Black
                 )
             }
         }
@@ -1283,7 +1189,7 @@ private fun SpotifyRecommendationCard(
 }
 
 /**
- * Spotify Signature Daily Mix Card with bottom stripe and artist list
+ * Spotify Signature Daily Mix Card with rich 2x2 collage cover, bottom accent stripe, and artist list
  */
 @Composable
 private fun SpotifyDailyMixCard(
@@ -1291,9 +1197,28 @@ private fun SpotifyDailyMixCard(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val thumbs = remember(mix.tracks) {
+        mix.tracks
+            .mapNotNull { it.thumbnailUrl.takeIf { t -> t.isNotBlank() && t.startsWith("http") } }
+            .distinct()
+            .take(4)
+    }
+
+    val accentColor = remember(mix.id) {
+        when (mix.id) {
+            "mix_1" -> Color(0xFFFF4632) // Spotify Coral / Red
+            "mix_2" -> Color(0xFF00D2FF) // Spotify Electric Cyan
+            "mix_3" -> Color(0xFFA855F7) // Spotify Vivid Violet
+            "mix_4" -> Color(0xFF1ED760) // Spotify Electric Green
+            "mix_5" -> Color(0xFFFFB300) // Spotify Amber Gold
+            else -> Color(0xFF1ED760)
+        }
+    }
+
     Column(
         modifier = modifier
             .width(156.dp)
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
     ) {
         // Daily Mix Artwork Box
@@ -1313,44 +1238,85 @@ private fun SpotifyDailyMixCard(
                 ),
             contentAlignment = Alignment.BottomEnd
         ) {
-            // First track thumbnail overlay
-            val firstThumb = mix.tracks.firstOrNull { it.thumbnailUrl.isNotBlank() }?.thumbnailUrl
-            if (!firstThumb.isNullOrBlank()) {
+            if (thumbs.size >= 4) {
+                // Authentic Spotify 2x2 Artwork Collage
+                Column(modifier = Modifier.fillMaxSize().background(Color(0xFF242424))) {
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AsyncImage(
+                            model = thumbs[0],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF282828))
+                        )
+                        AsyncImage(
+                            model = thumbs[1],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF333333))
+                        )
+                    }
+                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        AsyncImage(
+                            model = thumbs[2],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF333333))
+                        )
+                        AsyncImage(
+                            model = thumbs[3],
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.weight(1f).fillMaxHeight().background(Color(0xFF282828))
+                        )
+                    }
+                }
+            } else if (thumbs.isNotEmpty()) {
+                // Crisp single lead cover art with full opacity
                 AsyncImage(
-                    model = firstThumb,
+                    model = thumbs.first(),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .alpha(0.65f)
+                    modifier = Modifier.fillMaxSize()
                 )
-                // Dark scrim over image
+            } else {
+                // Stylized musical waveform placeholder
                 Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Black.copy(alpha = 0.8f)
-                                )
-                            )
-                        )
-                )
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.85f),
+                        modifier = Modifier.size(48.dp)
+                    )
+                }
             }
+
+            // Subtle bottom gradient shadow for text/button legibility
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(60.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.65f))
+                        )
+                    )
+            )
 
             // Top Daily Mix Pill Badge
             Box(
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 7.dp, vertical = 3.dp)
             ) {
                 Text(
                     text = "DAILY MIX",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 8.5.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 0.8.sp
@@ -1359,34 +1325,28 @@ private fun SpotifyDailyMixCard(
                 )
             }
 
-            // Spotify Signature Bottom Colored Accent Stripe
+            // Spotify Signature Bottom Solid Colored Accent Stripe
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
                     .fillMaxWidth()
-                    .height(4.dp)
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(SpotifyGreen, ArcCyanBright, StarkGold)
-                        )
-                    )
+                    .height(5.dp)
+                    .background(accentColor)
             )
 
-            // Floating circular Spotify Green Play Button
+            // Floating circular Spotify Green Play Button (optically centered!)
             Box(
                 modifier = Modifier
-                    .padding(8.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 8.dp, bottom = 8.dp)
                     .size(34.dp)
                     .clip(CircleShape)
-                    .background(SpotifyGreen)
-                    .shadow(4.dp, CircleShape),
+                    .background(SpotifyGreen),
                 contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.PlayArrow,
-                    contentDescription = "Play Mix",
-                    tint = Color.Black,
-                    modifier = Modifier.size(18.dp)
+                OpticallyCenteredPlayIcon(
+                    modifier = Modifier.size(15.dp),
+                    tint = Color.Black
                 )
             }
         }
@@ -1431,15 +1391,14 @@ private fun SpotifyArtistCard(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
-            .width(110.dp)
+            .width(115.dp)
             .clickable(onClick = onClick)
     ) {
         Box(
             modifier = Modifier
-                .size(105.dp)
+                .size(110.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF242424))
-                .border(1.5.dp, SurfaceElevated, CircleShape),
+                .background(Color(0xFF242424)),
             contentAlignment = Alignment.Center
         ) {
             if (!artist.imageUrl.isNullOrBlank()) {

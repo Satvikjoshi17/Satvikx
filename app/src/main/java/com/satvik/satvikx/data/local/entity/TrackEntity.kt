@@ -106,7 +106,10 @@ fun TrackEntity.isSongOnly(allowMashup: Boolean = false): Boolean {
         "how to get", "fitness routine", "workout plan", "tutorial", "how to", "guide for beginners",
         "walkthrough", "step by step", "full course", "gameplay", "playthrough", "unboxing",
         "reaction video", "reaction to", "podcast episode", "full podcast", "interview with",
-        "official trailer", "teaser trailer", "full movie", "behind the scenes"
+        "official trailer", "teaser trailer", "full movie", "behind the scenes",
+        " scene |", " scene -", " movie scene", " film scene", " tv show", " netflix",
+        "deleted scene", "climax scene", "full episode", "episode 1", "bloopers",
+        "still watching netflix"
     )
     if (nonMusicKeywords.any { titleLower.contains(it) }) return false
 
@@ -177,7 +180,16 @@ fun isRecordLabelOrChannel(name: String): Boolean {
         lower.contains("yrf") ||
         lower.contains("records") ||
         lower.contains("entertainment") ||
-        lower.contains("channel")
+        lower.contains("channel") ||
+        lower.contains("studio") ||
+        lower.contains("lyrics") ||
+        lower.contains("status") ||
+        lower.contains("creation") ||
+        lower.contains("creations") ||
+        lower.contains("netflix") ||
+        lower.contains("prime video") ||
+        lower.contains("disney") ||
+        lower.contains("movieclips")
 }
 
 /**

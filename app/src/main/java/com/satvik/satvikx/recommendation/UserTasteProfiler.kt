@@ -9,6 +9,7 @@ import com.satvik.satvikx.data.local.entity.getEffectiveArtists
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.exp
@@ -157,7 +158,9 @@ class UserTasteProfiler @Inject constructor(
             .take(15)
 
         val primaryArtist = rankedArtists.getOrNull(0) ?: "Arijit Singh"
-        val secondaryArtist = rankedArtists.getOrNull(1) ?: "The Weeknd"
+        val secondaryArtist = rankedArtists.getOrNull(1)
+            ?: CandidateRetrievalEngine.COLLABORATOR_MAP[primaryArtist.lowercase(Locale.ROOT)]?.firstOrNull()
+            ?: "The Weeknd"
         val primaryGenre = rankedGenres.firstOrNull() ?: "acoustic"
 
         LongTermProfile(

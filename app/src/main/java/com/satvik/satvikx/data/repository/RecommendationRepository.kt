@@ -15,6 +15,7 @@ import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.remote.saavn.SaavnMediaEngine
 import com.satvik.satvikx.recommendation.AdaptiveSessionManager
 import com.satvik.satvikx.recommendation.CandidateRetrievalEngine
+import com.satvik.satvikx.recommendation.CuratedDiscoveryCatalog
 import com.satvik.satvikx.recommendation.HumanCuratedQueueSequencer
 import com.satvik.satvikx.recommendation.LongTermProfile
 import com.satvik.satvikx.recommendation.RankingScoringEngine
@@ -231,6 +232,29 @@ class RecommendationRepository @Inject constructor(
     // NEXT-GEN ALGORITHMIC QUEUE GENERATION
     // ==========================================
 
+    private val prewarmedCandidateCache = java.util.concurrent.ConcurrentHashMap<String, List<TrackEntity>>()
+
+    /**
+     * Pre-warms the candidate pool in the background (triggered at 60% playback progress).
+     * Retrieves and caches the 300+ candidate tracks so subsequent queue extensions
+     * take 0ms instead of waiting for network harvesting.
+     */
+    suspend fun prewarmCandidates(seedTrack: TrackEntity) = withContext(Dispatchers.IO) {
+        try {
+            val sessionProfile = adaptiveSessionManager.getSessionProfile()
+            val longTermProfile = userTasteProfiler.computeLongTermProfile()
+            val pool = candidateRetrievalEngine.retrieveCandidates(seedTrack, sessionProfile, longTermProfile)
+            if (pool.isNotEmpty()) {
+                prewarmedCandidateCache[seedTrack.id] = pool
+                android.util.Log.d("RecommendationRepo", "Pre-warmed ${pool.size} candidates in background for ${seedTrack.title}")
+            }
+        } catch (e: Exception) {
+            if (e !is kotlinx.coroutines.CancellationException) {
+                android.util.Log.w("RecommendationRepo", "Non-fatal background candidate pre-warming error: ${e.message}")
+            }
+        }
+    }
+
     /**
      * Generates a tailored, human-curated algorithmic queue for a base track.
      * Enforces all constraints:
@@ -242,7 +266,9 @@ class RecommendationRepository @Inject constructor(
      */
     suspend fun generateRecommendationQueue(
         baseTrack: TrackEntity,
-        limit: Int = 15
+        limit: Int = 15,
+        excludeTrackIds: Set<String> = emptySet(),
+        forceFresh: Boolean = false
     ): List<TrackEntity> = withContext(Dispatchers.IO) {
         adaptiveSessionManager.onTrackStarted(baseTrack)
         recordRecommendedTrack(baseTrack)
@@ -255,11 +281,13 @@ class RecommendationRepository @Inject constructor(
             emptyList()
         }
 
-        // 1. Parallel Candidate Harvesting (>= 300 Candidates Target)
-        val rawCandidates = candidateRetrievalEngine.retrieveCandidates(
+        // 1. Parallel Candidate Harvesting (Check pre-warmed candidate pool cache first for instant retrieval)
+        val cachedPool = if (!forceFresh) prewarmedCandidateCache.remove(baseTrack.id) else null
+        val rawCandidates = cachedPool ?: candidateRetrievalEngine.retrieveCandidates(
             seedTrack = baseTrack,
             sessionProfile = sessionProfile,
-            longTermProfile = longTermProfile
+            longTermProfile = longTermProfile,
+            forceFresh = forceFresh
         )
 
         // 2. Candidate Hygiene Filtering
@@ -274,6 +302,7 @@ class RecommendationRepository @Inject constructor(
             !candidate.isSameSong(baseTrack) &&
             candidate.isSongOnly() &&
             candidate.id !in skippedTrackIds &&
+            candidate.id !in excludeTrackIds &&
             !isExcludedFromSession(candidate) &&
             recentHistory.none { it.isSameSong(candidate) }
         }.distinctSongs()
@@ -286,23 +315,45 @@ class RecommendationRepository @Inject constructor(
                 !candidate.isSameSong(baseTrack) &&
                 candidate.isSongOnly() &&
                 candidate.id !in skippedTrackIds &&
+                candidate.id !in excludeTrackIds &&
                 relaxedRecent.none { it.isSameSong(candidate) }
             }.distinctSongs()
         }
 
+        // If still insufficient (e.g. all candidates in current pool were excluded or network was limited), supplement with fresh seeds
+        if (hygieneCandidates.size < 12) {
+            val supplementalSeeds = CuratedDiscoveryCatalog.ALL_SEEDS
+                .shuffled()
+                .map { it.toTrackEntity() }
+                .filter { candidate ->
+                    candidate.id != baseTrack.id &&
+                    !candidate.isSameSong(baseTrack) &&
+                    candidate.id !in excludeTrackIds &&
+                    candidate.id !in skippedTrackIds
+                }
+            hygieneCandidates = (hygieneCandidates + supplementalSeeds).distinctSongs()
+        }
+
         // 3. Multi-Objective Probability Ranking
+        val nativeRelatedIds = candidateRetrievalEngine.getNativeIdsForSeed(baseTrack.id)
+            .ifEmpty { candidateRetrievalEngine.lastHarvestedNativeIds }
+
         val scoredList = rankingScoringEngine.scoreAndRankCandidates(
             candidates = hygieneCandidates,
             sessionProfile = sessionProfile,
             longTermProfile = longTermProfile,
-            recentHistory = recentHistory
+            recentHistory = recentHistory,
+            forceFresh = forceFresh,
+            nativeRelatedIds = nativeRelatedIds
         )
 
-        // 4. Human-Curated Queue Sequencing (80/20 Pacing + Diversity Constraints)
+        // 4. Human-Curated Queue Sequencing (Elastic Discovery Cadence + Diversity + DJ Flow)
         val sequencedQueue = queueSequencer.sequenceQueue(
             scoredCandidates = scoredList,
             seedTrack = baseTrack,
-            limit = limit
+            limit = limit,
+            sessionProfile = sessionProfile,
+            isNewUser = longTermProfile.isNewUser
         )
 
         sequencedQueue.forEach { recordRecommendedTrack(it) }
@@ -310,17 +361,44 @@ class RecommendationRepository @Inject constructor(
     }
 
     /**
+     * Fast (< 100ms) Immediate Autopilot Seeds:
+     * Immediately returns 3-5 tracks the user actually loves from heavy rotation, liked songs,
+     * or recent playback so AI DJ starts playing instantly without waiting for network.
+     */
+    suspend fun getImmediateAutopilotSeeds(count: Int = 5): List<TrackEntity> = withContext(Dispatchers.IO) {
+        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+        val liked = likedPlaylist?.let { playlistDao.getPlaylistWithTracksSync(it.playlistId)?.tracks }.orEmpty()
+        val heavy = recentPlaybackDao.getHeavyRotationTracksSync(25)
+        val recent = recentPlaybackDao.getRecentTracksSync(25)
+
+        val candidateSeeds = (heavy + liked + recent)
+            .filter { it.isSongOnly() }
+            .distinctSongs()
+
+        if (candidateSeeds.isNotEmpty()) {
+            candidateSeeds.shuffled().take(count)
+        } else {
+            MASTER_CURATED_TRACKS.shuffled().take(count).map { it.toTrackEntity() }
+        }
+    }
+
+    /**
      * Continuous Smart Autopilot Generator.
+     * Strictly anchors to user's true lifetime favorite artist and highest-affinity tracks,
+     * completely eliminating unrelated low-quality uploader channels.
      */
     suspend fun generateAutopilotQueue(limit: Int = 35): List<TrackEntity> = withContext(Dispatchers.IO) {
         val longTermProfile = userTasteProfiler.computeLongTermProfile()
         val sessionProfile = adaptiveSessionManager.getSessionProfile()
-        val primaryArtist = sessionProfile.sessionTracks.lastOrNull()?.cleanArtistName()
-            ?: longTermProfile.primaryArtist
 
-        val anchorTrack = sessionProfile.sessionTracks.lastOrNull()
-            ?: longTermProfile.heavyRotationTracks.firstOrNull()
+        // Prioritize verified favorite artist from longTermProfile over ephemeral uploader/random tracks
+        val primaryArtist = longTermProfile.primaryArtist.ifBlank {
+            longTermProfile.topArtists.firstOrNull() ?: sessionProfile.sessionTracks.lastOrNull()?.cleanArtistName().orEmpty()
+        }.ifBlank { "Arijit Singh" }
+
+        val anchorTrack = longTermProfile.heavyRotationTracks.firstOrNull()
             ?: longTermProfile.vaultTracks.firstOrNull()
+            ?: sessionProfile.sessionTracks.firstOrNull()
             ?: TrackEntity(
                 id = "anchor_seed",
                 title = "$primaryArtist Signature Anthem",
@@ -330,6 +408,15 @@ class RecommendationRepository @Inject constructor(
             )
 
         generateRecommendationQueue(anchorTrack, limit)
+    }
+
+    /**
+     * Fetches dedicated mood tracks quickly in a single targeted request.
+     */
+    suspend fun fetchMoodTracks(mood: String): List<TrackEntity> = withContext(Dispatchers.IO) {
+        val query = getQueryForMood(mood)
+        val raw = fetchRecommendationFeedTracks(query, mood)
+        raw.filter { it.isSongOnly() }.distinctSongs()
     }
 
     fun detectAcousticVibe(title: String, artist: String): AcousticVibeInfo {
@@ -357,16 +444,32 @@ class RecommendationRepository @Inject constructor(
                 playlistDao.getPlaylistWithTracksSync(it.playlistId)?.tracks
             } ?: cached.likedTracks
 
-            val jumpBackIn = recentPlaybackDao.getRecentTracksSync(15)
+            val jumpBackIn = recentPlaybackDao.getRecentTracksSync(25)
                 .distinctBy { it.id }
-                .filter { it.isSongOnly() }
+                .filter { it.id.isNotBlank() && it.title.isNotBlank() }
                 .ifEmpty { cached.jumpBackInTracks }
+
+            val userListened = (jumpBackIn + cached.heavyRotationTracks + likedTracks + cached.vaultFavoritesTracks)
+                .filter { it.isSongOnly() }
+                .distinctSongs()
+
+            val updatedQuickPicks = if (userListened.isNotEmpty()) {
+                (userListened + cached.quickPicks).distinctSongs().take(6)
+            } else cached.quickPicks
+
+            val listenedIds = userListened.map { it.id }.toSet()
+            val updatedMixes = cached.dailyMixes.map { mix ->
+                val unlistened = mix.tracks.filter { it.id !in listenedIds && userListened.none { u -> u.isSameSong(it) } }
+                if (unlistened.isNotEmpty()) mix.copy(tracks = unlistened) else mix
+            }
 
             cached.copy(
                 timeOfDayTitle = timeTitle,
                 timeOfDaySubtitle = timeSubtitle,
                 likedTracks = likedTracks,
-                jumpBackInTracks = jumpBackIn
+                jumpBackInTracks = jumpBackIn,
+                quickPicks = updatedQuickPicks,
+                dailyMixes = updatedMixes
             )
         } catch (_: Exception) {
             cached
@@ -387,15 +490,57 @@ class RecommendationRepository @Inject constructor(
             .take(count)
     }
 
-    private suspend fun fetchRecommendationFeedTracks(rawQuery: String, fallbackKey: String): List<TrackEntity> {
+    private fun isArtistCoherent(track: TrackEntity, targetArtist: String): Boolean {
+        val cleanTarget = targetArtist.trim().lowercase(Locale.ROOT)
+        if (cleanTarget.isBlank() || cleanTarget.length < 2) return true
+        val trackArtist = track.artist.trim().lowercase(Locale.ROOT)
+        val trackTitle = track.title.trim().lowercase(Locale.ROOT)
+
+        // 1. Direct or substring match on artist field or title
+        if (trackArtist.contains(cleanTarget) || cleanTarget.contains(trackArtist)) return true
+        if (trackTitle.contains(cleanTarget)) return true
+
+        // 2. Check effective artists list
+        val effective = track.getEffectiveArtists().map { it.lowercase(Locale.ROOT) }
+        if (effective.any { it.contains(cleanTarget) || cleanTarget.contains(it) }) return true
+
+        // 3. Check verified collaborators
+        val collaborators = CandidateRetrievalEngine.COLLABORATOR_MAP[cleanTarget]?.map { it.lowercase(Locale.ROOT) } ?: emptyList()
+        if (collaborators.any { collab -> trackArtist.contains(collab) || trackTitle.contains(collab) || effective.any { it.contains(collab) } }) {
+            return true
+        }
+
+        // 4. Guard against first-name token collisions (e.g. "Nisha Chaudhary" when target is "Nisha Zafar")
+        val targetTokens = cleanTarget.split(" ").filter { it.length >= 2 }
+        if (targetTokens.size >= 2) {
+            val lastName = targetTokens.last()
+            if (!trackArtist.contains(lastName) && !trackTitle.contains(lastName) && !effective.any { it.contains(lastName) }) {
+                return false
+            }
+        }
+
+        return false
+    }
+
+    private suspend fun fetchRecommendationFeedTracks(
+        rawQuery: String,
+        fallbackKey: String,
+        targetArtistFilter: String? = null
+    ): List<TrackEntity> {
         val fromSearch = try {
             withTimeoutOrNull(5500L) {
                 streamRepository.searchTracks(rawQuery).firstOrNull()?.getOrNull()
             }
         } catch (_: Exception) { null }
 
-        if (!fromSearch.isNullOrEmpty()) {
-            return fromSearch
+        val filteredSearch = if (targetArtistFilter != null && !fromSearch.isNullOrEmpty()) {
+            fromSearch.filter { isArtistCoherent(it, targetArtistFilter) }
+        } else {
+            fromSearch.orEmpty()
+        }
+
+        if (filteredSearch.size >= 3) {
+            return filteredSearch
         }
 
         val cleanQuery = rawQuery
@@ -411,9 +556,19 @@ class RecommendationRepository @Inject constructor(
             }
         } catch (_: Exception) { null }
 
-        if (!fromSaavn.isNullOrEmpty()) {
-            trackDao.insertTracks(fromSaavn)
-            return fromSaavn
+        val filteredSaavn = if (targetArtistFilter != null && !fromSaavn.isNullOrEmpty()) {
+            fromSaavn.filter { isArtistCoherent(it, targetArtistFilter) }
+        } else {
+            fromSaavn.orEmpty()
+        }
+
+        if (filteredSaavn.isNotEmpty()) {
+            trackDao.insertTracks(filteredSaavn)
+            return filteredSaavn
+        }
+
+        if (filteredSearch.isNotEmpty()) {
+            return filteredSearch
         }
 
         return getCuratedFallbackTracks(fallbackKey, 10)
@@ -429,14 +584,30 @@ class RecommendationRepository @Inject constructor(
             "Diljit Dosanjh", "Drake", "Ed Sheeran", "Sidhu Moose Wala", "Anuv Jain", "Linkin Park",
             "Karan Aujla", "Post Malone", "Pritam", "Dua Lipa", "AP Dhillon", "Bruno Mars"
         )
-        val candidateArtists = (allUserArtists.take(6) + fallbackFlagshipArtists).distinct()
 
-        val primaryArtist = candidateArtists.shuffled().firstOrNull() ?: "Arijit Singh"
-        val secondaryArtist = candidateArtists.filter { !it.equals(primaryArtist, ignoreCase = true) }.shuffled().firstOrNull() ?: "The Weeknd"
+        // 1. Strictly prioritize user's actual favorite artist over hardcoded fallbacks
+        val primaryArtist = if (allUserArtists.isNotEmpty()) {
+            affinities.primaryArtist ?: allUserArtists[0]
+        } else {
+            fallbackFlagshipArtists.shuffled().firstOrNull() ?: "Arijit Singh"
+        }
 
-        val candidateGenres = (affinities.topGenres.take(4) + listOf("bollywood", "pop", "acoustic", "rock", "punjabi", "indie", "synthwave")).distinct()
-        val categoryGenre = candidateGenres.shuffled().firstOrNull() ?: "pop"
-        val discoveryGenre = candidateGenres.filter { !it.equals(categoryGenre, ignoreCase = true) }.shuffled().firstOrNull() ?: "chill acoustic"
+        val secondaryArtist = if (allUserArtists.size > 1) {
+            affinities.secondaryArtist ?: allUserArtists[1]
+        } else if (allUserArtists.isNotEmpty()) {
+            val collaborators = CandidateRetrievalEngine.COLLABORATOR_MAP[primaryArtist.lowercase(Locale.ROOT)]
+            collaborators?.shuffled()?.firstOrNull()
+                ?: fallbackFlagshipArtists.firstOrNull { !it.equals(primaryArtist, ignoreCase = true) }
+                ?: "The Weeknd"
+        } else {
+            fallbackFlagshipArtists.filter { !it.equals(primaryArtist, ignoreCase = true) }.shuffled().firstOrNull() ?: "The Weeknd"
+        }
+
+        val categoryGenre = affinities.primaryGenre
+            ?: affinities.topGenres.firstOrNull()
+            ?: "bollywood"
+        val discoveryGenre = affinities.topGenres.getOrNull(1)
+            ?: if (categoryGenre.equals("bollywood", ignoreCase = true)) "punjabi" else "acoustic"
 
         val becauseLikedQuery = "$primaryArtist songs official audio"
         val similarArtistQuery = "$secondaryArtist songs official audio"
@@ -444,14 +615,29 @@ class RecommendationRepository @Inject constructor(
         val categoryQuery = "$categoryGenre songs official audio"
         val moodQuery = getQueryForMood(selectedMood)
 
-        val becauseLikedDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(becauseLikedQuery, primaryArtist) }
-        val similarArtistDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(similarArtistQuery, secondaryArtist) }
+        val isIndian = CandidateRetrievalEngine.isIndianContext(TrackEntity(id = "", title = "", artist = primaryArtist, durationSeconds = 0, thumbnailUrl = ""))
+
+        val becauseLikedDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(becauseLikedQuery, primaryArtist, targetArtistFilter = primaryArtist) }
+        val similarArtistDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(similarArtistQuery, secondaryArtist, targetArtistFilter = secondaryArtist) }
         val discoveryDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(discoveryQuery, discoveryGenre) }
         val categoryDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(categoryQuery, categoryGenre) }
         val moodDeferred = async(Dispatchers.IO) { fetchRecommendationFeedTracks(moodQuery, selectedMood) }
         val trendingDeferred = async(Dispatchers.IO) {
-            val trendingQueries = listOf("Top Global Hits Music", "Billboard Hot 100 Official", "Viral Hits Songs", "Top Trending Songs official audio")
-            fetchRecommendationFeedTracks(trendingQueries.random(), "bollywood")
+            val trendingQueries = if (isIndian) {
+                listOf(
+                    "Top Hindi Hits Songs 2026",
+                    "Trending Bollywood Songs",
+                    "Top Punjabi Songs Chartbusters",
+                    "Trending Indian Audio Hits"
+                )
+            } else {
+                listOf(
+                    "Top Global Hits Music",
+                    "Billboard Hot 100 Official Audio",
+                    "Trending Hit Songs 2026"
+                )
+            }
+            fetchRecommendationFeedTracks(trendingQueries.random(), primaryArtist)
         }
 
         val becauseLikedTracks = becauseLikedDeferred.await().filter { it.isSongOnly() }.distinctSongs()
@@ -461,39 +647,71 @@ class RecommendationRepository @Inject constructor(
         val moodTracks = moodDeferred.await().filter { it.isSongOnly() }.distinctSongs()
         val trendingTracks = trendingDeferred.await().filter { it.isSongOnly() }.distinctSongs()
 
-        val quickPicks = (affinities.heavyRotationTracks.shuffled() + affinities.vaultTracks.shuffled() + trendingTracks.shuffled() + MASTER_CURATED_TRACKS.shuffled().map { it.toTrackEntity() })
-            .filter { it.isSongOnly() }
-            .distinctSongs()
-            .take(6)
-
-        val dailyMix1Tracks = (becauseLikedTracks.shuffled().take(8) + affinities.heavyRotationTracks.shuffled().filter { it.isSongOnly() }.take(4))
-            .distinctSongs()
-            .ifEmpty { trendingTracks.shuffled().take(10) }
-
-        val dailyMix2Tracks = (similarArtistTracks.shuffled().take(8) + discoveryTracks.shuffled().take(4))
-            .distinctSongs()
-            .ifEmpty { trendingTracks.drop(4).shuffled().take(10) }
-
-        val dailyMix3Tracks = (discoveryTracks.shuffled().take(8) + moodTracks.shuffled().take(4))
-            .distinctSongs()
-            .ifEmpty { trendingTracks.shuffled().take(10) }
-
-        val dailyMix4Tracks = (categoryTracks.shuffled().take(8) + trendingTracks.shuffled().take(4))
-            .distinctSongs()
-            .ifEmpty { trendingTracks.shuffled().take(10) }
-
-        val dailyMix5Tracks = (moodTracks.shuffled().take(8) + categoryTracks.shuffled().take(4))
-            .distinctSongs()
-            .ifEmpty { trendingTracks.shuffled().take(10) }
+        val jumpBackIn = recentPlaybackDao.getRecentTracksSync(25)
+            .filter { it.id.isNotBlank() && it.title.isNotBlank() }
+            .distinctBy { it.id }
 
         val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
         val likedTracks = likedPlaylist?.let {
             playlistDao.getPlaylistWithTracksSync(it.playlistId)?.tracks
         } ?: emptyList()
 
-        val jumpBackIn = recentPlaybackDao.getRecentTracksSync(15)
+        // Assemble Quick Picks strictly prioritizing the songs the user ACTUALLY listens to:
+        val userListenedPool = (jumpBackIn + affinities.heavyRotationTracks + likedTracks + affinities.vaultTracks)
             .filter { it.isSongOnly() }
             .distinctSongs()
+
+        val quickPicks = (userListenedPool + becauseLikedTracks + trendingTracks)
+            .distinctSongs()
+            .take(6)
+
+        // Set of songs the user has already listened to or saved in library:
+        val listenedTrackIds = userListenedPool.map { it.id }.toSet()
+        val isUnlistened: (TrackEntity) -> Boolean = { track ->
+            track.id !in listenedTrackIds && userListenedPool.none { it.isSameSong(track) }
+        }
+
+        // Pools of FRESH, unlistened recommendations:
+        val unlistenedBecauseLiked = becauseLikedTracks.filter(isUnlistened)
+        val unlistenedSimilar = similarArtistTracks.filter(isUnlistened)
+        val unlistenedDiscovery = discoveryTracks.filter(isUnlistened)
+        val unlistenedCategory = categoryTracks.filter(isUnlistened)
+        val unlistenedMood = moodTracks.filter(isUnlistened)
+        val unlistenedTrending = trendingTracks.filter(isUnlistened)
+
+        // User listened songs ordered strictly by popularity (play count & repeat factor):
+        val heavyRotation = recentPlaybackDao.getHeavyRotationTracksSync(35)
+            .filter { it.isSongOnly() }
+            .distinctSongs()
+        val popularListenedTracks = (heavyRotation + likedTracks + jumpBackIn)
+            .filter { it.isSongOnly() }
+            .distinctSongs()
+
+        // Daily Mix 1: Unlistened fresh recommendations matching user's top artist
+        val dailyMix1Tracks = (unlistenedBecauseLiked + unlistenedSimilar + unlistenedDiscovery + unlistenedTrending)
+            .distinctSongs()
+            .ifEmpty { (becauseLikedTracks + discoveryTracks + trendingTracks).distinctSongs() }
+            .take(20)
+
+        // Daily Mix 2: Unlistened fresh discoveries from related artists & genre
+        val dailyMix2Tracks = (unlistenedSimilar + unlistenedDiscovery + unlistenedCategory + unlistenedTrending)
+            .distinctSongs()
+            .ifEmpty { (similarArtistTracks + discoveryTracks + trendingTracks).distinctSongs() }
+            .take(20)
+
+        // Daily Mix 3: High-Popularity Listened Tracks (Most Played & Heavy Rotation)
+        val dailyMix3Tracks = popularListenedTracks.take(20)
+            .ifEmpty { (jumpBackIn + trendingTracks).distinctSongs().take(20) }
+
+        // Daily Mix 4: Listened Popularity & Repeat Vault Favorites
+        val dailyMix4Tracks = popularListenedTracks.drop(5).take(20)
+            .ifEmpty { (likedTracks + jumpBackIn).distinctSongs().take(20) }
+
+        // Daily Mix 5: Balanced Mix of Popular Listened + Chill Discovery
+        val dailyMix5Tracks = (popularListenedTracks.shuffled().take(8) + unlistenedMood + unlistenedCategory)
+            .distinctSongs()
+            .ifEmpty { (trendingTracks + categoryTracks + moodTracks).distinctSongs() }
+            .take(20)
 
         val dailyMix1Artists = dailyMix1Tracks.map { it.artist }.distinct().take(3).joinToString(", ")
         val dailyMix2Artists = dailyMix2Tracks.map { it.artist }.distinct().take(3).joinToString(", ")

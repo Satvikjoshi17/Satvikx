@@ -34,7 +34,9 @@ data class LongTermProfile(
     val secondaryArtist: String = "The Weeknd",
     val primaryGenre: String = "acoustic",
     val profileGeneratedTimestamp: Long = System.currentTimeMillis()
-)
+) {
+    val isNewUser: Boolean get() = artistScores.isEmpty() && vaultTracks.isEmpty() && heavyRotationTracks.isEmpty()
+}
 
 /**
  * In-memory real-time session profile reflecting the user's active listening context.

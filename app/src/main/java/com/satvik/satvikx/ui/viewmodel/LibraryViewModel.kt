@@ -99,7 +99,7 @@ class LibraryViewModel @Inject constructor(
     }
 
     fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {
-        playbackConnectionManager.playTrack(track, playlist)
+        playbackConnectionManager.playTrack(track, playlist, isUserPlaylist = playlist.isNotEmpty())
     }
 
     fun downloadTrack(track: TrackEntity, quality: DownloadQuality? = null) {
@@ -114,7 +114,8 @@ class LibraryViewModel @Inject constructor(
         if (playlistWithTracks.tracks.isNotEmpty()) {
             playbackConnectionManager.playTrack(
                 playlistWithTracks.tracks.first(),
-                playlistWithTracks.tracks
+                playlistWithTracks.tracks,
+                isUserPlaylist = true
             )
         }
     }
@@ -124,7 +125,8 @@ class LibraryViewModel @Inject constructor(
             val shuffled = playlistWithTracks.tracks.shuffled()
             playbackConnectionManager.playTrack(
                 shuffled.first(),
-                shuffled
+                shuffled,
+                isUserPlaylist = true
             )
         }
     }
@@ -148,7 +150,7 @@ class LibraryViewModel @Inject constructor(
         val tracks = downloadedTracks.value
         if (tracks.isNotEmpty()) {
             val list = if (shuffled) tracks.shuffled() else tracks
-            playbackConnectionManager.playTrack(list.first(), list)
+            playbackConnectionManager.playTrack(list.first(), list, isUserPlaylist = true)
         }
     }
 
@@ -156,7 +158,7 @@ class LibraryViewModel @Inject constructor(
         val tracks = recentTracks.value
         if (tracks.isNotEmpty()) {
             val list = if (shuffled) tracks.shuffled() else tracks
-            playbackConnectionManager.playTrack(list.first(), list)
+            playbackConnectionManager.playTrack(list.first(), list, isUserPlaylist = false)
         }
     }
 

@@ -14,6 +14,7 @@ import com.satvik.satvikx.data.repository.MASTER_CURATED_TRACKS
 import com.satvik.satvikx.data.repository.StreamRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.withContext
@@ -46,7 +47,7 @@ class CandidateRetrievalEngine @Inject constructor(
 
     companion object {
         private const val TAG = "CandidateRetrieval"
-        private const val HARVEST_TIMEOUT_MS = 4500L
+        private const val HARVEST_TIMEOUT_MS = 3500L
         const val TARGET_CANDIDATE_POOL_SIZE = 300
 
         val COLLABORATOR_MAP = mapOf(
@@ -86,8 +87,33 @@ class CandidateRetrievalEngine @Inject constructor(
             "martin garrix" to listOf("alesso", "avicii", "tiesto", "david guetta", "zedd"),
             "coldplay" to listOf("the chainsmokers", "bts", "beyonce", "rihanna", "u2"),
             "kishore kumar" to listOf("mohammed rafi", "rd burman", "lata mangeshkar", "asha bhosle"),
-            "lata mangeshkar" to listOf("kishore kumar", "mohammed rafi", "mukesh", "asha bhosle")
+            "lata mangeshkar" to listOf("kishore kumar", "mohammed rafi", "mukesh", "asha bhosle", "manna dey"),
+            "manna dey" to listOf("lata mangeshkar", "mohammed rafi", "kishore kumar", "mukesh", "asha bhosle", "shankar-jaikishan", "hemant kumar"),
+            "mukesh" to listOf("lata mangeshkar", "manna dey", "kishore kumar", "mohammed rafi", "shankar-jaikishan", "kalyanji-anandji"),
+            "mohammed rafi" to listOf("lata mangeshkar", "asha bhosle", "kishore kumar", "manna dey", "mukesh", "op nayyar", "sd burman"),
+            "rd burman" to listOf("kishore kumar", "lata mangeshkar", "asha bhosle", "mohammed rafi"),
+            "asha bhosle" to listOf("rd burman", "mohammed rafi", "kishore kumar", "lata mangeshkar"),
+            "maithili thakur" to listOf("ravindra jain", "anup jalota", "hariharan", "anuradha paudwal", "swati mishra", "jubin nautiyal"),
+            "anup jalota" to listOf("ravindra jain", "hariharan", "anuradha paudwal", "maithili thakur"),
+            "ravindra jain" to listOf("yesudas", "anup jalota", "maithili thakur", "hemlata"),
+            "jagjit singh" to listOf("chitra singh", "ghulam ali", "pankaj udhas", "bhupinder singh")
         )
+
+        fun isIndianContext(track: TrackEntity): Boolean {
+            val text = "${track.title} ${track.artist}".lowercase(Locale.ROOT)
+            val markers = listOf(
+                "arijit", "pritam", "shreya", "atif", "jubin", "darshan", "sidhu", "karan aujla",
+                "diljit", "dosanjh", "ap dhillon", "shubh", "badshah", "honey singh", "mohit chauhan",
+                "kk", "sonu nigam", "shaan", "vishal", "shekhar", "anuv jain", "prateek kuhad",
+                "kishore", "rafi", "lata", "asha", "mukesh", "manna dey", "mannadey", "bollywood", "punjabi", "hindi",
+                "bhangra", "sufi", "ghazal", "bhajan", "aarti", "chalisa", "stotram", "ishq",
+                "pyaar", "dil", "tere", "mera", "meri", "hum", "tum", "jaane", "zindagi", "raatan",
+                "kesariya", "channa", "kahani", "hawayein", "sanam", "sajna", "deva", "krishna",
+                "siya", "sita", "shringar", "bhakti", "shankar-jaikishan",
+                "neha kakkar", "armaan malik", "amrit maan", "jass manak", "guru randhawa", "ikky"
+            )
+            return markers.any { text.contains(it) }
+        }
     }
 
     fun getCollaborators(artist: String): List<String> {
@@ -99,6 +125,14 @@ class CandidateRetrievalEngine @Inject constructor(
         }
         return emptyList()
     }
+
+    @Volatile
+    var lastHarvestedNativeIds: Set<String> = emptySet()
+        private set
+
+    private val nativeHarvestCache = java.util.concurrent.ConcurrentHashMap<String, Set<String>>()
+
+    fun getNativeIdsForSeed(seedId: String): Set<String> = nativeHarvestCache[seedId].orEmpty()
 
     /**
      * Executes the 8-stream parallel harvesting pipeline targeting 300+ candidate tracks.
@@ -112,13 +146,21 @@ class CandidateRetrievalEngine @Inject constructor(
     suspend fun retrieveCandidates(
         seedTrack: TrackEntity,
         sessionProfile: ShortTermSessionProfile,
-        longTermProfile: LongTermProfile
+        longTermProfile: LongTermProfile,
+        forceFresh: Boolean = false
     ): List<TrackEntity> = withContext(Dispatchers.IO) {
         val cleanArtist = seedTrack.cleanArtistName()
         val cleanTitle = seedTrack.cleanSongTitle()
         val isYouTubeId = seedTrack.id.length == 11 && !seedTrack.id.all { it.isDigit() }
         val collaborators = getCollaborators(cleanArtist)
-        val topCollaborator = collaborators.firstOrNull() ?: longTermProfile.secondaryArtist
+        val topCollaborator = if (forceFresh && collaborators.size > 1) {
+            collaborators.shuffled().firstOrNull() ?: longTermProfile.secondaryArtist
+        } else {
+            collaborators.firstOrNull() ?: longTermProfile.secondaryArtist
+        }
+        val isIndian = isIndianContext(seedTrack)
+        val seedVibe = vibeClassifier.classifyTrackVibe(seedTrack)
+        val effectiveVibe = if (sessionProfile.currentVibe != SessionVibeMode.DISCOVERY) sessionProfile.currentVibe else seedVibe
 
         coroutineScope {
             // 1. JioSaavn Recommendations (Native CD 320kbps acoustics)
@@ -162,7 +204,17 @@ class CandidateRetrievalEngine @Inject constructor(
                 try {
                     withTimeoutOrNull(HARVEST_TIMEOUT_MS) {
                         if (cleanArtist.isNotBlank() && cleanArtist != "unknown artist") {
-                            streamRepository.searchTracks("$cleanArtist top songs hits audio").firstOrNull()?.getOrNull().orEmpty()
+                            val queryVariants = if (forceFresh) {
+                                listOf(
+                                    "$cleanArtist best songs official audio",
+                                    "$cleanArtist hits audio",
+                                    "$cleanArtist trending songs",
+                                    "$cleanArtist songs"
+                                )
+                            } else {
+                                listOf("$cleanArtist top songs hits audio")
+                            }
+                            streamRepository.searchTracks(queryVariants.random()).firstOrNull()?.getOrNull().orEmpty()
                         } else emptyList()
                     }.orEmpty()
                 } catch (_: Exception) { emptyList() }
@@ -172,55 +224,101 @@ class CandidateRetrievalEngine @Inject constructor(
             val collaboratorRadioDeferred = async(Dispatchers.IO) {
                 try {
                     withTimeoutOrNull(HARVEST_TIMEOUT_MS) {
-                        streamRepository.searchTracks("$topCollaborator top hits official audio").firstOrNull()?.getOrNull().orEmpty()
+                        if (topCollaborator.isNotBlank()) {
+                            streamRepository.searchTracks("$topCollaborator top hits official audio").firstOrNull()?.getOrNull().orEmpty()
+                        } else emptyList()
                     }.orEmpty()
                 } catch (_: Exception) { emptyList() }
             }
 
-            
-            // 5. Active Session Vibe & Micro-Genre Cluster
+            // 5. Active Session Vibe & Micro-Genre Cluster (Semantic continuation)
             val sessionVibeDeferred = async(Dispatchers.IO) {
                 try {
                     withTimeoutOrNull(HARVEST_TIMEOUT_MS) {
-                        val query = vibeClassifier.getVibeSearchQuery(sessionProfile.currentVibe)
+                        val query = if (cleanTitle.isNotBlank() && cleanArtist.isNotBlank() && cleanArtist != "unknown artist") {
+                            "songs like $cleanTitle $cleanArtist official audio"
+                        } else {
+                            vibeClassifier.getVibeSearchQuery(effectiveVibe)
+                        }
                         streamRepository.searchTracks(query).firstOrNull()?.getOrNull().orEmpty()
                     }.orEmpty()
                 } catch (_: Exception) { emptyList() }
             }
 
-            // 6. Long-Term User Affinity Bridge (Top 2-3 lifetime artists)
+            // 6. Long-Term User Affinity Bridge (Filtered strictly to matching cultural sphere)
             val userAffinityDeferred = async(Dispatchers.IO) {
                 try {
                     withTimeoutOrNull(HARVEST_TIMEOUT_MS) {
-                        val artists = longTermProfile.topArtists.filter { !it.equals(cleanArtist, ignoreCase = true) }.take(2)
-                        val results = mutableListOf<TrackEntity>()
-                        artists.forEach { art ->
-                            val tracks = streamRepository.searchTracks("$art songs official audio").firstOrNull()?.getOrNull().orEmpty()
-                            results.addAll(tracks)
+                        val artistsPool = longTermProfile.topArtists.filter { art ->
+                            !art.equals(cleanArtist, ignoreCase = true) &&
+                            (isIndian == isIndianContext(TrackEntity(id = "probe", title = "", artist = art)))
                         }
-                        results
+                        if (artistsPool.isNotEmpty()) {
+                            val artists = if (forceFresh) artistsPool.shuffled().take(2) else artistsPool.take(2)
+                            coroutineScope {
+                                val deferredList = artists.map { art ->
+                                    async(Dispatchers.IO) {
+                                        streamRepository.searchTracks("$art songs official audio").firstOrNull()?.getOrNull().orEmpty()
+                                    }
+                                }
+                                deferredList.awaitAll().flatten()
+                            }
+                        } else {
+                            // If user top artists do not match current cultural context, search artist radio rather than cross-polluting
+                            val fallbackRadio = if (isIndian) "$cleanArtist radio hits" else "viral music official"
+                            streamRepository.searchTracks(fallbackRadio).firstOrNull()?.getOrNull().orEmpty()
+                        }
                     }.orEmpty()
                 } catch (_: Exception) { emptyList() }
             }
 
-            // 7. Similar-User Taste Clusters & Collaborative Discovery Seeds
+            // 7. Contextually Aligned Discovery Radio (Artist & Genre radio instead of blind pop seeds)
             val collaborativeTasteDeferred = async(Dispatchers.IO) {
                 try {
                     withTimeoutOrNull(HARVEST_TIMEOUT_MS) {
-                        val seeds = MASTER_CURATED_TRACKS.shuffled().map { it.toTrackEntity() }
-                        // Also harvest from secondary genre
-                        val secGenre = longTermProfile.topGenres.getOrNull(1) ?: "chill acoustic"
-                        val genreTracks = streamRepository.searchTracks("$secGenre songs trending").firstOrNull()?.getOrNull().orEmpty()
-                        seeds.take(30) + genreTracks
+                        val radioQuery = if (cleanArtist.isNotBlank() && cleanArtist != "unknown artist") {
+                            "$cleanArtist radio official songs"
+                        } else if (isIndian) {
+                            "popular hindi music songs"
+                        } else {
+                            "trending hits playlist"
+                        }
+                        streamRepository.searchTracks(radioQuery).firstOrNull()?.getOrNull().orEmpty()
                     }.orEmpty()
                 } catch (_: Exception) { emptyList() }
             }
 
-            // 8. Trending & Viral Momentum
+            // 8. Trending & Viral Momentum (Contextually aligned to language & cultural sphere)
             val trendingDeferred = async(Dispatchers.IO) {
                 try {
                     withTimeoutOrNull(HARVEST_TIMEOUT_MS) {
-                        val queries = listOf("Top Global Viral Hits Music", "Billboard Hot 100 Official Audio", "Trending Hit Songs 2026")
+                        val cleanArtistLower = cleanArtist.lowercase(Locale.ROOT)
+                        val queries = when {
+                            effectiveVibe == SessionVibeMode.DEVOTIONAL -> listOf(
+                                "Trending Devotional Bhakti Bhajans",
+                                "Top Ram Krishna Bhajans Hits"
+                            )
+                            cleanArtistLower in listOf("manna dey", "lata mangeshkar", "kishore kumar", "mohammed rafi", "mukesh", "asha bhosle", "rd burman", "shankar jaikishan") -> listOf(
+                                "Golden Era Classic Bollywood Hits",
+                                "Evergreen Old Hindi Songs Radio"
+                            )
+                            effectiveVibe == SessionVibeMode.PUNJABI -> listOf(
+                                "Trending Punjabi Chartbusters Hits",
+                                "Top Punjabi Hits 2026"
+                            )
+                            effectiveVibe == SessionVibeMode.ROMANTIC && isIndian -> listOf(
+                                "Best Romantic Hindi Songs",
+                                "Top Hindi Romantic Hits"
+                            )
+                            isIndian -> listOf(
+                                "Top Hindi Hits Songs 2026",
+                                "Trending Bollywood Songs"
+                            )
+                            else -> listOf(
+                                "Top Global Viral Hits Music",
+                                "Billboard Hot 100 Official Audio"
+                            )
+                        }
                         streamRepository.searchTracks(queries.random()).firstOrNull()?.getOrNull().orEmpty()
                     }.orEmpty()
                 } catch (_: Exception) { emptyList() }
@@ -235,7 +333,22 @@ class CandidateRetrievalEngine @Inject constructor(
             val s7 = collaborativeTasteDeferred.await()
             val s8 = trendingDeferred.await()
 
-            val rawCombined = (s1 + s2 + s3 + s4 + s5 + s6 + s7 + s8).toMutableList()
+            // Save native watch-next graph IDs for instant high-relevance boosting
+            val harvestedNative = (s1.map { it.id } + s2.map { it.id }).toSet()
+            nativeHarvestCache[seedTrack.id] = harvestedNative
+            lastHarvestedNativeIds = harvestedNative
+
+            // 9. Personal Taste Anchoring: Inject user's liked and heavy rotation tracks that match the seed track vibe/context
+            val userMatchingTracks = (longTermProfile.heavyRotationTracks + longTermProfile.vaultTracks)
+                .filter { userTrack ->
+                    userTrack.id != seedTrack.id &&
+                    !userTrack.isSameSong(seedTrack) &&
+                    userTrack.isSongOnly() &&
+                    (isIndianContext(userTrack) == isIndian) &&
+                    (effectiveVibe == SessionVibeMode.DISCOVERY || vibeClassifier.classifyTrackVibe(userTrack) == effectiveVibe)
+                }
+
+            val rawCombined = (s1 + s2 + s3 + s4 + s5 + s6 + s7 + s8 + userMatchingTracks).toMutableList()
 
             var cleanedCandidates = rawCombined
                 .filter { it.isSongOnly() }
@@ -245,7 +358,7 @@ class CandidateRetrievalEngine @Inject constructor(
             // If distinct candidate pool is under target (e.g. offline, network latency, or test environments),
             // bridge with pre-indexed multi-genre discovery catalog to strictly guarantee >= 300 candidates
             if (cleanedCandidates.size < TARGET_CANDIDATE_POOL_SIZE) {
-                val targetVibeName = when (sessionProfile.currentVibe) {
+                val targetVibeName = when (effectiveVibe) {
                     SessionVibeMode.GYM_MODE -> "Gym"
                     SessionVibeMode.NIGHT_DRIVE -> "Night Drive"
                     SessionVibeMode.LOFI_FOCUS -> "Lo-Fi"
@@ -254,17 +367,15 @@ class CandidateRetrievalEngine @Inject constructor(
                     SessionVibeMode.DEVOTIONAL -> "Devotional"
                     SessionVibeMode.ROMANTIC -> "Romantic"
                     SessionVibeMode.PARTY -> "Party"
-                    SessionVibeMode.DISCOVERY -> "Pop"
+                    SessionVibeMode.DISCOVERY -> if (isIndian) "Bollywood" else "Pop"
                 }
 
                 val sortedCatalog = CuratedDiscoveryCatalog.ALL_SEEDS.sortedWith(
                     compareByDescending<CuratedSeedTrack> { it.genre.equals(targetVibeName, ignoreCase = true) }
-                        .thenByDescending { it.genre.equals("Pop", ignoreCase = true) }
-                        .thenByDescending { it.genre.equals("Romantic", ignoreCase = true) }
+                        .thenByDescending { if (isIndian) it.genre in listOf("Bollywood", "Romantic", "Punjabi", "Devotional") else it.genre in listOf("Pop", "Hip-Hop", "Lo-Fi", "Rock") }
                 ).map { it.toTrackEntity() }
 
                 val curatedSeeds = (sortedCatalog +
-                        MASTER_CURATED_TRACKS.map { it.toTrackEntity() } +
                         longTermProfile.vaultTracks +
                         longTermProfile.heavyRotationTracks)
                 for (seed in curatedSeeds) {
@@ -275,7 +386,7 @@ class CandidateRetrievalEngine @Inject constructor(
                 }
             }
 
-            Log.i(TAG, "Candidate Retrieval Complete: Harvested ${rawCombined.size} raw candidates -> ${cleanedCandidates.size} distinct candidates.")
+            Log.i(TAG, "Candidate Retrieval Complete: Harvested ${rawCombined.size} raw candidates -> ${cleanedCandidates.size} distinct candidates (Native Graph: ${harvestedNative.size}).")
             cleanedCandidates
         }
     }

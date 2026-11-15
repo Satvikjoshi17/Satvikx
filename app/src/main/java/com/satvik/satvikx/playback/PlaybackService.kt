@@ -47,6 +47,9 @@ class PlaybackService : MediaSessionService() {
     lateinit var recentPlaybackDao: RecentPlaybackDao
 
     @Inject
+    lateinit var trackDao: com.satvik.satvikx.data.local.dao.TrackDao
+
+    @Inject
     lateinit var playbackSessionManager: PlaybackSessionManager
 
     companion object {
@@ -56,6 +59,7 @@ class PlaybackService : MediaSessionService() {
     private var player: ExoPlayer? = null
     private var mediaSession: MediaSession? = null
     private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     @OptIn(UnstableApi::class)
@@ -77,14 +81,21 @@ class PlaybackService : MediaSessionService() {
             notificationManager?.createNotificationChannel(channel)
         }
 
-        // Configure Media3 Notification Provider with dedicated notification channel
+        // Configure Media3 Notification Provider with dedicated notification channel (auto-picks @drawable/media3_notification_small_icon)
         val notificationProvider = DefaultMediaNotificationProvider.Builder(this)
             .setChannelId(NOTIFICATION_CHANNEL_ID)
             .setChannelName(com.satvik.satvikx.R.string.playback_notification_channel_name)
             .build()
         setMediaNotificationProvider(notificationProvider)
 
-        // Initialize high-performance WifiLock to prevent Android OS from putting network radio to sleep during background playback
+        // Initialize high-performance WifiLock and CPU WakeLock to guarantee uninterrupted background playback across Doze mode
+        try {
+            val powerManager = getSystemService(android.content.Context.POWER_SERVICE) as? android.os.PowerManager
+            wakeLock = powerManager?.newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "SatvikX:PlaybackWakeLock")?.apply {
+                setReferenceCounted(false)
+            }
+        } catch (_: Exception) {}
+
         try {
             val wifiManager = applicationContext.getSystemService(android.content.Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
             val lockMode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
@@ -151,10 +162,77 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(sessionActivityPendingIntent)
             .setCallback(MediaSessionCallback())
             .build()
+
+        // 7. Auto-restore last session if player is empty (e.g. system service restart under memory pressure)
+        restoreSessionIfEmpty()
+    }
+
+    private fun restoreSessionIfEmpty() {
+        val p = player ?: return
+        if (p.mediaItemCount == 0) {
+            val session = playbackSessionManager.getLastPlaybackSession()
+            if (session != null && session.queue.isNotEmpty()) {
+                val targetIdx = session.queueIndex.coerceIn(0, session.queue.size - 1)
+                val mediaItems = session.queue.map { track ->
+                    val uri = when {
+                        !track.localPath.isNullOrBlank() -> {
+                            if (track.localPath.startsWith("file://")) android.net.Uri.parse(track.localPath)
+                            else android.net.Uri.fromFile(java.io.File(track.localPath))
+                        }
+                        !track.streamUrl.isNullOrBlank() -> android.net.Uri.parse(track.streamUrl)
+                        else -> android.net.Uri.EMPTY
+                    }
+                    MediaItem.Builder()
+                        .setMediaId(track.id)
+                        .setUri(uri)
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(track.title)
+                                .setArtist(track.artist)
+                                .setAlbumTitle("SatvikX")
+                                .setArtworkUri(if (track.thumbnailUrl.isNotBlank()) android.net.Uri.parse(track.thumbnailUrl) else null)
+                                .setExtras(Bundle().apply {
+                                    putLong("duration_seconds", track.durationSeconds)
+                                })
+                                .build()
+                        )
+                        .build()
+                }
+                p.setMediaItems(mediaItems, targetIdx, session.positionMs)
+                p.prepare()
+            }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
         return mediaSession
+    }
+
+    @OptIn(UnstableApi::class)
+    override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {
+        val activePlayer = session.player
+        // Keep the service firmly in foreground while playing or transitioning between tracks.
+        // Prevents Android 14+ from dropping the notification or restricting background playback.
+        val shouldRemainInForeground = startInForegroundRequired ||
+            activePlayer.playWhenReady ||
+            activePlayer.playbackState == Player.STATE_BUFFERING ||
+            activePlayer.playbackState == Player.STATE_READY
+
+        super.onUpdateNotification(session, shouldRemainInForeground)
+    }
+
+    private fun updateLocks() {
+        try {
+            val activePlayer = player
+            val shouldHold = activePlayer != null && activePlayer.playWhenReady && activePlayer.playbackState != Player.STATE_IDLE
+            if (shouldHold) {
+                if (wakeLock?.isHeld == false) wakeLock?.acquire(45 * 60 * 1000L) // 45-min safety timeout
+                if (wifiLock?.isHeld == false) wifiLock?.acquire()
+            } else {
+                if (wakeLock?.isHeld == true) wakeLock?.release()
+                if (wifiLock?.isHeld == true) wifiLock?.release()
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -181,10 +259,10 @@ class PlaybackService : MediaSessionService() {
         }
         serviceScope.cancel()
         try {
-            if (wifiLock?.isHeld == true) {
-                wifiLock?.release()
-            }
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            if (wifiLock?.isHeld == true) wifiLock?.release()
         } catch (_: Exception) {}
+        wakeLock = null
         wifiLock = null
 
         mediaSession?.run {
@@ -201,23 +279,15 @@ class PlaybackService : MediaSessionService() {
      */
     private inner class PlayerEventListener : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            try {
-                if (isPlaying) {
-                    if (wifiLock?.isHeld == false) wifiLock?.acquire()
-                } else {
-                    if (player?.playbackState != Player.STATE_BUFFERING && wifiLock?.isHeld == true) {
-                        wifiLock?.release()
-                    }
-                }
-            } catch (_: Exception) {}
+            updateLocks()
         }
 
         override fun onPlaybackStateChanged(playbackState: Int) {
-            if (playbackState == Player.STATE_BUFFERING) {
-                try {
-                    if (wifiLock?.isHeld == false) wifiLock?.acquire()
-                } catch (_: Exception) {}
-            }
+            updateLocks()
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            updateLocks()
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -230,6 +300,20 @@ class PlaybackService : MediaSessionService() {
             val trackId = mediaItem?.mediaId ?: return
             serviceScope.launch {
                 try {
+                    val metadata = mediaItem.mediaMetadata
+                    val existing = trackDao.getTrackByIdSync(trackId)
+                    if (existing == null) {
+                        val duration = (metadata.extras?.getLong("duration_seconds") ?: 0L).coerceAtLeast(0L)
+                        val newTrack = com.satvik.satvikx.data.local.entity.TrackEntity(
+                            id = trackId,
+                            title = metadata.title?.toString() ?: "Unknown Title",
+                            artist = metadata.artist?.toString() ?: "Unknown Artist",
+                            durationSeconds = duration,
+                            thumbnailUrl = metadata.artworkUri?.toString() ?: "",
+                            addedAtTimestamp = System.currentTimeMillis()
+                        )
+                        trackDao.insertTrack(newTrack)
+                    }
                     recentPlaybackDao.recordRecentPlayback(
                         RecentPlaybackEntity(
                             trackId = trackId,
@@ -254,9 +338,25 @@ class PlaybackService : MediaSessionService() {
         ): MediaSession.ConnectionResult {
             val connectionResult = super.onConnect(session, controller)
             val sessionCommands = connectionResult.availableSessionCommands.buildUpon()
+
+            // Expose player commands so Android 13/14 SystemUI renders full scrubber, previous/next, play/pause
+            val availablePlayerCommands = connectionResult.availablePlayerCommands.buildUpon()
+                .add(Player.COMMAND_PLAY_PAUSE)
+                .add(Player.COMMAND_PREPARE)
+                .add(Player.COMMAND_STOP)
+                .add(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                .add(Player.COMMAND_SEEK_TO_DEFAULT_POSITION)
+                .add(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                .add(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
+                .add(Player.COMMAND_SEEK_TO_NEXT)
+                .add(Player.COMMAND_SEEK_TO_PREVIOUS)
+                .add(Player.COMMAND_SET_SHUFFLE_MODE)
+                .add(Player.COMMAND_SET_REPEAT_MODE)
+                .build()
+
             return MediaSession.ConnectionResult.accept(
                 sessionCommands.build(),
-                connectionResult.availablePlayerCommands
+                availablePlayerCommands
             )
         }
 

@@ -2,7 +2,6 @@ package com.satvik.satvikx.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,32 +22,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CleaningServices
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DownloadDone
-import androidx.compose.material.icons.filled.OfflinePin
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextField
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -59,37 +45,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.satvik.satvikx.data.download.model.DownloadLocation
-import com.satvik.satvikx.data.download.model.DownloadQuality
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.DownloadLocationDialog
 import com.satvik.satvikx.ui.components.DownloadQualityDialog
+import com.satvik.satvikx.ui.components.OpticallyCenteredPlayIcon
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
 import com.satvik.satvikx.ui.components.isolateHorizontalScroll
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.ArcCyanGlow
-import com.satvik.satvikx.ui.theme.StarkBorder
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
-import com.satvik.satvikx.ui.theme.StarkSurface
-import com.satvik.satvikx.ui.theme.SurfaceElevated
-import com.satvik.satvikx.ui.theme.TextPrimary
-import com.satvik.satvikx.ui.theme.TextSecondary
-import com.satvik.satvikx.ui.theme.TextTertiary
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,484 +106,210 @@ fun DownloadsScreen(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
-            .padding(top = 8.dp)
+            .background(Color(0xFF121212))
     ) {
-        // 1. Header with Spotify/YouTube Music aesthetics
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column {
-                    Text(
-                        text = "Downloads",
-                        style = MaterialTheme.typography.headlineLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            letterSpacing = (-0.5).sp
-                        ),
-                        color = TextPrimary
-                    )
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(ArcCyanBright)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "OFFLINE VAULT • ${downloadedTracks.size} TRACKS",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.8.sp,
-                                color = ArcCyanBright
-                            )
-                        )
-                    }
-                }
-
-                Surface(
-                    shape = RoundedCornerShape(20.dp),
-                    color = ArcCyanGlow.copy(alpha = 0.15f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, ArcCyan.copy(alpha = 0.4f))
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.OfflinePin,
-                            contentDescription = null,
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Text(
-                            text = "OFFLINE READY",
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 10.sp,
-                                letterSpacing = 0.5.sp,
-                                color = ArcCyanBright
-                            )
-                        )
-                    }
-                }
-            }
-        }
-
-        // 2. Storage Metrics & Quality Preference Dashboard
-        Card(
+        // 1. Spotify Top Header
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 6.dp),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = SurfaceElevated),
-            border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder)
+                .padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp)
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(StarkSurface)
-                                .border(1.dp, StarkBorder, RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Storage,
-                                contentDescription = "Storage status",
-                                tint = ArcCyanBright,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        Column(modifier = Modifier.padding(start = 12.dp)) {
-                            Text(
-                                text = "Device Storage",
-                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
-                                color = TextPrimary
-                            )
-                            Text(
-                                text = "Used: ${storageInfo.usedStorageFormatted}  •  Free: ${storageInfo.availableStorageFormatted}",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontSize = 11.sp,
-                                    color = TextSecondary
-                                )
-                            )
-                        }
-                    }
-                }
+            Text(
+                text = "Downloaded",
+                style = MaterialTheme.typography.headlineMedium.copy(
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold
+                ),
+                color = Color.White
+            )
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Modern usage progress bar
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(5.dp)
-                        .clip(CircleShape)
-                        .background(StarkBorder)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(fraction = storageInfo.usagePercentage.coerceIn(0.04f, 1f))
-                            .fillMaxHeight()
-                            .clip(CircleShape)
-                            .background(
-                                Brush.horizontalGradient(
-                                    listOf(ArcCyan, ArcCyanBright)
-                                )
-                            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { showLocationDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Storage,
+                        contentDescription = "Storage",
+                        tint = Color(0xFFA7A7A7),
+                        modifier = Modifier.size(22.dp)
                     )
                 }
+                IconButton(onClick = { showQualityDialog = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Tune,
+                        contentDescription = "Quality",
+                        tint = Color(0xFFA7A7A7),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(12.dp))
+        // 2. Search & Filter Bar
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .height(42.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFF282828))
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = Color(0xFFA7A7A7),
+                    modifier = Modifier.size(20.dp)
+                )
 
-                // Controls Row: Quality, Location & Clear Cache Capsules
-                val isNarrowScreen = LocalConfiguration.current.screenWidthDp < 360
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Download Quality Capsule
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { showQualityDialog = true },
-                        shape = RoundedCornerShape(12.dp),
-                        color = StarkSurface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.4f))
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Tune,
-                                contentDescription = null,
-                                tint = ArcCyanBright,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(10.dp))
+
+                BasicTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = Color.White,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    ),
+                    cursorBrush = SolidColor(SpotifyGreen),
+                    modifier = Modifier.weight(1f),
+                    decorationBox = { innerTextField ->
+                        if (searchQuery.isEmpty()) {
                             Text(
-                                text = currentQuality.badge,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ArcCyanBright
-                                ),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (!isNarrowScreen) {
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "QUALITY",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 9.sp,
-                                        color = TextSecondary
-                                    ),
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
+                                text = "Find in downloads",
+                                style = TextStyle(
+                                    color = Color(0xFFA7A7A7),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
                                 )
-                            }
+                            )
                         }
+                        innerTextField()
                     }
+                )
 
-                    // Download Location Capsule
-                    val locationColor = when (currentLocation) {
-                        DownloadLocation.PUBLIC_MUSIC -> ArcCyanBright
-                        DownloadLocation.PUBLIC_DOWNLOADS -> StarkGold
-                        DownloadLocation.APP_INTERNAL -> Color.LightGray
-                    }
-
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { showLocationDialog = true },
-                        shape = RoundedCornerShape(12.dp),
-                        color = StarkSurface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, locationColor.copy(alpha = 0.4f))
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(
+                        onClick = { searchQuery = "" },
+                        modifier = Modifier.size(24.dp)
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Folder,
-                                contentDescription = null,
-                                tint = locationColor,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = currentLocation.badge,
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = locationColor
-                                ),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (!isNarrowScreen) {
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "DIR",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 9.sp,
-                                        color = TextSecondary
-                                    ),
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-
-                    // Clear Audio Cache Capsule
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                viewModel.clearAudioCache {
-                                    Toast.makeText(context, "Audio cache cleared & stream tokens reset", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                        shape = RoundedCornerShape(12.dp),
-                        color = StarkSurface,
-                        border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.CleaningServices,
-                                contentDescription = null,
-                                tint = ArcCyan,
-                                modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "PURGE",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = ArcCyan
-                                ),
-                                maxLines = 1,
-                                softWrap = false,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            if (!isNarrowScreen) {
-                                Spacer(modifier = Modifier.width(3.dp))
-                                Text(
-                                    text = "CACHE",
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 9.sp,
-                                        color = TextSecondary
-                                    ),
-                                    maxLines = 1,
-                                    softWrap = false,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Clear,
+                            contentDescription = "Clear",
+                            tint = Color(0xFFA7A7A7),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
             }
         }
 
-        // 3. Spotify/YouTube Music Style Action Row (Play All & Shuffle)
+        // 3. Sort Filter Pills
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .isolateHorizontalScroll()
+                .padding(horizontal = 16.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            listOf("All", "A-Z", "By Artist").forEach { filter ->
+                val isSelected = selectedFilter == filter
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = if (isSelected) SpotifyGreen else Color(0xFF282828),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .clickable { selectedFilter = filter }
+                ) {
+                    Text(
+                        text = filter,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.5.sp
+                        ),
+                        color = if (isSelected) Color.Black else Color.White,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+
+        // 4. Action Row (Track Count, Shuffle, and 52dp Play Button)
         if (downloadedTracks.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = { viewModel.playAllDownloads(shuffled = false) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = ArcCyan,
-                        contentColor = StarkCarbon
-                    ),
-                    shape = RoundedCornerShape(24.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
+                Column {
                     Text(
-                        text = "PLAY ALL",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 0.5.sp
-                        )
+                        text = "${filteredTracks.size} songs",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.5.sp
+                        ),
+                        color = Color(0xFFA7A7A7)
+                    )
+                    Text(
+                        text = "${storageInfo.usedStorageFormatted} used",
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.5.sp),
+                        color = Color(0xFF757575)
                     )
                 }
 
-                OutlinedButton(
-                    onClick = { viewModel.playAllDownloads(shuffled = true) },
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = ArcCyanBright
-                    ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, StarkBorder),
-                    shape = RoundedCornerShape(24.dp),
-                    contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
-                    modifier = Modifier.weight(1f)
+                Spacer(modifier = Modifier.weight(1f))
+
+                IconButton(
+                    onClick = {
+                        if (filteredTracks.isNotEmpty()) {
+                            viewModel.playTrack(filteredTracks.random(), filteredTracks)
+                            Toast.makeText(context, "Shuffle playing downloads", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.size(38.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Shuffle,
-                        contentDescription = null,
-                        tint = ArcCyanBright,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "SHUFFLE",
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            letterSpacing = 0.5.sp
-                        )
+                        contentDescription = "Shuffle",
+                        tint = Color(0xFFA7A7A7),
+                        modifier = Modifier.size(24.dp)
                     )
                 }
-            }
 
-            // In-List Search & Filter Pills
-            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp)) {
-                TextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = {
-                        Text(
-                            text = "Search in downloads...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = TextTertiary
-                        )
-                    },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Search,
-                            contentDescription = null,
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    },
-                    trailingIcon = {
-                        if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(
-                                    imageVector = Icons.Default.Close,
-                                    contentDescription = "Clear search",
-                                    tint = TextSecondary,
-                                    modifier = Modifier.size(18.dp)
-                                )
+                Spacer(modifier = Modifier.width(14.dp))
+
+                Box(
+                    modifier = Modifier
+                        .size(52.dp)
+                        .shadow(8.dp, CircleShape)
+                        .clip(CircleShape)
+                        .background(SpotifyGreen)
+                        .clickable {
+                            if (filteredTracks.isNotEmpty()) {
+                                viewModel.playTrack(filteredTracks.first(), filteredTracks)
+                                Toast.makeText(context, "Playing downloads", Toast.LENGTH_SHORT).show()
                             }
-                        }
-                    },
-                    singleLine = true,
-                    colors = TextFieldDefaults.colors(
-                        focusedContainerColor = StarkSurface,
-                        unfocusedContainerColor = StarkSurface,
-                        focusedIndicatorColor = ArcCyanBright,
-                        unfocusedIndicatorColor = Color.Transparent,
-                        focusedTextColor = TextPrimary,
-                        unfocusedTextColor = TextPrimary
-                    ),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .border(1.dp, StarkBorder, RoundedCornerShape(12.dp))
-                )
-
-                // Quick Filter Chips
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState())
-                        .isolateHorizontalScroll()
-                        .padding(top = 8.dp, bottom = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    listOf("All", "A-Z", "By Artist").forEach { filter ->
-                        val isSelected = selectedFilter == filter
-                        FilterChip(
-                            selected = isSelected,
-                            onClick = { selectedFilter = filter },
-                            label = {
-                                Text(
-                                    text = if (filter == "All") "ALL (${downloadedTracks.size})" else filter,
-                                    style = MaterialTheme.typography.labelSmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                    )
-                                )
-                            },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = ArcCyanBright,
-                                selectedLabelColor = StarkCarbon,
-                                containerColor = StarkSurface,
-                                labelColor = TextSecondary
-                            ),
-                            border = FilterChipDefaults.filterChipBorder(
-                                enabled = true,
-                                selected = isSelected,
-                                borderColor = StarkBorder,
-                                selectedBorderColor = ArcCyanBright
-                            ),
-                            shape = RoundedCornerShape(20.dp)
-                        )
-                    }
+                    OpticallyCenteredPlayIcon(
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.Black
+                    )
                 }
             }
         }
 
-        // 4. Downloaded Track List or Empty State
+        // 5. Downloaded Tracks List / Empty State
         if (downloadedTracks.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -616,46 +317,39 @@ fun DownloadsScreen(
                     .padding(32.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Box(
                         modifier = Modifier
-                            .size(80.dp)
+                            .size(64.dp)
                             .clip(CircleShape)
-                            .background(ArcCyanGlow.copy(alpha = 0.12f))
-                            .border(1.5.dp, ArcCyanBright.copy(alpha = 0.4f), CircleShape),
+                            .background(Color(0xFF282828)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.DownloadDone,
                             contentDescription = null,
-                            tint = ArcCyanBright,
-                            modifier = Modifier.size(36.dp)
+                            tint = Color(0xFFA7A7A7),
+                            modifier = Modifier.size(32.dp)
                         )
                     }
 
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
 
                     Text(
-                        text = "No Offline Downloads Yet",
+                        text = "No downloaded music",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp
                         ),
-                        color = TextPrimary
+                        color = Color.White
                     )
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
 
                     Text(
-                        text = "Download songs from search or recommendations to enjoy high-res offline playback without an active internet connection.",
-                        color = TextSecondary,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            lineHeight = 18.sp
-                        ),
-                        modifier = Modifier.padding(horizontal = 24.dp),
+                        text = "Tap the download button on any track or playlist to listen offline without internet.",
+                        color = Color(0xFFA7A7A7),
+                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
                 }
@@ -668,15 +362,15 @@ fun DownloadsScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "No songs found matching \"$searchQuery\"",
+                    text = "No songs matching \"$searchQuery\"",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    color = Color(0xFFA7A7A7)
                 )
             }
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 120.dp)
+                contentPadding = PaddingValues(bottom = 80.dp)
             ) {
                 items(
                     items = filteredTracks,
@@ -701,12 +395,12 @@ fun DownloadsScreen(
         DownloadQualityDialog(
             initialQuality = currentQuality,
             title = "Download Audio Quality",
-            subtitle = "STARK AUDIO ENGINE • PREFERENCE",
-            confirmButtonText = "Save Preference",
+            subtitle = "Audio Quality Preference",
+            confirmButtonText = "Save",
             onConfirm = { quality, _ ->
                 viewModel.setDownloadQuality(quality)
                 showQualityDialog = false
-                Toast.makeText(context, "Default download quality set to ${quality.label}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Download quality set to ${quality.label}", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showQualityDialog = false }
         )
@@ -719,7 +413,7 @@ fun DownloadsScreen(
             onConfirm = { location ->
                 viewModel.setDownloadLocation(location)
                 showLocationDialog = false
-                Toast.makeText(context, "Download location set to ${location.title}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Location set to ${location.title}", Toast.LENGTH_SHORT).show()
             },
             onDismiss = { showLocationDialog = false }
         )

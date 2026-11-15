@@ -20,7 +20,8 @@ data class PlaybackState(
     val isConnected: Boolean = false,
     val sleepTimerRemainingSeconds: Long? = null,
     val crossfadeDurationSeconds: Int = 4,
-    val isCrossfadeEnabled: Boolean = true
+    val isCrossfadeEnabled: Boolean = true,
+    val isPlaylistPlayback: Boolean = false
 ) {
     val progressFraction: Float
         get() = if (durationMs > 0) (playbackPositionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f) else 0f
