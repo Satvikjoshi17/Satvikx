@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -38,16 +39,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Stars
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -55,7 +57,6 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -67,17 +68,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -85,19 +84,22 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.satvik.satvikx.data.local.entity.AttributedTrack
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.PrimaryNeon
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
-import com.satvik.satvikx.ui.theme.SurfaceDark
-import com.satvik.satvikx.ui.theme.SurfaceElevated
-import com.satvik.satvikx.ui.theme.SurfaceVariantDark
-import com.satvik.satvikx.ui.theme.TextPrimary
-import com.satvik.satvikx.ui.theme.TextSecondary
+import com.satvik.satvikx.data.local.entity.BlendEntity
+import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.ui.components.OpticallyCenteredPlayIcon
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.viewmodel.BlendViewModel
 import java.util.Locale
 
+/**
+ * Pure Spotify Mobile Blend Screen.
+ * Features:
+ * - Iconic overlapping dual-avatar circles (Venn diagram cover art).
+ * - "X% Match" Spotify pill badge & Taste Story Card.
+ * - Shared Anthem highlight with instant playback preview.
+ * - Big circular Spotify Green Play button (optically centered) & Shuffle toggle.
+ * - Clean Spotify track rows with contributor avatar attribution circles.
+ */
 @Composable
 fun BlendDetailScreen(
     blendId: String,
@@ -125,18 +127,17 @@ fun BlendDetailScreen(
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(SurfaceDark),
+                .background(Color(0xFF121212)),
             contentAlignment = Alignment.Center
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                CircularProgressIndicator(color = ArcCyanBright, modifier = Modifier.size(36.dp), strokeWidth = 2.5.dp)
-                Spacer(modifier = Modifier.height(14.dp))
+                CircularProgressIndicator(color = SpotifyGreen, modifier = Modifier.size(38.dp), strokeWidth = 3.dp)
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
-                    text = "SYNTHESIZING TASTE FUSION...",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = ArcCyan
+                    text = "Blending tastes...",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
                     )
                 )
             }
@@ -147,126 +148,176 @@ fun BlendDetailScreen(
     val blend = blendWithTracks.blend
     var showMenu by remember { mutableStateOf(false) }
 
-    Column(
+    // Dynamic top gradient derived from match score
+    val headerGradientTop = when {
+        blend.matchScore >= 90 -> Color(0xFF1E3A8A) // Vibrant deep blue
+        blend.matchScore >= 80 -> Color(0xFF134E4A) // Deep teal
+        else -> Color(0xFF3B1D6B) // Rich violet
+    }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(SurfaceDark)
-            .statusBarsPadding()
+            .background(Color(0xFF121212))
     ) {
-        // Navigation Top Bar
-        Row(
+        // Gradient backdrop at top
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .height(340.dp)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            headerGradientTop.copy(alpha = 0.85f),
+                            headerGradientTop.copy(alpha = 0.35f),
+                            Color(0xFF121212)
+                        )
+                    )
+                )
+        )
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back",
-                    tint = TextPrimary
-                )
-            }
-
-            Text(
-                text = "STARK BLEND ARCHIVE",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 1.sp,
-                    color = ArcCyan
-                )
-            )
-
-            Box {
-                IconButton(onClick = { showMenu = true }) {
+            // Top Navigation Bar
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                IconButton(onClick = onBack) {
                     Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "Options",
-                        tint = TextSecondary
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back",
+                        tint = Color.White
                     )
                 }
 
-                DropdownMenu(
-                    expanded = showMenu,
-                    onDismissRequest = { showMenu = false }
-                ) {
-                    DropdownMenuItem(
-                        text = { Text("Save as Playlist", fontFamily = FontFamily.Monospace) },
-                        leadingIcon = { Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = null, tint = ArcCyanBright) },
-                        onClick = {
-                            showMenu = false
-                            viewModel.saveBlendAsPlaylist(blendWithTracks) {
-                                Toast.makeText(context, "Saved '${blend.title}' to Playlists", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Copy Match Summary", fontFamily = FontFamily.Monospace) },
-                        leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null, tint = ArcCyanBright) },
-                        onClick = {
-                            showMenu = false
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                            val clip = ClipData.newPlainText(
-                                "Stark Blend Match",
-                                "${blend.title} • ${blend.matchScore}% Match • Top Genre: ${blend.topSharedGenre}"
-                            )
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Blend match summary copied", Toast.LENGTH_SHORT).show()
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Share Match Card", fontFamily = FontFamily.Monospace) },
-                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = ArcCyanBright) },
-                        onClick = {
-                            showMenu = false
-                            val shareIntent = Intent().apply {
-                                action = Intent.ACTION_SEND
-                                putExtra(
-                                    Intent.EXTRA_TEXT,
-                                    "✨ Check out our ${blend.matchScore}% Music Taste Match on Stark Blend!\n\n${blend.title}\nShared Anthem: ${blend.sharedAnthemTitle} by ${blend.sharedAnthemArtist}"
+                Text(
+                    text = "Blend",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    ),
+                    color = Color.White
+                )
+
+                Box {
+                    IconButton(onClick = { showMenu = true }) {
+                        Icon(
+                            imageVector = Icons.Default.MoreVert,
+                            contentDescription = "Options",
+                            tint = Color(0xFFA7A7A7)
+                        )
+                    }
+
+                    DropdownMenu(
+                        expanded = showMenu,
+                        onDismissRequest = { showMenu = false },
+                        modifier = Modifier.background(Color(0xFF282828))
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("Save as Playlist", color = Color.White) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.PlaylistAdd,
+                                    contentDescription = null,
+                                    tint = SpotifyGreen
                                 )
-                                type = "text/plain"
+                            },
+                            onClick = {
+                                showMenu = false
+                                viewModel.saveBlendAsPlaylist(blendWithTracks) {
+                                    Toast.makeText(context, "Saved '${blend.title}' to Playlists", Toast.LENGTH_SHORT).show()
+                                }
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Share Blend Card"))
-                        }
-                    )
-                    DropdownMenuItem(
-                        text = { Text("Delete Blend", fontFamily = FontFamily.Monospace, color = Color(0xFFFF5252)) },
-                        leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFFF5252)) },
-                        onClick = {
-                            showMenu = false
-                            viewModel.deleteBlend(blend.blendId)
-                            Toast.makeText(context, "Deleted ${blend.title}", Toast.LENGTH_SHORT).show()
-                            onBack()
-                        }
-                    )
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Share Match Story", color = Color.White) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Share,
+                                    contentDescription = null,
+                                    tint = SpotifyGreen
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                val shareIntent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "✨ We have a ${blend.matchScore}% Music Taste Match on SatvikX Blend!\n\n${blend.title}\nTop Genre: ${blend.topSharedGenre}\nShared Anthem: ${blend.sharedAnthemTitle} by ${blend.sharedAnthemArtist}"
+                                    )
+                                    type = "text/plain"
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Blend"))
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Copy Match Summary", color = Color.White) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.ContentCopy,
+                                    contentDescription = null,
+                                    tint = Color(0xFFA7A7A7)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = ClipData.newPlainText(
+                                    "SatvikX Blend Match",
+                                    "${blend.title} • ${blend.matchScore}% Match • Top Genre: ${blend.topSharedGenre}"
+                                )
+                                clipboard.setPrimaryClip(clip)
+                                Toast.makeText(context, "Blend match summary copied", Toast.LENGTH_SHORT).show()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Delete Blend", color = Color(0xFFFF5252)) },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFF5252)
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                viewModel.deleteBlend(blend.blendId)
+                                Toast.makeText(context, "Deleted ${blend.title}", Toast.LENGTH_SHORT).show()
+                                onBack()
+                            }
+                        )
+                    }
                 }
             }
-        }
 
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(bottom = 90.dp)
-        ) {
-            // Header: Arc Reactor Holographic Match Gauge
-            item {
-                HolographicMatchHeader(blend = blend, tracksCount = blendWithTracks.attributedTracks.size)
-            }
-
-            // Shared Anthem Card ("The Song That Unites You")
-            if (blend.sharedAnthemTitle.isNotBlank()) {
-                val anthemTrack = blendWithTracks.attributedTracks.firstOrNull { it.broughtBy == "both" }?.track
-                    ?: blendWithTracks.attributedTracks.firstOrNull { it.track.title.equals(blend.sharedAnthemTitle, ignoreCase = true) }?.track
-                    ?: blendWithTracks.attributedTracks.firstOrNull()?.track
-                val isAnthemPlaying = (anthemTrack?.id == currentTrackId) && isPlaying
-
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 100.dp)
+            ) {
+                // Spotify Blend Hero Cover Art (Overlapping Dual Circular Avatars)
                 item {
-                    SharedAnthemCard(
+                    SpotifyBlendHeroHeader(blend = blend, totalSongs = blendWithTracks.attributedTracks.size)
+                }
+
+                // Taste Story Card (Match % and Shared Anthem)
+                item {
+                    val anthemTrack = blendWithTracks.attributedTracks.firstOrNull { it.broughtBy == "both" }?.track
+                        ?: blendWithTracks.attributedTracks.firstOrNull { it.track.title.equals(blend.sharedAnthemTitle, ignoreCase = true) }?.track
+                        ?: blendWithTracks.attributedTracks.firstOrNull()?.track
+                    val isAnthemPlaying = (anthemTrack?.id == currentTrackId) && isPlaying
+
+                    SpotifyTasteStoryCard(
                         blend = blend,
                         isPlaying = isAnthemPlaying,
-                        onClickPlay = {
+                        onPlayAnthem = {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             if (anthemTrack != null) {
                                 viewModel.playTrackInBlend(anthemTrack, blendWithTracks.attributedTracks.map { it.track })
@@ -274,535 +325,632 @@ fun BlendDetailScreen(
                         }
                     )
                 }
-            }
 
-            // Action Buttons (Play Blend / Shuffle)
-            item {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.playBlend(blendWithTracks, shuffle = false)
-                        },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(containerColor = ArcCyanBright, contentColor = StarkCarbon),
-                        shape = RoundedCornerShape(12.dp)
+                // Spotify Action Row (Download, Save, Share, Shuffle, Big Green Play Button)
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(imageVector = Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "PLAY BLEND", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
-                    }
+                        // Save to Playlists
+                        IconButton(
+                            onClick = {
+                                viewModel.saveBlendAsPlaylist(blendWithTracks) {
+                                    Toast.makeText(context, "Saved to your library", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.PlaylistAdd,
+                                contentDescription = "Save to Library",
+                                tint = Color(0xFFA7A7A7),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
 
-                    OutlinedButton(
-                        onClick = {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            viewModel.playBlend(blendWithTracks, shuffle = true)
-                        },
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, ArcCyanBright)
-                    ) {
-                        Icon(imageVector = Icons.Default.Shuffle, contentDescription = null, modifier = Modifier.size(16.dp), tint = ArcCyanBright)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = "SHUFFLE", color = ArcCyanBright, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        // Share
+                        IconButton(
+                            onClick = {
+                                val shareIntent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(
+                                        Intent.EXTRA_TEXT,
+                                        "Check out our ${blend.matchScore}% Blend on SatvikX! ${blend.title}"
+                                    )
+                                    type = "text/plain"
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Blend"))
+                            },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share",
+                                tint = Color(0xFFA7A7A7),
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.weight(1f))
+
+                        // Shuffle Toggle Button
+                        IconButton(
+                            onClick = {
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                viewModel.playBlend(blendWithTracks, shuffle = true)
+                                Toast.makeText(context, "Shuffle playing Blend", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Shuffle,
+                                contentDescription = "Shuffle Blend",
+                                tint = Color(0xFFA7A7A7),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(14.dp))
+
+                        // Spotify 52dp Circular Green Play Button (optically centered)
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .shadow(8.dp, CircleShape)
+                                .clip(CircleShape)
+                                .background(SpotifyGreen)
+                                .clickable {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    viewModel.playBlend(blendWithTracks, shuffle = false)
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            OpticallyCenteredPlayIcon(
+                                modifier = Modifier.size(20.dp),
+                                tint = Color.Black
+                            )
+                        }
                     }
                 }
-            }
 
-            // Divider & Section Title
-            item {
-                HorizontalDivider(
-                    color = SurfaceVariantDark,
-                    thickness = 1.dp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+                // Tracklist Header
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "TRACKS",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                letterSpacing = 0.8.sp
+                            ),
+                            color = Color(0xFFA7A7A7)
+                        )
+                        Text(
+                            text = "${blendWithTracks.attributedTracks.size} songs",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                            color = Color(0xFFA7A7A7)
+                        )
+                    }
+                }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "ATTRIBUTED TRACKS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = TextSecondary
-                        )
-                    )
-                    Text(
-                        text = "${blendWithTracks.attributedTracks.size} TRACKS",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            color = StarkGold
-                        )
+                // Attributed Tracks List
+                itemsIndexed(
+                    items = blendWithTracks.attributedTracks,
+                    key = { idx, item -> "${item.track.id}_$idx" }
+                ) { index, item ->
+                    SpotifyBlendTrackRow(
+                        index = index + 1,
+                        attributedTrack = item,
+                        creatorName = blend.creatorName,
+                        partnerName = blend.partnerName,
+                        isCurrentPlaying = (item.track.id == currentTrackId) && isPlaying,
+                        onClick = {
+                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            viewModel.playTrackInBlend(item.track, blendWithTracks.attributedTracks.map { it.track })
+                        }
                     )
                 }
-            }
-
-            // Attributed Track Items
-            itemsIndexed(
-                items = blendWithTracks.attributedTracks,
-                key = { idx, item -> "${item.track.id}_$idx" }
-            ) { index, item ->
-                AttributedTrackRow(
-                    modifier = Modifier.animateItem(),
-                    index = index + 1,
-                    attributedTrack = item,
-                    isCurrentPlaying = (item.track.id == currentTrackId) && isPlaying,
-                    onClick = {
-                        haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                        viewModel.playTrackInBlend(item.track, blendWithTracks.attributedTracks.map { it.track })
-                    }
-                )
             }
         }
     }
 }
 
+/**
+ * Authentic Spotify Blend Cover Art:
+ * Overlapping dual circular member avatars with vibrant border rings, match pill badge, and title.
+ */
 @Composable
-private fun HolographicMatchHeader(
-    blend: com.satvik.satvikx.data.local.entity.BlendEntity,
-    tracksCount: Int
+private fun SpotifyBlendHeroHeader(
+    blend: BlendEntity,
+    totalSongs: Int
 ) {
-    val animatedProgress = remember { Animatable(0f) }
-
-    LaunchedEffect(blend.matchScore) {
-        animatedProgress.animateTo(
-            targetValue = blend.matchScore / 100f,
-            animationSpec = tween(durationMillis = 1000, easing = FastOutSlowInEasing)
-        )
-    }
-
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 24.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Holographic Arc Reactor Progress Circle
+        // Overlapping dual-circle avatar hero
         Box(
-            modifier = Modifier.size(130.dp),
+            modifier = Modifier
+                .size(width = 170.dp, height = 110.dp),
             contentAlignment = Alignment.Center
         ) {
-            androidx.compose.foundation.Canvas(modifier = Modifier.size(120.dp)) {
-                // Background Track
-                drawArc(
-                    color = SurfaceVariantDark,
-                    startAngle = -90f,
-                    sweepAngle = 360f,
-                    useCenter = false,
-                    style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
-                )
-                // Rotated Sweep Gradient Arc for perfect 12 o'clock alignment
-                rotate(-90f) {
-                    drawArc(
-                        brush = Brush.sweepGradient(listOf(ArcCyanBright, PrimaryNeon, StarkGold, ArcCyanBright)),
-                        startAngle = 0f,
-                        sweepAngle = 360f * animatedProgress.value,
-                        useCenter = false,
-                        style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round)
+            // Circle 1: Creator Avatar
+            Surface(
+                shape = CircleShape,
+                color = Color(0xFF38BDF8),
+                border = BorderStroke(3.dp, Color(0xFF121212)),
+                modifier = Modifier
+                    .size(86.dp)
+                    .align(Alignment.CenterStart)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = blend.creatorName.take(1).uppercase(),
+                        style = MaterialTheme.typography.headlineMedium.copy(
+                            fontWeight = FontWeight.ExtraBold,
+                            color = Color.Black
+                        )
                     )
                 }
             }
 
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "${(animatedProgress.value * 100).toInt()}%",
-                    style = MaterialTheme.typography.displaySmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = ArcCyanBright
-                    )
-                )
-                Text(
-                    text = "MATCH",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        letterSpacing = 1.sp,
-                        color = TextSecondary
-                    )
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        // Blend Title
-        Text(
-            text = blend.title,
-            style = MaterialTheme.typography.titleLarge.copy(
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            ),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-        )
-
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // Dual Participant Chips with Energy Beam
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
+            // Circle 2: Partner / Artist Avatar
             Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = ArcCyan.copy(alpha = 0.15f),
-                border = BorderStroke(1.dp, ArcCyanBright)
+                shape = CircleShape,
+                color = if (blend.isArtistBlend) Color(0xFFF59E0B) else SpotifyGreen,
+                border = BorderStroke(3.dp, Color(0xFF121212)),
+                modifier = Modifier
+                    .size(86.dp)
+                    .align(Alignment.CenterEnd)
             ) {
-                Text(
-                    text = blend.creatorName.uppercase(),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = ArcCyanBright
-                    ),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-
-            Text(
-                text = " • FUSION • ",
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 10.sp,
-                    color = PrimaryNeon
-                ),
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = StarkGold.copy(alpha = 0.15f),
-                border = BorderStroke(1.dp, StarkGold)
-            ) {
-                Text(
-                    text = blend.partnerName.uppercase(),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold,
-                        color = StarkGold
-                    ),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        Text(
-            text = "TOP SHARED GENRE • ${blend.topSharedGenre.uppercase()}",
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontFamily = FontFamily.Monospace,
-                fontSize = 11.sp,
-                letterSpacing = 0.8.sp,
-                color = TextSecondary
-            )
-        )
-    }
-}
-
-@Composable
-private fun SharedAnthemCard(
-    blend: com.satvik.satvikx.data.local.entity.BlendEntity,
-    isPlaying: Boolean,
-    onClickPlay: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = SurfaceElevated,
-        border = BorderStroke(1.dp, if (isPlaying) PrimaryNeon else PrimaryNeon.copy(alpha = 0.4f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
-            .clickable { onClickPlay() }
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = SurfaceVariantDark,
-                border = if (isPlaying) BorderStroke(1.dp, PrimaryNeon) else null,
-                modifier = Modifier.size(46.dp)
-            ) {
-                if (blend.sharedAnthemThumbnail.isNotBlank()) {
+                if (blend.isArtistBlend && blend.sharedAnthemThumbnail.isNotBlank()) {
                     AsyncImage(
                         model = blend.sharedAnthemThumbnail,
-                        contentDescription = blend.sharedAnthemTitle,
+                        contentDescription = blend.partnerName,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
                     Box(contentAlignment = Alignment.Center) {
-                        Icon(
-                            imageVector = Icons.Default.Stars,
-                            contentDescription = null,
-                            tint = PrimaryNeon,
-                            modifier = Modifier.size(24.dp)
+                        Text(
+                            text = blend.partnerName.take(1).uppercase(),
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                fontWeight = FontWeight.ExtraBold,
+                                color = Color.Black
+                            )
                         )
                     }
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(6.dp)
-                            .clip(CircleShape)
-                            .background(PrimaryNeon)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "THE SONG THAT UNITES YOU",
-                        style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 9.sp,
-                            letterSpacing = 0.6.sp,
-                            color = PrimaryNeon
-                        )
-                    )
-                }
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = blend.sharedAnthemTitle,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = if (isPlaying) PrimaryNeon else TextPrimary
-                    ),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+        // Match Percentage Pill
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = SpotifyGreen.copy(alpha = 0.18f),
+            border = BorderStroke(1.dp, SpotifyGreen.copy(alpha = 0.45f))
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = null,
+                    tint = SpotifyGreen,
+                    modifier = Modifier.size(13.dp)
                 )
+                Spacer(modifier = Modifier.width(5.dp))
                 Text(
-                    text = blend.sharedAnthemArtist,
-                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                    color = TextSecondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    text = "${blend.matchScore}% TASTE MATCH",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 0.6.sp,
+                        color = SpotifyGreen
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Title
+        Text(
+            text = blend.title,
+            style = MaterialTheme.typography.headlineSmall.copy(
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp
+            ),
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Meta Subtitle
+        Text(
+            text = "Made for ${blend.creatorName} + ${blend.partnerName} • $totalSongs songs",
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+            color = Color(0xFFA7A7A7),
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+/**
+ * Spotify Taste Story Card:
+ * Highlights the genre alignment and the Shared Anthem uniting both listeners.
+ */
+@Composable
+private fun SpotifyTasteStoryCard(
+    blend: BlendEntity,
+    isPlaying: Boolean,
+    onPlayAnthem: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = Color(0xFF242424),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 6.dp)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.Stars,
+                    contentDescription = null,
+                    tint = SpotifyGreen,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "TASTE STORY",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 0.5.sp,
+                        color = SpotifyGreen
+                    )
                 )
             }
 
-            if (isPlaying) {
-                MiniAudioWaveBars(
-                    modifier = Modifier.padding(horizontal = 6.dp),
-                    color = PrimaryNeon
-                )
-            } else {
-                IconButton(onClick = onClickPlay) {
-                    Icon(
-                        imageVector = Icons.Default.PlayCircle,
-                        contentDescription = "Play Shared Anthem",
-                        tint = PrimaryNeon,
-                        modifier = Modifier.size(32.dp)
-                    )
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = "You and ${blend.partnerName} have ${blend.matchScore}% taste alignment in ${blend.topSharedGenre}.",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.5.sp),
+                color = Color.White
+            )
+
+            if (blend.sharedAnthemTitle.isNotBlank()) {
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFF181818),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onPlayAnthem() }
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF2A2A2A),
+                            modifier = Modifier.size(38.dp)
+                        ) {
+                            if (blend.sharedAnthemThumbnail.isNotBlank()) {
+                                AsyncImage(
+                                    model = blend.sharedAnthemThumbnail,
+                                    contentDescription = blend.sharedAnthemTitle,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Default.MusicNote,
+                                        contentDescription = null,
+                                        tint = Color(0xFFA7A7A7),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(10.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "The song that unites you",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = SpotifyGreen
+                                )
+                            )
+                            Text(
+                                text = blend.sharedAnthemTitle,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isPlaying) SpotifyGreen else Color.White
+                                ),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = blend.sharedAnthemArtist,
+                                style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                color = Color(0xFFA7A7A7),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(if (isPlaying) SpotifyGreen else Color(0xFF2E2E2E)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isPlaying) {
+                                MiniEqualizerBars(color = Color.Black)
+                            } else {
+                                OpticallyCenteredPlayIcon(
+                                    modifier = Modifier.size(13.dp),
+                                    tint = Color.White
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
     }
 }
 
+/**
+ * Pure Spotify Track Row with Contributor Avatar Indicator.
+ */
 @Composable
-private fun AttributedTrackRow(
-    modifier: Modifier = Modifier,
+private fun SpotifyBlendTrackRow(
     index: Int,
     attributedTrack: AttributedTrack,
+    creatorName: String,
+    partnerName: String,
     isCurrentPlaying: Boolean,
     onClick: () -> Unit
 ) {
     val track = attributedTrack.track
 
-    Surface(
-        color = if (isCurrentPlaying) ArcCyan.copy(alpha = 0.08f) else Color.Transparent,
-        shape = RoundedCornerShape(10.dp),
-        border = if (isCurrentPlaying) BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.5f)) else null,
-        modifier = modifier
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(horizontal = 14.dp, vertical = 2.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // Track Index or Equalizer
+        Box(
+            modifier = Modifier.width(24.dp),
+            contentAlignment = Alignment.CenterStart
         ) {
             if (isCurrentPlaying) {
-                MiniAudioWaveBars(
-                    modifier = Modifier.width(26.dp),
-                    color = ArcCyanBright
-                )
+                MiniEqualizerBars(color = SpotifyGreen)
             } else {
                 Text(
                     text = "$index",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                        color = TextSecondary.copy(alpha = 0.6f)
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Normal
                     ),
-                    modifier = Modifier.width(26.dp)
+                    color = Color(0xFFA7A7A7)
                 )
             }
+        }
 
-            Surface(
-                shape = RoundedCornerShape(8.dp),
-                color = SurfaceVariantDark,
-                border = if (isCurrentPlaying) BorderStroke(1.dp, ArcCyanBright) else null,
-                modifier = Modifier.size(44.dp)
-            ) {
-                if (track.thumbnailUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = track.thumbnailUrl,
-                        contentDescription = track.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // Album Art
+        Surface(
+            shape = RoundedCornerShape(4.dp),
+            color = Color(0xFF242424),
+            modifier = Modifier.size(46.dp)
+        ) {
+            if (track.thumbnailUrl.isNotBlank()) {
+                AsyncImage(
+                    model = track.thumbnailUrl,
+                    contentDescription = track.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.Default.MusicNote,
+                        contentDescription = null,
+                        tint = Color(0xFFA7A7A7),
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(12.dp))
 
-            Column(modifier = Modifier.weight(1f)) {
+        // Title, Contributor Badge & Artist
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                style = MaterialTheme.typography.bodyMedium.copy(
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.5.sp
+                ),
+                color = if (isCurrentPlaying) SpotifyGreen else Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Spacer(modifier = Modifier.height(3.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Spotify Contributor Badge Avatar
+                when (attributedTrack.broughtBy) {
+                    "creator" -> {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFF38BDF8),
+                            modifier = Modifier.size(16.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = creatorName.take(1).uppercase(),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.Black
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    "partner" -> {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFEC4899),
+                            modifier = Modifier.size(16.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = partnerName.take(1).uppercase(),
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color.Black
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    else -> {
+                        Surface(
+                            shape = CircleShape,
+                            color = SpotifyGreen,
+                            modifier = Modifier.size(16.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "★",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.Black
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(6.dp))
+
                 Text(
-                    text = track.title,
-                    style = MaterialTheme.typography.bodyMedium.copy(
-                        fontWeight = FontWeight.Bold,
-                        color = if (isCurrentPlaying) ArcCyanBright else TextPrimary
-                    ),
+                    text = track.artist,
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.5.sp),
+                    color = Color(0xFFA7A7A7),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = track.artist,
-                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                        color = if (isCurrentPlaying) ArcCyan.copy(alpha = 0.8f) else TextSecondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f, fill = false)
-                    )
-
-                    Spacer(modifier = Modifier.width(8.dp))
-
-                    // Attribution Pill Badge
-                    val (badgeText, badgeColor) = when (attributedTrack.broughtBy) {
-                        "creator" -> Pair("You", ArcCyanBright)
-                        "both" -> Pair("Both ★", PrimaryNeon)
-                        else -> Pair(attributedTrack.broughtByName, StarkGold)
-                    }
-
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = badgeColor.copy(alpha = 0.12f),
-                        border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.5f))
-                    ) {
-                        Text(
-                            text = badgeText,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 9.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = badgeColor
-                            ),
-                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.5.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
             }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            val durationMinutes = track.durationSeconds / 60
-            val durationRemainingSec = track.durationSeconds % 60
-            Text(
-                text = String.format(Locale.US, "%d:%02d", durationMinutes, durationRemainingSec),
-                style = MaterialTheme.typography.labelSmall.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp,
-                    color = if (isCurrentPlaying) ArcCyanBright else TextSecondary
-                )
-            )
         }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Duration
+        val minutes = track.durationSeconds / 60
+        val seconds = track.durationSeconds % 60
+        Text(
+            text = String.format(Locale.US, "%d:%02d", minutes, seconds),
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = Color(0xFFA7A7A7)
+        )
     }
 }
 
+/**
+ * Animated Spotify mini equalizer bars for currently playing song.
+ */
 @Composable
-private fun MiniAudioWaveBars(
+private fun MiniEqualizerBars(
     modifier: Modifier = Modifier,
-    color: Color = ArcCyanBright
+    color: Color = SpotifyGreen
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "audio_bars")
-    val h1 by infiniteTransition.animateFloat(
-        initialValue = 0.35f,
+    val transition = rememberInfiniteTransition(label = "equalizer")
+    val bar1 by transition.animateFloat(
+        initialValue = 0.25f,
         targetValue = 0.95f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(420, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "h1"
+        animationSpec = infiniteRepeatable(tween(420, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "bar1"
     )
-    val h2 by infiniteTransition.animateFloat(
+    val bar2 by transition.animateFloat(
         initialValue = 0.85f,
-        targetValue = 0.25f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(360, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "h2"
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(tween(360, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "bar2"
     )
-    val h3 by infiniteTransition.animateFloat(
+    val bar3 by transition.animateFloat(
         initialValue = 0.40f,
-        targetValue = 0.90f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(480, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "h3"
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(tween(480, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "bar3"
     )
 
     Row(
-        modifier = modifier.height(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(2.5.dp),
+        modifier = modifier.size(width = 14.dp, height = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(1.5.dp),
         verticalAlignment = Alignment.Bottom
     ) {
         Box(
             modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight(h1)
-                .clip(RoundedCornerShape(1.5.dp))
-                .background(color)
+                .width(2.5.dp)
+                .fillMaxHeight(bar1)
+                .background(color, RoundedCornerShape(1.dp))
         )
         Box(
             modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight(h2)
-                .clip(RoundedCornerShape(1.5.dp))
-                .background(color)
+                .width(2.5.dp)
+                .fillMaxHeight(bar2)
+                .background(color, RoundedCornerShape(1.dp))
         )
         Box(
             modifier = Modifier
-                .width(3.dp)
-                .fillMaxHeight(h3)
-                .clip(RoundedCornerShape(1.5.dp))
-                .background(color)
+                .width(2.5.dp)
+                .fillMaxHeight(bar3)
+                .background(color, RoundedCornerShape(1.dp))
         )
     }
 }

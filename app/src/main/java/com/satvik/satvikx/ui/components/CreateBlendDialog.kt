@@ -70,11 +70,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeout
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.PrimaryNeon
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.theme.SurfaceDark
 import com.satvik.satvikx.ui.theme.SurfaceElevated
 import com.satvik.satvikx.ui.theme.SurfaceVariantDark
@@ -170,15 +166,15 @@ fun CreateBlendDialog(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = ArcCyan.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, ArcCyanBright),
+                    color = SpotifyGreen.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, SpotifyGreen),
                     modifier = Modifier.size(42.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.GroupAdd,
                             contentDescription = null,
-                            tint = ArcCyanBright,
+                            tint = SpotifyGreen,
                             modifier = Modifier.size(20.dp)
                         )
                     }
@@ -193,11 +189,10 @@ fun CreateBlendDialog(
                         )
                     )
                     Text(
-                        text = "STARK BLEND MATRIX",
+                        text = "SPOTIFY TASTE MATCH",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.ExtraBold,
-                            color = ArcCyan
+                            color = SpotifyGreen
                         )
                     )
                 }
@@ -223,13 +218,13 @@ fun CreateBlendDialog(
                 } else {
                     val code = inviteCode.orEmpty()
 
-                    // Holographic Arc Reactor Code Box (Tap anywhere to copy only the code)
+                    // Blend Code Box (Tap anywhere to copy only the code)
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = SurfaceElevated,
                         border = BorderStroke(
                             width = 1.dp,
-                            color = if (isCopied) PrimaryNeon else ArcCyanBright.copy(alpha = 0.6f)
+                            color = if (isCopied) SpotifyGreen else SpotifyGreen.copy(alpha = 0.6f)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -247,26 +242,25 @@ fun CreateBlendDialog(
                                     Icon(
                                         imageVector = Icons.Default.ElectricBolt,
                                         contentDescription = null,
-                                        tint = if (isCopied) PrimaryNeon else ArcCyanBright,
+                                        tint = SpotifyGreen,
                                         modifier = Modifier.size(13.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "STARK BLEND CODE",
+                                        text = "SPOTIFY BLEND CODE",
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 9.sp,
                                             letterSpacing = 0.8.sp,
-                                            color = if (isCopied) PrimaryNeon else ArcCyanBright
+                                            color = SpotifyGreen
                                         )
                                     )
                                 }
 
                                 Surface(
                                     shape = RoundedCornerShape(6.dp),
-                                    color = if (isCopied) PrimaryNeon.copy(alpha = 0.15f) else ArcCyan.copy(alpha = 0.15f),
-                                    border = BorderStroke(0.5.dp, if (isCopied) PrimaryNeon else ArcCyanBright)
+                                    color = SpotifyGreen.copy(alpha = 0.15f),
+                                    border = BorderStroke(0.5.dp, SpotifyGreen)
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
@@ -275,17 +269,16 @@ fun CreateBlendDialog(
                                         Icon(
                                             imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
                                             contentDescription = null,
-                                            tint = if (isCopied) PrimaryNeon else ArcCyanBright,
+                                            tint = SpotifyGreen,
                                             modifier = Modifier.size(10.dp)
                                         )
                                         Spacer(modifier = Modifier.width(3.dp))
                                         Text(
                                             text = if (isCopied) "COPIED" else "TAP TO COPY",
                                             style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = FontFamily.Monospace,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 9.sp,
-                                                color = if (isCopied) PrimaryNeon else ArcCyanBright
+                                                color = SpotifyGreen
                                             )
                                         )
                                     }
@@ -332,17 +325,16 @@ fun CreateBlendDialog(
                                     Icon(
                                         imageVector = Icons.Default.Stars,
                                         contentDescription = null,
-                                        tint = StarkGold,
+                                        tint = SpotifyGreen,
                                         modifier = Modifier.size(12.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
                                         text = "EMBEDDED PROFILE",
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 9.sp,
-                                            color = StarkGold
+                                            color = SpotifyGreen
                                         )
                                     )
                                 }
@@ -385,8 +377,8 @@ fun CreateBlendDialog(
                 },
                 enabled = !isLoading && inviteCode != null,
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isCopied) PrimaryNeon else ArcCyanBright,
-                    contentColor = StarkCarbon
+                    containerColor = SpotifyGreen,
+                    contentColor = Color.Black
                 ),
                 shape = RoundedCornerShape(10.dp)
             ) {
@@ -398,8 +390,7 @@ fun CreateBlendDialog(
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
                     text = if (isCopied) "COPIED CODE" else "COPY CODE",
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
+                    fontWeight = FontWeight.Bold
                 )
             }
         },
@@ -411,11 +402,10 @@ fun CreateBlendDialog(
                         inviteCode?.let { code ->
                             val sendIntent = Intent().apply {
                                 action = Intent.ACTION_SEND
-                                // Share strictly the code
                                 putExtra(Intent.EXTRA_TEXT, code)
                                 type = "text/plain"
                             }
-                            val shareIntent = Intent.createChooser(sendIntent, "Share Stark Blend Code")
+                            val shareIntent = Intent.createChooser(sendIntent, "Share Blend Code")
                             context.startActivity(shareIntent)
                         }
                     },
@@ -430,11 +420,11 @@ fun CreateBlendDialog(
                         tint = TextSecondary
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("SHARE", color = TextSecondary, fontFamily = FontFamily.Monospace)
+                    Text("SHARE", color = TextSecondary)
                 }
 
                 TextButton(onClick = onDismiss) {
-                    Text("CLOSE", color = TextSecondary, fontFamily = FontFamily.Monospace)
+                    Text("CLOSE", color = TextSecondary)
                 }
             }
         }
@@ -455,7 +445,7 @@ private fun TasteProfileComputationEtaLoader(
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = SurfaceElevated.copy(alpha = 0.6f),
-        border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.5f)),
+        border = BorderStroke(1.dp, SpotifyGreen.copy(alpha = 0.4f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -471,34 +461,32 @@ private fun TasteProfileComputationEtaLoader(
                     Icon(
                         imageVector = Icons.Default.Analytics,
                         contentDescription = null,
-                        tint = ArcCyanBright,
+                        tint = SpotifyGreen,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "STARK TASTE ANALYSIS",
+                        text = "ANALYZING MUSIC TASTE",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 10.sp,
                             letterSpacing = 0.8.sp,
-                            color = ArcCyanBright
+                            color = SpotifyGreen
                         )
                     )
                 }
 
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = ArcCyan.copy(alpha = 0.15f),
-                    border = BorderStroke(0.5.dp, ArcCyanBright.copy(alpha = 0.6f))
+                    color = SpotifyGreen.copy(alpha = 0.15f),
+                    border = BorderStroke(0.5.dp, SpotifyGreen.copy(alpha = 0.6f))
                 ) {
                     Text(
                         text = etaText,
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
-                            color = PrimaryNeon
+                            color = SpotifyGreen
                         ),
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
@@ -507,14 +495,13 @@ private fun TasteProfileComputationEtaLoader(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // High-Tech Animated Linear Progress Indicator
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
-                color = ArcCyanBright,
+                color = SpotifyGreen,
                 trackColor = SurfaceDark
             )
 
@@ -528,7 +515,6 @@ private fun TasteProfileComputationEtaLoader(
                 Text(
                     text = stageText,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextSecondary
@@ -543,10 +529,9 @@ private fun TasteProfileComputationEtaLoader(
                 Text(
                     text = "${(progress * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
-                        color = ArcCyan
+                        color = SpotifyGreen
                     )
                 )
             }

@@ -66,11 +66,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.satvik.satvikx.data.repository.BlendInvitePayload
 import kotlinx.coroutines.delay
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.PrimaryNeon
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.theme.SurfaceDark
 import com.satvik.satvikx.ui.theme.SurfaceElevated
 import com.satvik.satvikx.ui.theme.SurfaceVariantDark
@@ -229,15 +225,15 @@ fun JoinBlendDialog(
                 ) {
                     Surface(
                         shape = CircleShape,
-                        color = PrimaryNeon.copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, PrimaryNeon),
+                        color = SpotifyGreen.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, SpotifyGreen),
                         modifier = Modifier.size(42.dp)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Icon(
                                 imageVector = Icons.Default.Hub,
                                 contentDescription = null,
-                                tint = PrimaryNeon,
+                                tint = SpotifyGreen,
                                 modifier = Modifier.size(20.dp)
                             )
                         }
@@ -245,18 +241,17 @@ fun JoinBlendDialog(
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(
-                            text = "Join Stark Blend",
+                            text = "Join Blend",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = TextPrimary
                             )
                         )
                         Text(
-                            text = "TASTE FUSION PROTOCOL",
+                            text = "SPOTIFY TASTE MATCH",
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.ExtraBold,
-                                color = PrimaryNeon
+                                color = SpotifyGreen
                             )
                         )
                     }
@@ -306,8 +301,8 @@ fun JoinBlendDialog(
                             Spacer(modifier = Modifier.height(4.dp))
                             Surface(
                                 shape = RoundedCornerShape(10.dp),
-                                color = ArcCyan.copy(alpha = 0.12f),
-                                border = BorderStroke(1.dp, ArcCyanBright.copy(alpha = 0.7f)),
+                                color = SpotifyGreen.copy(alpha = 0.12f),
+                                border = BorderStroke(1.dp, SpotifyGreen.copy(alpha = 0.5f)),
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
@@ -327,17 +322,16 @@ fun JoinBlendDialog(
                                     Icon(
                                         imageVector = Icons.Default.ElectricBolt,
                                         contentDescription = null,
-                                        tint = ArcCyanBright,
+                                        tint = SpotifyGreen,
                                         modifier = Modifier.size(15.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
                                         text = "Blend code detected in clipboard • Tap to paste",
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 10.sp,
-                                            color = ArcCyanBright
+                                            color = SpotifyGreen
                                         ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -359,15 +353,15 @@ fun JoinBlendDialog(
                         placeholder = {
                             Text(
                                 text = "Paste STKBLD: code",
-                                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                style = MaterialTheme.typography.bodySmall,
                                 color = TextSecondary.copy(alpha = 0.5f)
                             )
                         },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = if (verifiedPayload != null) PrimaryNeon else ArcCyanBright,
-                            unfocusedBorderColor = if (verifiedPayload != null) PrimaryNeon.copy(alpha = 0.5f) else SurfaceVariantDark,
+                            focusedBorderColor = if (verifiedPayload != null) SpotifyGreen else SpotifyGreen.copy(alpha = 0.8f),
+                            unfocusedBorderColor = if (verifiedPayload != null) SpotifyGreen.copy(alpha = 0.5f) else SurfaceVariantDark,
                             focusedTextColor = TextPrimary,
                             unfocusedTextColor = TextPrimary
                         ),
@@ -405,15 +399,14 @@ fun JoinBlendDialog(
                                     Icon(
                                         imageVector = Icons.Default.ContentPaste,
                                         contentDescription = "Paste",
-                                        tint = PrimaryNeon,
+                                        tint = SpotifyGreen,
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = "PASTE",
-                                        color = PrimaryNeon,
+                                        color = SpotifyGreen,
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Bold
                                         )
                                     )
@@ -422,13 +415,13 @@ fun JoinBlendDialog(
                         }
                     )
 
-                    // Real-Time Verified Fusion Target Hologram
+                    // Real-Time Verified Fusion Target
                     if (verifiedPayload != null) {
                         Spacer(modifier = Modifier.height(12.dp))
                         Surface(
                             shape = RoundedCornerShape(12.dp),
                             color = SurfaceElevated,
-                            border = BorderStroke(1.dp, PrimaryNeon.copy(alpha = 0.7f)),
+                            border = BorderStroke(1.dp, SpotifyGreen.copy(alpha = 0.6f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
@@ -441,29 +434,27 @@ fun JoinBlendDialog(
                                         Icon(
                                             imageVector = Icons.Default.CheckCircle,
                                             contentDescription = null,
-                                            tint = PrimaryNeon,
+                                            tint = SpotifyGreen,
                                             modifier = Modifier.size(14.dp)
                                         )
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Text(
-                                            text = "FUSION TARGET IDENTIFIED",
+                                            text = "FRIEND'S TASTE TOKEN VERIFIED",
                                             style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = FontFamily.Monospace,
                                                 fontWeight = FontWeight.ExtraBold,
                                                 fontSize = 9.sp,
                                                 letterSpacing = 0.8.sp,
-                                                color = PrimaryNeon
+                                                color = SpotifyGreen
                                             )
                                         )
                                     }
 
                                     Text(
-                                        text = "VERIFIED",
+                                        text = "READY",
                                         style = MaterialTheme.typography.labelSmall.copy(
-                                            fontFamily = FontFamily.Monospace,
                                             fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = PrimaryNeon
+                                            color = SpotifyGreen
                                         )
                                     )
                                 }
@@ -473,15 +464,15 @@ fun JoinBlendDialog(
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Surface(
                                         shape = CircleShape,
-                                        color = StarkGold.copy(alpha = 0.15f),
-                                        border = BorderStroke(0.5.dp, StarkGold),
+                                        color = SpotifyGreen.copy(alpha = 0.15f),
+                                        border = BorderStroke(0.5.dp, SpotifyGreen),
                                         modifier = Modifier.size(24.dp)
                                     ) {
                                         Box(contentAlignment = Alignment.Center) {
                                             Icon(
                                                 imageVector = Icons.Default.Person,
                                                 contentDescription = null,
-                                                tint = StarkGold,
+                                                tint = SpotifyGreen,
                                                 modifier = Modifier.size(14.dp)
                                             )
                                         }
@@ -520,7 +511,7 @@ fun JoinBlendDialog(
                     } else if (tokenInput.isNotBlank()) {
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Ensure you enter a valid Stark Blend code (starts with STKBLD:).",
+                            text = "Ensure you enter a valid Blend code (starts with STKBLD:).",
                             color = Color(0xFFFF5252),
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp)
                         )
@@ -546,19 +537,19 @@ fun JoinBlendDialog(
                     }
                 },
                 enabled = verifiedPayload != null && !isFusing && !uiState.isGenerating,
-                colors = ButtonDefaults.buttonColors(containerColor = PrimaryNeon, contentColor = StarkCarbon),
+                colors = ButtonDefaults.buttonColors(containerColor = SpotifyGreen, contentColor = Color.Black),
                 shape = RoundedCornerShape(10.dp)
             ) {
                 if (isFusing || uiState.isGenerating) {
                     CircularProgressIndicator(
-                        color = StarkCarbon,
+                        color = Color.Black,
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("FUSING TASTES...", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("CREATING BLEND...", fontWeight = FontWeight.Bold)
                 } else {
-                    Text("SYNTHESIZE BLEND", fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                    Text("CREATE BLEND", fontWeight = FontWeight.Bold)
                 }
             }
         },
@@ -570,9 +561,8 @@ fun JoinBlendDialog(
                 }
             ) {
                 Text(
-                    text = if (isFusing || uiState.isGenerating) "CANCEL FUSION" else "CANCEL",
-                    color = TextSecondary,
-                    fontFamily = FontFamily.Monospace
+                    text = if (isFusing || uiState.isGenerating) "CANCEL" else "CANCEL",
+                    color = TextSecondary
                 )
             }
         }
@@ -589,7 +579,7 @@ private fun TasteFusionEtaLoader(
     Surface(
         shape = RoundedCornerShape(14.dp),
         color = SurfaceElevated.copy(alpha = 0.7f),
-        border = BorderStroke(1.dp, PrimaryNeon.copy(alpha = 0.6f)),
+        border = BorderStroke(1.dp, SpotifyGreen.copy(alpha = 0.5f)),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(
@@ -608,18 +598,17 @@ private fun TasteFusionEtaLoader(
                     Icon(
                         imageVector = Icons.Default.Hub,
                         contentDescription = null,
-                        tint = PrimaryNeon,
+                        tint = SpotifyGreen,
                         modifier = Modifier.size(16.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "FUSING WITH ${partnerName.uppercase()}",
+                        text = "BLENDING WITH ${partnerName.uppercase()}",
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 10.sp,
                             letterSpacing = 0.8.sp,
-                            color = PrimaryNeon
+                            color = SpotifyGreen
                         ),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -630,16 +619,15 @@ private fun TasteFusionEtaLoader(
 
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = PrimaryNeon.copy(alpha = 0.15f),
-                    border = BorderStroke(0.5.dp, PrimaryNeon.copy(alpha = 0.6f))
+                    color = SpotifyGreen.copy(alpha = 0.15f),
+                    border = BorderStroke(0.5.dp, SpotifyGreen.copy(alpha = 0.6f))
                 ) {
                     Text(
                         text = etaText,
                         style = MaterialTheme.typography.labelSmall.copy(
-                            fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
-                            color = PrimaryNeon
+                            color = SpotifyGreen
                         ),
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
@@ -648,14 +636,13 @@ private fun TasteFusionEtaLoader(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // High-Tech Animated Linear Progress Indicator
             LinearProgressIndicator(
                 progress = { progress },
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(3.dp)),
-                color = PrimaryNeon,
+                color = SpotifyGreen,
                 trackColor = SurfaceDark
             )
 
@@ -669,7 +656,6 @@ private fun TasteFusionEtaLoader(
                 Text(
                     text = stageText,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Medium,
                         color = TextSecondary
@@ -684,10 +670,9 @@ private fun TasteFusionEtaLoader(
                 Text(
                     text = "${(progress * 100).toInt()}%",
                     style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
                         fontWeight = FontWeight.Bold,
                         fontSize = 11.sp,
-                        color = PrimaryNeon
+                        color = SpotifyGreen
                     )
                 )
             }

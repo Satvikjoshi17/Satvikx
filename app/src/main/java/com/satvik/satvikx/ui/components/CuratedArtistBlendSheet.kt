@@ -58,11 +58,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.satvik.satvikx.data.repository.CuratedBlendArtist
-import com.satvik.satvikx.ui.theme.ArcCyan
-import com.satvik.satvikx.ui.theme.ArcCyanBright
-import com.satvik.satvikx.ui.theme.PrimaryNeon
-import com.satvik.satvikx.ui.theme.StarkCarbon
-import com.satvik.satvikx.ui.theme.StarkGold
+import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.theme.SurfaceDark
 import com.satvik.satvikx.ui.theme.SurfaceElevated
 import com.satvik.satvikx.ui.theme.SurfaceVariantDark
@@ -111,15 +107,15 @@ fun CuratedArtistBlendSheet(
             ) {
                 Surface(
                     shape = CircleShape,
-                    color = ArcCyan.copy(alpha = 0.15f),
-                    border = BorderStroke(1.dp, ArcCyanBright),
+                    color = SpotifyGreen.copy(alpha = 0.15f),
+                    border = BorderStroke(1.dp, SpotifyGreen),
                     modifier = Modifier.size(36.dp)
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.Default.Stars,
                             contentDescription = null,
-                            tint = ArcCyanBright,
+                            tint = SpotifyGreen,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -127,7 +123,7 @@ fun CuratedArtistBlendSheet(
                 Spacer(modifier = Modifier.width(10.dp))
                 Column {
                     Text(
-                        text = "Create Artist Stark Blend",
+                        text = "Artist Blend",
                         style = MaterialTheme.typography.titleMedium.copy(
                             fontWeight = FontWeight.Bold,
                             color = TextPrimary
@@ -169,15 +165,15 @@ fun CuratedArtistBlendSheet(
                         },
                         colors = FilterChipDefaults.filterChipColors(
                             containerColor = SurfaceElevated,
-                            selectedContainerColor = ArcCyanBright.copy(alpha = 0.2f),
+                            selectedContainerColor = SpotifyGreen.copy(alpha = 0.2f),
                             labelColor = TextSecondary,
-                            selectedLabelColor = ArcCyanBright
+                            selectedLabelColor = SpotifyGreen
                         ),
                         border = FilterChipDefaults.filterChipBorder(
                             enabled = true,
                             selected = isSelected,
                             borderColor = SurfaceVariantDark,
-                            selectedBorderColor = ArcCyanBright
+                            selectedBorderColor = SpotifyGreen
                         ),
                         shape = RoundedCornerShape(20.dp)
                     )
@@ -200,17 +196,17 @@ fun CuratedArtistBlendSheet(
                     val isSelected = uiState.selectedArtistIds.contains(artist.id)
 
                     val animBgColor by animateColorAsState(
-                        targetValue = if (isSelected) ArcCyan.copy(alpha = 0.15f) else SurfaceElevated,
+                        targetValue = if (isSelected) SpotifyGreen.copy(alpha = 0.15f) else SurfaceElevated,
                         animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                         label = "artist_bg"
                     )
                     val animBorderColor by animateColorAsState(
-                        targetValue = if (isSelected) ArcCyanBright else SurfaceVariantDark,
+                        targetValue = if (isSelected) SpotifyGreen else SurfaceVariantDark,
                         animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                         label = "artist_border"
                     )
                     val animIconBg by animateColorAsState(
-                        targetValue = if (isSelected) ArcCyanBright else SurfaceVariantDark,
+                        targetValue = if (isSelected) SpotifyGreen else SurfaceVariantDark,
                         animationSpec = tween(durationMillis = 200, easing = FastOutSlowInEasing),
                         label = "artist_icon_bg"
                     )
@@ -246,7 +242,7 @@ fun CuratedArtistBlendSheet(
                                         Icon(
                                             imageVector = Icons.Default.Check,
                                             contentDescription = null,
-                                            tint = StarkCarbon,
+                                            tint = Color.Black,
                                             modifier = Modifier.size(20.dp)
                                         )
                                     } else {
@@ -268,7 +264,7 @@ fun CuratedArtistBlendSheet(
                                         text = artist.name,
                                         style = MaterialTheme.typography.bodyMedium.copy(
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isSelected) ArcCyanBright else TextPrimary
+                                            color = if (isSelected) SpotifyGreen else TextPrimary
                                         ),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
@@ -282,9 +278,8 @@ fun CuratedArtistBlendSheet(
                                         Text(
                                             text = artist.category.uppercase(),
                                             style = MaterialTheme.typography.labelSmall.copy(
-                                                fontFamily = FontFamily.Monospace,
                                                 fontSize = 9.sp,
-                                                color = StarkGold
+                                                color = SpotifyGreen
                                             ),
                                             modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                         )
@@ -321,28 +316,26 @@ fun CuratedArtistBlendSheet(
                     .padding(horizontal = 16.dp),
                 shape = RoundedCornerShape(12.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = ArcCyanBright,
-                    contentColor = StarkCarbon,
+                    containerColor = SpotifyGreen,
+                    contentColor = Color.Black,
                     disabledContainerColor = SurfaceVariantDark,
                     disabledContentColor = TextSecondary
                 )
             ) {
                 if (uiState.isGenerating) {
                     CircularProgressIndicator(
-                        color = StarkCarbon,
+                        color = Color.Black,
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "SYNTHESIZING STARK BLEND...",
-                        fontFamily = FontFamily.Monospace,
+                        text = "CREATING BLEND...",
                         fontWeight = FontWeight.Bold
                     )
                 } else {
                     Text(
-                        text = if (selectedCount == 0) "SELECT ARTISTS (UP TO 3)" else "SYNTHESIZE STARK BLEND ($selectedCount/3)",
-                        fontFamily = FontFamily.Monospace,
+                        text = if (selectedCount == 0) "SELECT ARTISTS (UP TO 3)" else "CREATE BLEND ($selectedCount/3)",
                         fontWeight = FontWeight.Bold
                     )
                 }

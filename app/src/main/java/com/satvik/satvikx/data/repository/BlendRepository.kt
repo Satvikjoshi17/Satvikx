@@ -2,7 +2,9 @@ package com.satvik.satvikx.data.repository
 
 import android.util.Base64
 import com.satvik.satvikx.data.local.dao.BlendDao
+import com.satvik.satvikx.data.local.dao.PlaybackTelemetryDao
 import com.satvik.satvikx.data.local.dao.PlaylistDao
+import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.AttributedTrack
 import com.satvik.satvikx.data.local.entity.BlendEntity
@@ -14,8 +16,12 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.cleanArtistName
 import com.satvik.satvikx.data.local.entity.cleanSongTitle
 import com.satvik.satvikx.data.local.entity.distinctSongs
+import com.satvik.satvikx.data.local.entity.getEffectiveArtists
 import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.entity.isSongOnly
+import com.satvik.satvikx.recommendation.LongTermProfile
+import com.satvik.satvikx.recommendation.SessionVibeClassifier
+import com.satvik.satvikx.recommendation.UserTasteProfiler
 import com.squareup.moshi.JsonClass
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
@@ -145,6 +151,10 @@ class BlendRepository @Inject constructor(
     private val blendDao: BlendDao,
     private val trackDao: TrackDao,
     private val playlistDao: PlaylistDao,
+    private val recentPlaybackDao: RecentPlaybackDao,
+    private val playbackTelemetryDao: PlaybackTelemetryDao,
+    private val userTasteProfiler: UserTasteProfiler,
+    private val vibeClassifier: SessionVibeClassifier,
     private val recommendationRepository: RecommendationRepository,
     private val streamRepository: StreamRepository,
     private val authRepository: AuthRepository,
@@ -237,8 +247,158 @@ class BlendRepository @Inject constructor(
     }
 
     /**
+     * Synthesizes the user's authentic signature tracks using their decay-weighted LongTermProfile:
+     * - Ranks candidates across Liked Songs, Downloads, high-completion telemetry, and repeat favorites.
+     * - Scores every candidate track by matching its artists against user's lifetime top artists and genres.
+     * - Strictly penalizes skipped or unrated tracks to prevent unwanted recent one-off plays from polluting Blend.
+     * - Enforces artist diversity (maximum 2-3 tracks per artist) so the 18 tracks span across the user's diverse taste profile.
+     */
+    suspend fun selectUserTasteCuratedTracks(targetCount: Int = 18): List<TrackEntity> = withContext(Dispatchers.IO) {
+        val profile = userTasteProfiler.computeLongTermProfile()
+
+        // 1. Liked Songs (highest explicit user intent)
+        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
+        val likedTracks = likedPlaylist?.let {
+            playlistDao.getPlaylistWithTracksSync(it.playlistId)?.tracks
+        }.orEmpty().filter { it.isSongOnly() }
+
+        // 2. Downloaded Songs (strong offline preference)
+        val downloadedTracks = trackDao.getDownloadedTracksSync().filter { it.isSongOnly() }
+
+        // 3. Behavioral Telemetry (completion bonuses & skip penalties)
+        val telemetryList = try {
+            playbackTelemetryDao.getRecentTelemetry(100)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val highCompletionIds = telemetryList.filter { it.completionCount > 0 && it.skipCount == 0 }.map { it.trackId }.toSet()
+        val heavilySkippedIds = telemetryList.filter { it.skipCount > (it.completionCount * 2) && it.completionCount == 0 }.map { it.trackId }.toSet()
+
+        // 4. Recent Playback tracks (subject to strict taste scoring)
+        val recentTracks = recentPlaybackDao.getRecentTracksSync(60).filter { it.isSongOnly() }
+
+        // Combine pool and filter out heavily skipped tracks
+        val allCandidates = (likedTracks + downloadedTracks + profile.vaultTracks + recentTracks)
+            .distinctBy { it.id }
+            .filter { !heavilySkippedIds.contains(it.id) }
+
+        // 5. Score candidates according to user's multidimensional taste vector
+        val scoredTracks = allCandidates.map { track ->
+            var score = 0f
+            val effectiveArtists = track.getEffectiveArtists().map { it.lowercase(Locale.ROOT) }
+
+            // A. Top Artists Rank Bonus
+            profile.topArtists.forEachIndexed { rank, topArtist ->
+                val normTop = topArtist.lowercase(Locale.ROOT)
+                if (effectiveArtists.any { it.contains(normTop) || normTop.contains(it) }) {
+                    score += when (rank) {
+                        0 -> 40f
+                        1 -> 32f
+                        2 -> 25f
+                        3 -> 20f
+                        4 -> 16f
+                        5 -> 12f
+                        else -> 8f
+                    }
+                }
+            }
+
+            // B. Direct Artist Score Bonus from LongTermProfile
+            effectiveArtists.forEach { artist ->
+                val aScore = profile.artistScores[artist] ?: 0f
+                if (aScore > 0f) {
+                    score += aScore.coerceAtMost(20f)
+                }
+            }
+
+            // C. Explicit User Library Signals
+            if (likedTracks.any { it.isSameSong(track) }) {
+                score += 25f
+            }
+            if (downloadedTracks.any { it.isSameSong(track) }) {
+                score += 18f
+            }
+
+            // D. Telemetry Completion Bonus
+            if (highCompletionIds.contains(track.id)) {
+                score += 15f
+            }
+
+            // E. Genre Alignment
+            val detectedGenres = vibeClassifier.detectGenres("${track.title} ${track.artist}")
+            profile.topGenres.take(4).forEachIndexed { gRank, topGenre ->
+                val normGenre = topGenre.lowercase(Locale.ROOT)
+                if (detectedGenres.any { it.contains(normGenre) || normGenre.contains(it) }) {
+                    score += when (gRank) {
+                        0 -> 12f
+                        1 -> 8f
+                        2 -> 5f
+                        else -> 3f
+                    }
+                }
+            }
+
+            track to score
+        }
+
+        // 6. Sort candidates by score descending
+        val sortedCandidates = scoredTracks
+            .filter { it.second > 0f }
+            .sortedByDescending { it.second }
+            .map { it.first }
+
+        // 7. Enforce Artist Diversity (max 2 tracks per artist to provide taste breadth)
+        val selectedTracks = mutableListOf<TrackEntity>()
+        val artistFrequency = mutableMapOf<String, Int>()
+
+        for (track in sortedCandidates) {
+            val primary = track.cleanArtistName().lowercase(Locale.ROOT)
+            val count = artistFrequency[primary] ?: 0
+            if (count < 2) {
+                selectedTracks.add(track)
+                artistFrequency[primary] = count + 1
+            }
+            if (selectedTracks.size >= targetCount) break
+        }
+
+        // If still under targetCount, allow up to 3 tracks per artist
+        if (selectedTracks.size < targetCount) {
+            for (track in sortedCandidates) {
+                if (selectedTracks.none { it.isSameSong(track) }) {
+                    val primary = track.cleanArtistName().lowercase(Locale.ROOT)
+                    val count = artistFrequency[primary] ?: 0
+                    if (count < 3) {
+                        selectedTracks.add(track)
+                        artistFrequency[primary] = count + 1
+                    }
+                }
+                if (selectedTracks.size >= targetCount) break
+            }
+        }
+
+        // 8. If still under targetCount (e.g. brand new user with little history),
+        // fill with iconic master curated tracks matching their top genres/artists
+        if (selectedTracks.size < targetCount) {
+            val needed = targetCount - selectedTracks.size
+            val matchingCurated = MASTER_CURATED_TRACKS.filter { seed ->
+                val matchesGenre = profile.topGenres.any { seed.genre.contains(it, ignoreCase = true) }
+                val matchesArtist = profile.topArtists.any { seed.artist.contains(it, ignoreCase = true) }
+                matchesGenre || matchesArtist
+            }.map { it.toTrackEntity() }
+
+            val fallback = (matchingCurated + MASTER_CURATED_TRACKS.map { it.toTrackEntity() })
+                .filter { seed -> selectedTracks.none { it.isSameSong(seed) } }
+                .take(needed)
+
+            selectedTracks.addAll(fallback)
+        }
+
+        selectedTracks.take(targetCount)
+    }
+
+    /**
      * Generates a decentralized Taste Token containing the user's name and comprehensive taste vector.
-     * Gathers up to 18 authentic tracks across Heavy Rotation, Vault, Liked Songs, Downloads, and Library.
+     * Gathers up to 18 authentic tracks strictly selected from the user's decay-weighted taste profile.
      */
     suspend fun generateInvitePayload(): BlendInvitePayload = withContext(Dispatchers.IO) {
         val affinities = recommendationRepository.analyzeUserAffinities()
@@ -246,41 +406,8 @@ class BlendRepository @Inject constructor(
         val topArtists = affinities.overallTopArtists.take(6)
         val topGenres = affinities.topGenres.take(4)
 
-        val candidateTracks = mutableListOf<TrackEntity>()
-        candidateTracks.addAll(affinities.heavyRotationTracks.filter { it.isSongOnly() })
-        candidateTracks.addAll(affinities.vaultTracks.filter { it.isSongOnly() })
-
-        // 1. Liked Songs (bounded to top 20 to guarantee sub-millisecond execution)
-        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
-        if (likedPlaylist != null) {
-            val liked = playlistDao.getPlaylistWithTracksSync(likedPlaylist.playlistId)?.tracks.orEmpty()
-            candidateTracks.addAll(liked.filter { it.isSongOnly() }.take(20))
-        }
-
-        // 2. Downloaded Songs (bounded to top 20)
-        val downloaded = trackDao.getDownloadedTracksSync()
-        candidateTracks.addAll(downloaded.filter { it.isSongOnly() }.take(20))
-
-        var anchorTracks = candidateTracks.take(40).distinctSongs().take(18)
-
-        // If library has no tracks yet (brand new user), seed with timeless curated flagship tracks instantly (0ms)
-        if (anchorTracks.isEmpty()) {
-            val seedTitles = listOf("Starboy", "Kesariya", "Lover", "Yellow", "Blinding Lights", "Believer")
-            val seedArtists = listOf("The Weeknd", "Arijit Singh", "Taylor Swift", "Coldplay", "The Weeknd", "Imagine Dragons")
-            val seedIds = listOf("34Na4j8AVgA", "BddP6PYo2gs", "-BjZmE2gtdo", "yKNxeF4KMsY", "4NRXx6U8ABQ", "7wtfhZwyrcc")
-            seedTitles.forEachIndexed { idx, title ->
-                candidateTracks.add(
-                    TrackEntity(
-                        id = seedIds[idx],
-                        title = title,
-                        artist = seedArtists[idx],
-                        durationSeconds = 210L,
-                        thumbnailUrl = "https://i.ytimg.com/vi/${seedIds[idx]}/mqdefault.jpg"
-                    )
-                )
-            }
-            anchorTracks = candidateTracks.take(18)
-        }
+        // Select authentic 18 tracks reflecting true music taste vectors (not raw recent listening)
+        val anchorTracks = selectUserTasteCuratedTracks(18)
 
         BlendInvitePayload(
             userName = userName,
@@ -374,37 +501,8 @@ class BlendRepository @Inject constructor(
         val creatorName = getCurrentUserName()
         val partnerName = partnerPayload.userName.trim().ifBlank { "Friend" }
 
-        // 1. Gather User B's Deep Library (Up to 18 authentic tracks, bounded to eliminate quadratic distinct checks)
-        val userCandidates = mutableListOf<TrackEntity>()
-        userCandidates.addAll(affinities.heavyRotationTracks.filter { it.isSongOnly() })
-        userCandidates.addAll(affinities.vaultTracks.filter { it.isSongOnly() })
-
-        val likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
-        if (likedPlaylist != null) {
-            val liked = playlistDao.getPlaylistWithTracksSync(likedPlaylist.playlistId)?.tracks.orEmpty()
-            userCandidates.addAll(liked.filter { it.isSongOnly() }.take(20))
-        }
-        val downloaded = trackDao.getDownloadedTracksSync()
-        userCandidates.addAll(downloaded.filter { it.isSongOnly() }.take(20))
-
-        var userVault = userCandidates.take(40).distinctSongs().take(18).toMutableList()
-
-        // If User B has fewer than 18 tracks, augment instantly from Curated Master Vault (0ms delay)
-        if (userVault.size < 18) {
-            val needed = 18 - userVault.size
-            val matchingCurated = MASTER_CURATED_TRACKS.filter { seed ->
-                val matchesGenre = affinities.topGenres.any { seed.genre.contains(it, ignoreCase = true) }
-                val matchesArtist = affinities.overallTopArtists.any { seed.artist.contains(it, ignoreCase = true) }
-                matchesGenre || matchesArtist
-            }.map { it.toTrackEntity() }
-
-            val fallbackCurated = (matchingCurated + MASTER_CURATED_TRACKS.map { it.toTrackEntity() })
-                .filter { seed -> userVault.none { it.isSameSong(seed) } }
-                .take(needed)
-
-            userVault.addAll(fallbackCurated)
-            userVault = userVault.distinctSongs().take(18).toMutableList()
-        }
+        // 1. Gather User's Authentic Signature Tracks (18 tracks scored from decay-weighted taste profile)
+        var userVault = selectUserTasteCuratedTracks(18).toMutableList()
 
         // 2. Resolve Partner's Anchor Tracks directly from payload with zero network delay
         val partnerAnchorTracks = mutableListOf<TrackEntity>()
@@ -630,10 +728,8 @@ class BlendRepository @Inject constructor(
         val creatorName = getCurrentUserName()
         val artistsNames = selectedArtists.joinToString(" & ") { it.name }
 
-        // Fetch user favorites
-        val userVault = (affinities.heavyRotationTracks + affinities.vaultTracks)
-            .filter { it.isSongOnly() }
-            .distinctSongs()
+        // Fetch user signature tracks derived from true taste profile
+        val userVault = selectUserTasteCuratedTracks(18)
 
         // Fetch signature hits for each selected artist concurrently with fast safety timeout + curated fallback
         val artistTracksMap = coroutineScope {
