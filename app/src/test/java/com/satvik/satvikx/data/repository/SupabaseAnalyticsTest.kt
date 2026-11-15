@@ -81,7 +81,7 @@ class SupabaseAnalyticsTest {
             playlistsCount = 3,
             blendsCount = 2,
             deviceInfo = "Nothing A142 (Android 14, API 34)",
-            appVersion = "1.0.17",
+            appVersion = "1.0.18",
             timezone = "Asia/Kolkata (IST)",
             lastActiveIst = "11 Nov 2026, 01:45:10 PM IST",
             updatedAtIst = "11 Nov 2026, 01:45:10 PM IST"
