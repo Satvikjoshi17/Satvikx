@@ -11,8 +11,11 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.cleanSongTitle
+import com.satvik.satvikx.data.local.entity.hasArtistOverlap
 import com.satvik.satvikx.data.local.storage.StorageManager
 import com.satvik.satvikx.data.repository.StreamRepository
+import com.satvik.satvikx.playback.StreamUrlValidator
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import kotlinx.coroutines.Dispatchers
@@ -80,26 +83,41 @@ class DownloadWorker @AssistedInject constructor(
             // Notifications may be restricted by runtime permission, safely ignore
         }
 
-        // 1. High-Speed Studio Master CDN Match (Downloads in 1-2 seconds at 30 MB/s unthrottled):
-        if (streamUrl.isNullOrBlank() || streamUrl!!.contains("googlevideo.com") || streamUrl!!.contains("youtube")) {
-            try {
-                val cleanTitle = title.replace(Regex("(?i)\\[.*?\\]|\\(.*?\\)|official|video|audio|lyrics|hd|4k"), "").trim()
-                if (cleanTitle.length >= 3) {
-                    val saavnMatches = saavnMediaEngine.searchTracks("$cleanTitle $artist".take(40))
-                    val bestMatch = saavnMatches.firstOrNull { match ->
-                        val mTitle = match.title.lowercase()
-                        val qTitle = cleanTitle.lowercase()
-                        mTitle.contains(qTitle.take(6)) || qTitle.contains(mTitle.take(6))
-                    } ?: saavnMatches.firstOrNull()
+        val isYouTubeId = trackId.length == 11 && !trackId.startsWith("saavn_")
 
-                    if (bestMatch != null && !bestMatch.streamUrl.isNullOrBlank()) {
-                        streamUrl = bestMatch.streamUrl
-                    }
+        // 1. YouTube Track: Resolve authentic audio stream directly from YouTube without Saavn hijacking
+        if (isYouTubeId) {
+            if (streamUrl.isNullOrBlank() || streamUrl!!.contains("saavncdn.com") || StreamUrlValidator.isExpired(streamUrl)) {
+                val streamResult = streamRepository.resolveAudioStream(trackId, qualityKey).firstOrNull()?.getOrNull()
+                if (streamResult != null && !streamResult.streamUrl.isBlank()) {
+                    streamUrl = streamResult.streamUrl
                 }
-            } catch (_: Exception) {}
+            }
+        } else {
+            // 2. High-Speed Studio Master CDN Match for native Saavn tracks or strict fallbacks:
+            if (streamUrl.isNullOrBlank()) {
+                try {
+                    val cleanTitle = title.replace(Regex("(?i)\\[.*?\\]|\\(.*?\\)|official|video|audio|lyrics|hd|4k"), "").trim()
+                    val cleanArt = artist.replace(Regex("(?i)vevo|official|channel|topic|records|music"), "").trim()
+                    if (cleanTitle.length >= 3) {
+                        val saavnMatches = saavnMediaEngine.searchTracks("$cleanTitle $cleanArt".take(40))
+                        val bestMatch = saavnMatches.firstOrNull { match ->
+                            val mTitle = match.cleanSongTitle().lowercase()
+                            val qTitle = cleanTitle.lowercase()
+                            val titleMatches = mTitle.contains(qTitle) || qTitle.contains(mTitle)
+                            val artMatches = cleanArt.isBlank() || hasArtistOverlap(match.artist, artist)
+                            titleMatches && artMatches
+                        }
+
+                        if (bestMatch != null && !bestMatch.streamUrl.isNullOrBlank()) {
+                            streamUrl = bestMatch.streamUrl
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
         }
 
-        // 2. Fresh stream resolution if not resolved or empty
+        // 3. Fallback stream resolution if still empty
         if (streamUrl.isNullOrBlank()) {
             val streamResult = streamRepository.resolveAudioStream(trackId, qualityKey).firstOrNull()?.getOrNull()
             if (streamResult != null && !streamResult.streamUrl.isBlank()) {

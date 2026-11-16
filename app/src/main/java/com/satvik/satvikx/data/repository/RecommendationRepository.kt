@@ -495,31 +495,41 @@ class RecommendationRepository @Inject constructor(
         if (cleanTarget.isBlank() || cleanTarget.length < 2) return true
         val trackArtist = track.artist.trim().lowercase(Locale.ROOT)
         val trackTitle = track.title.trim().lowercase(Locale.ROOT)
-
-        // 1. Direct or substring match on artist field or title
-        if (trackArtist.contains(cleanTarget) || cleanTarget.contains(trackArtist)) return true
-        if (trackTitle.contains(cleanTarget)) return true
-
-        // 2. Check effective artists list
         val effective = track.getEffectiveArtists().map { it.lowercase(Locale.ROOT) }
-        if (effective.any { it.contains(cleanTarget) || cleanTarget.contains(it) }) return true
 
-        // 3. Check verified collaborators
-        val collaborators = CandidateRetrievalEngine.COLLABORATOR_MAP[cleanTarget]?.map { it.lowercase(Locale.ROOT) } ?: emptyList()
-        if (collaborators.any { collab -> trackArtist.contains(collab) || trackTitle.contains(collab) || effective.any { it.contains(collab) } }) {
-            return true
-        }
+        // 1. Direct exact or full-name match on artist field or title
+        if (trackArtist.contains(cleanTarget) || trackTitle.contains(cleanTarget)) return true
+        if (effective.any { it.contains(cleanTarget) }) return true
 
-        // 4. Guard against first-name token collisions (e.g. "Nisha Chaudhary" when target is "Nisha Zafar")
+        // 2. Strict multi-token guard: if target has >= 2 tokens (e.g. "Nisha Zafar"),
+        // reject false matches like "Nisha Chaudhary" where first name matches but last name differs
         val targetTokens = cleanTarget.split(" ").filter { it.length >= 2 }
         if (targetTokens.size >= 2) {
             val lastName = targetTokens.last()
-            if (!trackArtist.contains(lastName) && !trackTitle.contains(lastName) && !effective.any { it.contains(lastName) }) {
-                return false
+            val hasLastName = trackArtist.contains(lastName) || trackTitle.contains(lastName) || effective.any { it.contains(lastName) }
+            if (!hasLastName) {
+                // If neither last name nor full target appears, check if it's a verified collaborator
+                val collaborators = CandidateRetrievalEngine.COLLABORATOR_MAP[cleanTarget]?.map { it.lowercase(Locale.ROOT) } ?: emptyList()
+                return collaborators.any { collab ->
+                    trackArtist.contains(collab) || trackTitle.contains(collab) || effective.any { it.contains(collab) }
+                }
             }
+            return true
         }
 
-        return false
+        // 3. Single-token target (e.g. "Adele", "Drake", "Pritam")
+        if (cleanTarget.equals(trackArtist, ignoreCase = true) || effective.any { it.equals(cleanTarget, ignoreCase = true) }) {
+            return true
+        }
+        if (cleanTarget.length >= 4 && (trackArtist.contains(cleanTarget) || trackTitle.contains(cleanTarget))) {
+            return true
+        }
+
+        // 4. Check verified collaborators for single token
+        val collaborators = CandidateRetrievalEngine.COLLABORATOR_MAP[cleanTarget]?.map { it.lowercase(Locale.ROOT) } ?: emptyList()
+        return collaborators.any { collab ->
+            trackArtist.contains(collab) || trackTitle.contains(collab) || effective.any { it.contains(collab) }
+        }
     }
 
     private suspend fun fetchRecommendationFeedTracks(

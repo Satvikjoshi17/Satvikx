@@ -9,12 +9,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import com.satvik.satvikx.data.repository.SupabaseAnalyticsRepository
 import com.satvik.satvikx.ui.navigation.RootNavigationHost
 import com.satvik.satvikx.ui.theme.SatvikXTheme
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+import javax.inject.Provider
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var supabaseAnalyticsRepositoryProvider: Provider<SupabaseAnalyticsRepository>
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -31,10 +40,29 @@ class MainActivity : ComponentActivity() {
         handleBlendIntent(intent)
         handleAuthIntent(intent)
 
+        // Real-time Supabase analytics synchronization on app startup
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                supabaseAnalyticsRepositoryProvider.get().syncUserFullAnalytics()
+            } catch (e: Exception) {
+                android.util.Log.w("MainActivity", "Initial Supabase sync non-fatal: ${e.message}")
+            }
+        }
+
         setContent {
             SatvikXTheme {
                 RootNavigationHost()
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Keep Supabase last_active_ist updated in real time when user resumes app
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                supabaseAnalyticsRepositoryProvider.get().syncUserFullAnalytics()
+            } catch (_: Exception) {}
         }
     }
 

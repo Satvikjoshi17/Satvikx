@@ -98,6 +98,140 @@ class SupabaseAnalyticsRepository @Inject constructor(
         return "$manufacturer $model (Android $release, API $sdk)"
     }
 
+    private data class EffectiveUser(
+        val id: String,
+        val displayName: String,
+        val email: String?,
+        val avatar: String,
+        val isGuest: Boolean
+    )
+
+    private fun resolveEffectiveUser(): EffectiveUser {
+        val authRepo = authRepositoryProvider.get()
+        val currentUser = authRepo.currentUser.value
+        val supabaseUser = supabaseClient.auth.currentUserOrNull()
+        val authPrefs = context.getSharedPreferences("satvikx_auth_profile", android.content.Context.MODE_PRIVATE)
+        val savedAuthUserId = authPrefs.getString("user_id", null)
+        val savedAuthName = authPrefs.getString("display_name", null)
+        val savedAuthEmail = authPrefs.getString("email", null)
+        val savedAuthAvatar = authPrefs.getString("avatar_url", null)
+        val savedIsGuest = authPrefs.getBoolean("is_guest", false)
+
+        val effectiveUserId = supabaseUser?.id ?: currentUser?.id ?: savedAuthUserId
+            ?: prefs.getString("fallback_uid", null)
+            ?: run {
+                val newGuestId = "guest_" + System.currentTimeMillis()
+                prefs.edit().putString("fallback_uid", newGuestId).apply()
+                newGuestId
+            }
+
+        val effectiveDisplayName = currentUser?.displayName?.ifBlank { null }
+            ?: supabaseUser?.userMetadata?.get("name")?.toString()?.replace("\"", "")
+            ?: savedAuthName?.ifBlank { null }
+            ?: "Stark Operative"
+
+        val effectiveEmail = currentUser?.email ?: supabaseUser?.email ?: savedAuthEmail ?: if (currentUser?.isGuest == true || savedIsGuest) "Guest" else null
+        val effectiveAvatar = currentUser?.avatarUrl?.ifBlank { null } ?: savedAuthAvatar?.ifBlank { null } ?: "⚡"
+        val isGuest = currentUser?.isGuest ?: (effectiveEmail == "Guest") || savedIsGuest
+
+        return EffectiveUser(
+            id = effectiveUserId,
+            displayName = effectiveDisplayName,
+            email = effectiveEmail,
+            avatar = effectiveAvatar,
+            isGuest = isGuest
+        )
+    }
+
+    /**
+     * Real-time track start telemetry.
+     * Upserts to Supabase 'user_analytics' immediately when playback starts:
+     * - last_played_song
+     * - last_played_artist
+     * - total_songs_played (+1)
+     * - app_version (BuildConfig.VERSION_NAME)
+     * - last_active_ist (current Indian timestamp)
+     * - updated_at_ist (current Indian timestamp)
+     */
+    fun recordTrackStarted(track: TrackEntity) {
+        scope.launch {
+            try {
+                val currentPlayed = prefs.getInt(PREF_TOTAL_SONGS_PLAYED, 0) + 1
+                prefs.edit()
+                    .putInt(PREF_TOTAL_SONGS_PLAYED, currentPlayed)
+                    .putString(PREF_LAST_PLAYED_SONG, track.title)
+                    .putString(PREF_LAST_PLAYED_ARTIST, track.artist)
+                    .apply()
+
+                val nowIst = getIndiaTimestamp()
+                val authRepo = authRepositoryProvider.get()
+                val currentUser = authRepo.currentUser.value
+                val authSeconds = currentUser?.listeningSeconds ?: 0L
+                val currentTotalSec = maxOf(
+                    prefs.getLong(PREF_TOTAL_LISTENING_SECONDS, 0L),
+                    authSeconds
+                )
+                val humanDuration = formatListeningSecondsHuman(currentTotalSec)
+                val user = resolveEffectiveUser()
+
+                val analyticsDto = UserAnalyticsDto(
+                    userId = user.id,
+                    displayName = user.displayName,
+                    email = user.email,
+                    isGuest = user.isGuest,
+                    avatar = user.avatar,
+                    totalListeningSeconds = currentTotalSec,
+                    listeningTimeHuman = humanDuration,
+                    totalSongsPlayed = currentPlayed,
+                    totalCompletedSongs = prefs.getInt(PREF_TOTAL_COMPLETED_SONGS, 0),
+                    totalSkips = prefs.getInt(PREF_TOTAL_SKIPS, 0),
+                    lastPlayedSong = track.title,
+                    lastPlayedArtist = track.artist,
+                    topArtists = getTopArtistsSummary(),
+                    topGenres = getTopGenresSummary(),
+                    likedSongsCount = getLikedSongsCount(),
+                    playlistsCount = getPlaylistsCount(),
+                    blendsCount = getBlendsCount(),
+                    deviceInfo = getDeviceModelInfo(),
+                    appVersion = BuildConfig.VERSION_NAME,
+                    timezone = "Asia/Kolkata (IST)",
+                    lastActiveIst = nowIst,
+                    updatedAtIst = nowIst
+                )
+
+                try {
+                    supabaseClient.from("user_analytics").upsert(analyticsDto)
+                    Log.d(TAG, "Real-time track start recorded in Supabase user_analytics: ${track.title} on v${BuildConfig.VERSION_NAME}")
+                } catch (e: Exception) {
+                    Log.w(TAG, "user_analytics real-time start upsert non-fatal: ${e.message}")
+                }
+
+                // Update 'profiles' with latest active timestamp
+                try {
+                    val supabaseUser = supabaseClient.auth.currentUserOrNull()
+                    if (supabaseUser != null) {
+                        val profileDto = ProfileDto(
+                            id = supabaseUser.id,
+                            displayName = user.displayName,
+                            avatarUrl = user.avatar,
+                            isGuest = user.isGuest,
+                            listeningSeconds = currentTotalSec,
+                            listeningTimeHuman = humanDuration,
+                            lastActiveIst = nowIst,
+                            deviceModel = getDeviceModelInfo()
+                        )
+                        supabaseClient.from("profiles").upsert(profileDto)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "profiles real-time start upsert non-fatal: ${e.message}")
+                }
+
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to record track started analytics", e)
+            }
+        }
+    }
+
     /**
      * Records a completed or skipped track playback session in real time.
      * Increments cumulative listening counters and syncs to Supabase tables:
@@ -123,7 +257,7 @@ class SupabaseAnalyticsRepository @Inject constructor(
                     prefs.getLong(PREF_TOTAL_LISTENING_SECONDS, 0L) + listenedSeconds,
                     authSeconds + listenedSeconds
                 )
-                val currentPlayed = prefs.getInt(PREF_TOTAL_SONGS_PLAYED, 0) + 1
+                val currentPlayed = prefs.getInt(PREF_TOTAL_SONGS_PLAYED, 0)
                 val currentCompleted = prefs.getInt(PREF_TOTAL_COMPLETED_SONGS, 0) + if (isCompleted) 1 else 0
                 val currentSkips = prefs.getInt(PREF_TOTAL_SKIPS, 0) + if (isSkipped) 1 else 0
 
@@ -138,21 +272,7 @@ class SupabaseAnalyticsRepository @Inject constructor(
 
                 val nowIst = getIndiaTimestamp()
                 val humanDuration = formatListeningSecondsHuman(currentTotalSec)
-
-                val supabaseUser = supabaseClient.auth.currentUserOrNull()
-
-                val effectiveUserId = supabaseUser?.id ?: currentUser?.id ?: "local_user_${prefs.getString("fallback_uid", null) ?: run {
-                    val newId = UUID.randomUUID().toString()
-                    prefs.edit().putString("fallback_uid", newId).apply()
-                    newId
-                }}"
-
-                val effectiveDisplayName = currentUser?.displayName?.ifBlank { null }
-                    ?: supabaseUser?.userMetadata?.get("name")?.toString()?.replace("\"", "")
-                    ?: "Stark Operative"
-
-                val effectiveEmail = currentUser?.email ?: supabaseUser?.email ?: if (currentUser?.isGuest == true) "Guest" else null
-                val effectiveAvatar = currentUser?.avatarUrl?.ifBlank { "⚡" } ?: "⚡"
+                val user = resolveEffectiveUser()
 
                 // 2. Insert into 'user_playback_sessions' (granular log)
                 try {
@@ -160,8 +280,8 @@ class SupabaseAnalyticsRepository @Inject constructor(
                     val completionPercent = ((listenedSeconds.toFloat() / durationSec.toFloat()) * 100f).coerceIn(0f, 100f)
 
                     val sessionDto = PlaybackSessionAnalyticsDto(
-                        userId = effectiveUserId,
-                        userName = effectiveDisplayName,
+                        userId = user.id,
+                        userName = user.displayName,
                         trackId = track.id,
                         trackTitle = track.title,
                         trackArtist = track.artist,
@@ -181,11 +301,11 @@ class SupabaseAnalyticsRepository @Inject constructor(
                 // 3. Upsert user summary to 'user_analytics'
                 try {
                     val userAnalyticsDto = UserAnalyticsDto(
-                        userId = effectiveUserId,
-                        displayName = effectiveDisplayName,
-                        email = effectiveEmail,
-                        isGuest = currentUser?.isGuest ?: (effectiveEmail == "Guest"),
-                        avatar = effectiveAvatar,
+                        userId = user.id,
+                        displayName = user.displayName,
+                        email = user.email,
+                        isGuest = user.isGuest,
+                        avatar = user.avatar,
                         totalListeningSeconds = currentTotalSec,
                         listeningTimeHuman = humanDuration,
                         totalSongsPlayed = currentPlayed,
@@ -205,19 +325,20 @@ class SupabaseAnalyticsRepository @Inject constructor(
                         updatedAtIst = nowIst
                     )
                     supabaseClient.from("user_analytics").upsert(userAnalyticsDto)
-                    Log.d(TAG, "Upserted user analytics for $effectiveDisplayName: $humanDuration ($currentTotalSec s)")
+                    Log.d(TAG, "Upserted user analytics for ${user.displayName}: $humanDuration ($currentTotalSec s)")
                 } catch (e: Exception) {
                     Log.w(TAG, "Non-fatal: user_analytics table sync skipped: ${e.message}")
                 }
 
                 // 4. Update 'profiles' table with latest listening time & Indian timestamp
                 try {
+                    val supabaseUser = supabaseClient.auth.currentUserOrNull()
                     if (supabaseUser != null) {
                         val profileDto = ProfileDto(
                             id = supabaseUser.id,
-                            displayName = effectiveDisplayName,
-                            avatarUrl = effectiveAvatar,
-                            isGuest = currentUser?.isGuest ?: false,
+                            displayName = user.displayName,
+                            avatarUrl = user.avatar,
+                            isGuest = user.isGuest,
                             listeningSeconds = currentTotalSec,
                             listeningTimeHuman = humanDuration,
                             lastActiveIst = nowIst,
@@ -246,22 +367,14 @@ class SupabaseAnalyticsRepository @Inject constructor(
             val authSeconds = currentUser?.listeningSeconds ?: 0L
             val totalSeconds = maxOf(prefs.getLong(PREF_TOTAL_LISTENING_SECONDS, 0L), authSeconds)
             val humanDuration = formatListeningSecondsHuman(totalSeconds)
-
-            val supabaseUser = supabaseClient.auth.currentUserOrNull()
-
-            val effectiveUserId = supabaseUser?.id ?: currentUser?.id ?: prefs.getString("fallback_uid", null) ?: return@withContext
-            val effectiveDisplayName = currentUser?.displayName?.ifBlank { null }
-                ?: supabaseUser?.userMetadata?.get("name")?.toString()?.replace("\"", "")
-                ?: "Stark Operative"
-            val effectiveEmail = currentUser?.email ?: supabaseUser?.email ?: if (currentUser?.isGuest == true) "Guest" else null
-            val effectiveAvatar = currentUser?.avatarUrl?.ifBlank { "⚡" } ?: "⚡"
+            val user = resolveEffectiveUser()
 
             val analyticsDto = UserAnalyticsDto(
-                userId = effectiveUserId,
-                displayName = effectiveDisplayName,
-                email = effectiveEmail,
-                isGuest = currentUser?.isGuest ?: (effectiveEmail == "Guest"),
-                avatar = effectiveAvatar,
+                userId = user.id,
+                displayName = user.displayName,
+                email = user.email,
+                isGuest = user.isGuest,
+                avatar = user.avatar,
                 totalListeningSeconds = totalSeconds,
                 listeningTimeHuman = humanDuration,
                 totalSongsPlayed = prefs.getInt(PREF_TOTAL_SONGS_PLAYED, 0),
@@ -283,18 +396,19 @@ class SupabaseAnalyticsRepository @Inject constructor(
 
             try {
                 supabaseClient.from("user_analytics").upsert(analyticsDto)
-                Log.d(TAG, "Full analytics synced to user_analytics for $effectiveDisplayName")
+                Log.d(TAG, "Full analytics synced to user_analytics for ${user.displayName} on v${BuildConfig.VERSION_NAME}")
             } catch (e: Exception) {
                 Log.w(TAG, "user_analytics upsert warning: ${e.message}")
             }
 
             try {
+                val supabaseUser = supabaseClient.auth.currentUserOrNull()
                 if (supabaseUser != null) {
                     val profileDto = ProfileDto(
                         id = supabaseUser.id,
-                        displayName = effectiveDisplayName,
-                        avatarUrl = effectiveAvatar,
-                        isGuest = currentUser?.isGuest ?: false,
+                        displayName = user.displayName,
+                        avatarUrl = user.avatar,
+                        isGuest = user.isGuest,
                         listeningSeconds = totalSeconds,
                         listeningTimeHuman = humanDuration,
                         lastActiveIst = nowIst,

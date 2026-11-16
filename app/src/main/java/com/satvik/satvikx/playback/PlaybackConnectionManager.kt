@@ -21,6 +21,7 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.cleanArtistName
 import com.satvik.satvikx.data.local.entity.cleanSongTitle
 import com.satvik.satvikx.data.local.entity.distinctSongs
+import com.satvik.satvikx.data.local.entity.hasArtistOverlap
 import com.satvik.satvikx.data.local.entity.isSameSong
 import com.satvik.satvikx.data.local.entity.isSongOnly
 import com.satvik.satvikx.data.local.storage.StorageManager
@@ -736,9 +737,17 @@ class PlaybackConnectionManager @Inject constructor(
             }
         }
 
-        // 2. Check if cached streamUrl exists, is non-empty, and is NOT expired
+        val isYouTubeId = track.id.length == 11 && !track.id.startsWith("saavn_")
+
+        // 2. Check cached streamUrl & purge contaminated Saavn URLs on YouTube IDs
         if (!forceFresh && !track.streamUrl.isNullOrBlank()) {
-            if (!StreamUrlValidator.isExpired(track.streamUrl)) {
+            val isCorruptedSaavnOnYouTube = isYouTubeId &&
+                (track.streamUrl.contains("saavncdn.com") || track.streamUrl.contains("jiosaavn"))
+
+            if (isCorruptedSaavnOnYouTube) {
+                Log.d(TAG, "Track ${track.id} (${track.title}) has corrupted Saavn streamUrl. Purging cache.")
+                trackDao.updateStreamUrl(track.id, null)
+            } else if (!StreamUrlValidator.isExpired(track.streamUrl)) {
                 return@withContext track
             } else {
                 Log.d(TAG, "Track ${track.id} has expired streamUrl. Invalidating cached URL.")
@@ -746,58 +755,69 @@ class PlaybackConnectionManager @Inject constructor(
             }
         }
 
-        // 3. Fast Auto-Healing via JioSaavn Native Engine (300ms):
-        // If track has title and artist, search JioSaavn directly to get pristine 320kbps CD audio with 0ms buffering!
+        // 3. PRIMARY RESOLUTION: If track is a YouTube ID, resolve via decentralized YouTube stream engine
+        if (isYouTubeId) {
+            val streamResult = try {
+                withTimeoutOrNull(5000L) {
+                    streamRepository.resolveAudioStream(track.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "YouTube stream resolution failed for ${track.id}: ${e.message}")
+                null
+            }
+
+            if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
+                val updated = track.copy(streamUrl = streamResult.streamUrl)
+                trackDao.insertTrack(updated)
+                return@withContext updated
+            }
+        }
+
+        // 4. JioSaavn Engine:
+        // Used for native Saavn IDs (starts with "saavn_") OR strict fallback when YouTube resolution failed
         if (track.title.isNotBlank()) {
             try {
                 val cleanTitle = track.cleanSongTitle().ifBlank { track.title }
                 val cleanArt = track.cleanArtistName().ifBlank { track.artist }
                 val saavnQuery = if (cleanArt.isNotBlank()) "$cleanTitle $cleanArt" else cleanTitle
                 val saavnResults = saavnMediaEngine.searchTracks(saavnQuery)
-                val saavnMatch = saavnResults.firstOrNull { it.isSameSong(track) }
-                    ?: saavnResults.firstOrNull { it.cleanSongTitle().equals(cleanTitle, ignoreCase = true) }
-                    ?: if (cleanArt.isBlank()) saavnResults.firstOrNull() else null
+
+                // Strict matching: requires same song check, artist overlap, and duration consistency
+                val saavnMatch = saavnResults.firstOrNull { match ->
+                    val sameSong = match.isSameSong(track)
+                    val artistMatch = cleanArt.isBlank() || hasArtistOverlap(match.artist, track.artist) ||
+                        (cleanArt.length >= 3 && match.artist.contains(cleanArt, ignoreCase = true))
+                    val durationMatch = track.durationSeconds <= 0 || match.durationSeconds <= 0 ||
+                        Math.abs(match.durationSeconds - track.durationSeconds) <= 30
+                    sameSong && artistMatch && durationMatch
+                }
 
                 if (saavnMatch != null && !saavnMatch.streamUrl.isNullOrBlank()) {
                     val updated = track.copy(
                         streamUrl = saavnMatch.streamUrl,
-                        thumbnailUrl = if (track.thumbnailUrl.isBlank() || track.thumbnailUrl.contains("ytimg.com")) saavnMatch.thumbnailUrl else track.thumbnailUrl
+                        thumbnailUrl = if (track.thumbnailUrl.isBlank()) saavnMatch.thumbnailUrl else track.thumbnailUrl
                     )
                     trackDao.insertTrack(updated)
                     return@withContext updated
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Fast Saavn auto-healing resolution non-fatal: ${e.message}")
+                Log.w(TAG, "Saavn fallback resolution non-fatal: ${e.message}")
             }
         }
 
-        // 4. Resolve stream via decentralized network engine (bounded by 4500ms safety timeout)
-        val streamResult = try {
-            withTimeoutOrNull(4500L) {
-                streamRepository.resolveAudioStream(track.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
-            }
-        } catch (_: Exception) { null }
-
-        if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
-            val updated = track.copy(streamUrl = streamResult.streamUrl)
-            trackDao.insertTrack(updated)
-            return@withContext updated
-        }
-
-        // 5. Broad JioSaavn title fallback
-        if (track.title.isNotBlank()) {
-            try {
-                val broadResults = saavnMediaEngine.searchTracks(track.title)
-                val broadMatch = broadResults.firstOrNull()
-                if (broadMatch != null && !broadMatch.streamUrl.isNullOrBlank()) {
-                    val updated = track.copy(
-                        streamUrl = broadMatch.streamUrl,
-                        thumbnailUrl = if (track.thumbnailUrl.isBlank() || track.thumbnailUrl.contains("ytimg.com")) broadMatch.thumbnailUrl else track.thumbnailUrl
-                    )
-                    trackDao.insertTrack(updated)
-                    return@withContext updated
+        // 5. If it's a Saavn track and not resolved yet, try streamRepository as fallback
+        if (!isYouTubeId) {
+            val streamResult = try {
+                withTimeoutOrNull(5000L) {
+                    streamRepository.resolveAudioStream(track.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) { null }
+
+            if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
+                val updated = track.copy(streamUrl = streamResult.streamUrl)
+                trackDao.insertTrack(updated)
+                return@withContext updated
+            }
         }
 
         null
@@ -1317,6 +1337,12 @@ class PlaybackConnectionManager @Inject constructor(
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Telemetry start non-fatal: ${e.message}")
+            }
+
+            try {
+                supabaseAnalyticsRepositoryProvider.get().recordTrackStarted(track)
+            } catch (e: Exception) {
+                Log.w(TAG, "Real-time track start Supabase analytics non-fatal: ${e.message}")
             }
         }
     }
