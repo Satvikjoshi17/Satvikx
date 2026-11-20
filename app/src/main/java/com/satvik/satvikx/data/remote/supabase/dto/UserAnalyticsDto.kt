@@ -47,7 +47,7 @@ data class UserAnalyticsDto(
     @SerialName("device_info")
     val deviceInfo: String = "",
     @SerialName("app_version")
-    val appVersion: String = "1.0.18",
+    val appVersion: String,
     @SerialName("timezone")
     val timezone: String = "Asia/Kolkata (IST)",
     @SerialName("last_active_ist")
