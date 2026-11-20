@@ -67,6 +67,17 @@ class HomeViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    private val _selectedArtist = MutableStateFlow<ArtistAffinity?>(null)
+    val selectedArtist: StateFlow<ArtistAffinity?> = _selectedArtist.asStateFlow()
+
+    fun selectArtist(artist: ArtistAffinity?) {
+        _selectedArtist.value = artist
+    }
+
+    fun clearSelectedArtist() {
+        _selectedArtist.value = null
+    }
+
     val availableMoods = listOf("All", "Focus", "Workout", "Chill", "Study", "Sleep", "Travel", "Party", "Romance", "Synthwave")
 
     init {

@@ -59,6 +59,7 @@ import com.satvik.satvikx.ui.screens.RecentsScreen
 import com.satvik.satvikx.ui.screens.SearchScreen
 import com.satvik.satvikx.ui.theme.BackgroundDark
 import com.satvik.satvikx.ui.theme.SurfaceDark
+import com.satvik.satvikx.ui.viewmodel.HomeViewModel
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 import com.satvik.satvikx.ui.viewmodel.PlayerViewModel
 import com.satvik.satvikx.ui.viewmodel.SearchViewModel
@@ -68,7 +69,8 @@ import com.satvik.satvikx.ui.viewmodel.SearchViewModel
 fun RootNavigationHost(
     playerViewModel: PlayerViewModel = hiltViewModel(),
     libraryViewModel: LibraryViewModel = hiltViewModel(),
-    searchViewModel: SearchViewModel = hiltViewModel()
+    searchViewModel: SearchViewModel = hiltViewModel(),
+    homeViewModel: HomeViewModel = hiltViewModel()
 ) {
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { Screen.bottomNavItems.size })
@@ -96,6 +98,7 @@ fun RootNavigationHost(
     // Intercept hardware back button when on a secondary tab to return to Home (Instagram style)
     BackHandler(enabled = pagerState.currentPage != 0 && !isFullPlayerExpanded && !isQueueOpen) {
         coroutineScope.launch {
+            homeViewModel.clearSelectedArtist()
             pagerState.animateScrollToPage(0)
         }
     }
@@ -138,6 +141,10 @@ fun RootNavigationHost(
                         NavigationBarItem(
                             selected = isSelected,
                             onClick = {
+                                val isHome = screen.route == Screen.Home.route
+                                if (isHome) {
+                                    homeViewModel.clearSelectedArtist()
+                                }
                                 val isSearch = screen.route == Screen.Search.route
                                 val currentTime = System.currentTimeMillis()
                                 val isDoubleTap = isSearch && (currentTime - lastSearchClickTime < 500L)
@@ -213,7 +220,9 @@ fun RootNavigationHost(
                 }
             ) { pageIndex ->
                 when (Screen.bottomNavItems[pageIndex]) {
-                    Screen.Home -> HomeScreen()
+                    Screen.Home -> HomeScreen(
+                        homeViewModel = homeViewModel
+                    )
                     Screen.Search -> SearchScreen(
                         viewModel = searchViewModel,
                         libraryViewModel = libraryViewModel

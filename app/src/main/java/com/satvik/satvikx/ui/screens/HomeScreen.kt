@@ -90,6 +90,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.satvik.satvikx.BuildConfig
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.repository.ArtistAffinity
 import com.satvik.satvikx.data.repository.DailyMix
@@ -100,6 +101,7 @@ import com.satvik.satvikx.ui.components.ShimmerTrackList
 import com.satvik.satvikx.ui.components.StarkAuthDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
+import com.satvik.satvikx.ui.components.WhatsNewDialog
 import com.satvik.satvikx.ui.components.isolateHorizontalScroll
 import com.satvik.satvikx.ui.theme.ArcCyan
 import com.satvik.satvikx.ui.theme.ArcCyanBright
@@ -134,7 +136,12 @@ fun HomeScreen(
 
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
     var trackForAddToPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
-    var selectedArtistForDetail by remember { mutableStateOf<com.satvik.satvikx.data.repository.ArtistAffinity?>(null) }
+    val selectedArtistForDetail by homeViewModel.selectedArtist.collectAsStateWithLifecycle()
+    val whatsNewPrefs = remember { context.getSharedPreferences("satvikx_app_prefs", android.content.Context.MODE_PRIVATE) }
+    var showWhatsNewDialog by remember {
+        val lastSeenVersion = whatsNewPrefs.getInt("last_seen_version_code", 0)
+        mutableStateOf(lastSeenVersion < BuildConfig.VERSION_CODE)
+    }
     var showAuthDialog by remember { mutableStateOf(false) }
     val isMandatoryOnboarding = currentUser == null && !isAuthLoading
     val shouldShowAuthDialog = showAuthDialog || isMandatoryOnboarding
@@ -199,7 +206,7 @@ fun HomeScreen(
     if (selectedArtistForDetail != null) {
         ArtistDetailScreen(
             artist = selectedArtistForDetail!!,
-            onBack = { selectedArtistForDetail = null }
+            onBack = { homeViewModel.clearSelectedArtist() }
         )
     } else {
         Box(
@@ -299,6 +306,18 @@ fun HomeScreen(
 
                         // Actions: Refresh Feed & Update Check
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { showWhatsNewDialog = true },
+                                modifier = Modifier.size(34.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AutoAwesome,
+                                    contentDescription = "What's New in v${BuildConfig.VERSION_NAME}",
+                                    tint = ArcCyanBright,
+                                    modifier = Modifier.size(19.dp)
+                                )
+                            }
+
                             IconButton(
                                 onClick = { homeViewModel.loadHomeData(forceRefresh = true) },
                                 enabled = !uiState.isRefreshing,
@@ -621,7 +640,7 @@ fun HomeScreen(
                         items(uiState.topArtists, key = { it.name }) { artist ->
                             SpotifyArtistCard(
                                 artist = artist,
-                                onClick = { selectedArtistForDetail = artist },
+                                onClick = { homeViewModel.selectArtist(artist) },
                                 onPlayRadioClick = {
                                     Toast.makeText(context, "Playing ${artist.name} Radio", Toast.LENGTH_SHORT).show()
                                     homeViewModel.playArtistRadio(artist.name)
@@ -879,6 +898,16 @@ fun HomeScreen(
             authViewModel = authViewModel,
             isMandatory = isMandatoryOnboarding,
             onDismiss = { showAuthDialog = false }
+        )
+    }
+
+    // Premium "What's New in v1.0.19" Update Showcase Dialog
+    if (showWhatsNewDialog) {
+        WhatsNewDialog(
+            onDismiss = {
+                whatsNewPrefs.edit().putInt("last_seen_version_code", BuildConfig.VERSION_CODE).apply()
+                showWhatsNewDialog = false
+            }
         )
     }
 }
