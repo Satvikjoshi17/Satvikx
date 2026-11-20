@@ -36,7 +36,9 @@ import javax.inject.Singleton
 
 data class ArtistAffinity(
     val name: String,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val fansCount: Long = 0L,
+    val deezerId: Long? = null
 )
 
 data class UserAffinities(
@@ -112,7 +114,8 @@ class RecommendationRepository @Inject constructor(
     private val candidateRetrievalEngine: CandidateRetrievalEngine,
     private val rankingScoringEngine: RankingScoringEngine,
     private val queueSequencer: HumanCuratedQueueSequencer,
-    private val vibeClassifier: SessionVibeClassifier
+    private val vibeClassifier: SessionVibeClassifier,
+    private val deezerArtistRepository: DeezerArtistRepository
 ) {
 
     // Anti-looping ring buffers: tracks recently recommended in active session
@@ -205,9 +208,21 @@ class RecommendationRepository @Inject constructor(
             }
         }
 
-        val topArtistAffinities = profile.topArtists.take(8).map { artist ->
-            ArtistAffinity(name = artist, imageUrl = artistThumbnails[artist])
-        }
+        // Filter valid artists and resolve genuine Deezer portraits with 0ms local caching
+        val validTopArtists = profile.topArtists
+            .filter { deezerArtistRepository.isValidArtistCandidate(it) }
+            .take(10)
+
+        val topArtistAffinities = validTopArtists.map { artistName ->
+            val detail = deezerArtistRepository.getArtistPortrait(artistName)
+            val fallbackImg = artistThumbnails[artistName]
+            ArtistAffinity(
+                name = detail?.name ?: artistName,
+                imageUrl = detail?.imageUrl ?: fallbackImg,
+                fansCount = detail?.fansCount ?: 0L,
+                deezerId = detail?.id
+            )
+        }.filter { it.imageUrl != null }
 
         val likedArtists = likedTracks.flatMap { it.getEffectiveArtists() }.distinct()
         val recentArtists = recentTracks.flatMap { it.getEffectiveArtists() }.distinct()
@@ -827,7 +842,23 @@ class RecommendationRepository @Inject constructor(
     }
 
     suspend fun getArtistTracks(artistName: String): List<TrackEntity> = withContext(Dispatchers.IO) {
-        val results = streamRepository.searchTracks("$artistName top hits official audio").firstOrNull()?.getOrNull().orEmpty()
-        results.filter { it.isSongOnly() }
+        // 1. Try Deezer's genuine top hit tracks first (guaranteed single hit tracks, no compilations!)
+        val deezerTracks = deezerArtistRepository.getArtistTopTracks(artistName)
+        if (deezerTracks.isNotEmpty()) {
+            return@withContext deezerTracks
+        }
+
+        // 2. Fallback to clean YouTube query without "top hits" compilation keyword
+        val fallbackQuery = "$artistName songs"
+        val results = streamRepository.searchTracks(fallbackQuery).firstOrNull()?.getOrNull().orEmpty()
+        val filtered = results.filter { it.isSongOnly() && !it.title.contains("jukebox", ignoreCase = true) }
+        if (filtered.isNotEmpty()) {
+            return@withContext filtered
+        }
+
+        // 3. Secondary fallback to official audio query
+        val secondaryQuery = "$artistName official audio"
+        val secondaryResults = streamRepository.searchTracks(secondaryQuery).firstOrNull()?.getOrNull().orEmpty()
+        secondaryResults.filter { it.isSongOnly() }
     }
 }

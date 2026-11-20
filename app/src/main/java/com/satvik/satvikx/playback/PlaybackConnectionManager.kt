@@ -933,18 +933,27 @@ class PlaybackConnectionManager @Inject constructor(
             }
         }
 
-        // 5. If it's a Saavn track and not resolved yet, try streamRepository as fallback
-        if (!isYouTubeId) {
-            val streamResult = try {
-                withTimeoutOrNull(5000L) {
-                    streamRepository.resolveAudioStream(track.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
+        // 5. YouTube Search resolution for non-YouTube tracks (e.g. Deezer tracks or Saavn fallback)
+        if (!isYouTubeId && track.title.isNotBlank()) {
+            try {
+                val query = "${track.title} ${track.artist} official audio"
+                val searchResults = streamRepository.searchTracks(query).firstOrNull()?.getOrNull().orEmpty()
+                val matched = searchResults.firstOrNull { it.isSongOnly() } ?: searchResults.firstOrNull()
+                if (matched != null) {
+                    val streamResult = withTimeoutOrNull(6000L) {
+                        streamRepository.resolveAudioStream(matched.id, forceFresh = forceFresh).firstOrNull()?.getOrNull()
+                    }
+                    if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
+                        val updated = track.copy(
+                            streamUrl = streamResult.streamUrl,
+                            thumbnailUrl = if (track.thumbnailUrl.isBlank()) matched.thumbnailUrl else track.thumbnailUrl
+                        )
+                        trackDao.insertTrack(updated)
+                        return@withContext updated
+                    }
                 }
-            } catch (_: Exception) { null }
-
-            if (streamResult != null && !streamResult.streamUrl.isNullOrBlank()) {
-                val updated = track.copy(streamUrl = streamResult.streamUrl)
-                trackDao.insertTrack(updated)
-                return@withContext updated
+            } catch (e: Exception) {
+                Log.w(TAG, "Search stream fallback failed for ${track.title}: ${e.message}")
             }
         }
 

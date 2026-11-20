@@ -134,6 +134,7 @@ fun HomeScreen(
 
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
     var trackForAddToPlaylist by remember { mutableStateOf<TrackEntity?>(null) }
+    var selectedArtistForDetail by remember { mutableStateOf<com.satvik.satvikx.data.repository.ArtistAffinity?>(null) }
     var showAuthDialog by remember { mutableStateOf(false) }
     val isMandatoryOnboarding = currentUser == null && !isAuthLoading
     val shouldShowAuthDialog = showAuthDialog || isMandatoryOnboarding
@@ -195,11 +196,17 @@ fun HomeScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BackgroundDark)
-    ) {
+    if (selectedArtistForDetail != null) {
+        ArtistDetailScreen(
+            artist = selectedArtistForDetail!!,
+            onBack = { selectedArtistForDetail = null }
+        )
+    } else {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(BackgroundDark)
+        ) {
         // Atmospheric gradient mesh at top of screen
         Box(
             modifier = Modifier
@@ -614,7 +621,11 @@ fun HomeScreen(
                         items(uiState.topArtists, key = { it.name }) { artist ->
                             SpotifyArtistCard(
                                 artist = artist,
-                                onClick = { homeViewModel.playArtistRadio(artist.name) }
+                                onClick = { selectedArtistForDetail = artist },
+                                onPlayRadioClick = {
+                                    Toast.makeText(context, "Playing ${artist.name} Radio", Toast.LENGTH_SHORT).show()
+                                    homeViewModel.playArtistRadio(artist.name)
+                                }
                             )
                         }
                     }
@@ -816,6 +827,7 @@ fun HomeScreen(
             }
         }
     }
+}
 
     // Modal Action Sheet (Options menu)
     if (selectedTrackForOptions != null) {
@@ -1386,7 +1398,8 @@ private fun SpotifyDailyMixCard(
 private fun SpotifyArtistCard(
     artist: ArtistAffinity,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPlayRadioClick: (() -> Unit)? = null
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1395,26 +1408,50 @@ private fun SpotifyArtistCard(
             .clickable(onClick = onClick)
     ) {
         Box(
-            modifier = Modifier
-                .size(110.dp)
-                .clip(CircleShape)
-                .background(Color(0xFF242424)),
-            contentAlignment = Alignment.Center
+            modifier = Modifier.size(110.dp)
         ) {
-            if (!artist.imageUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = artist.imageUrl,
-                    contentDescription = artist.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Person,
-                    contentDescription = null,
-                    tint = TextTertiary,
-                    modifier = Modifier.size(36.dp)
-                )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(Color(0xFF242424)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!artist.imageUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = artist.imageUrl,
+                        contentDescription = artist.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = TextTertiary,
+                        modifier = Modifier.size(36.dp)
+                    )
+                }
+            }
+
+            if (onPlayRadioClick != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = SpotifyGreen,
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 2.dp, bottom = 2.dp)
+                        .size(32.dp)
+                        .clickable { onPlayRadioClick() }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        OpticallyCenteredPlayIcon(
+                            modifier = Modifier.size(16.dp),
+                            tint = Color.Black
+                        )
+                    }
+                }
             }
         }
 

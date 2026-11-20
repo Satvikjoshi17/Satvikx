@@ -2,11 +2,13 @@ package com.satvik.satvikx.data.local
 
 import androidx.room.Database
 import androidx.room.RoomDatabase
+import com.satvik.satvikx.data.local.dao.ArtistDao
 import com.satvik.satvikx.data.local.dao.LyricsDao
 import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
 import com.satvik.satvikx.data.local.dao.SearchHistoryDao
 import com.satvik.satvikx.data.local.dao.TrackDao
+import com.satvik.satvikx.data.local.entity.ArtistCacheEntity
 import com.satvik.satvikx.data.local.entity.LyricsEntity
 import com.satvik.satvikx.data.local.entity.PlaylistEntity
 import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
@@ -27,9 +29,10 @@ import com.satvik.satvikx.data.local.entity.TrackEntity
         com.satvik.satvikx.data.local.entity.PlaybackTelemetryEntity::class,
         com.satvik.satvikx.data.local.entity.BlendEntity::class,
         com.satvik.satvikx.data.local.entity.BlendTrackCrossRef::class,
-        LyricsEntity::class
+        LyricsEntity::class,
+        ArtistCacheEntity::class
     ],
-    version = 8,
+    version = 9,
     exportSchema = false
 )
 abstract class SatvikXDatabase : RoomDatabase() {
@@ -47,6 +50,8 @@ abstract class SatvikXDatabase : RoomDatabase() {
     abstract fun blendDao(): com.satvik.satvikx.data.local.dao.BlendDao
 
     abstract fun lyricsDao(): LyricsDao
+
+    abstract fun artistDao(): ArtistDao
 
     companion object {
         const val DATABASE_NAME = "satvikx_music.db"

@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.satvik.satvikx.data.local.SatvikXDatabase
+import com.satvik.satvikx.data.local.dao.ArtistDao
 import com.satvik.satvikx.data.local.dao.LyricsDao
 import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.RecentPlaybackDao
@@ -115,6 +116,22 @@ object DatabaseModule {
         }
     }
 
+    private val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `artist_cache` (
+                    `artistName` TEXT NOT NULL PRIMARY KEY,
+                    `deezerId` INTEGER,
+                    `imageUrl` TEXT,
+                    `fansCount` INTEGER NOT NULL,
+                    `cachedAtTimestamp` INTEGER NOT NULL
+                )
+                """.trimIndent()
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideSatvikXDatabase(
@@ -125,7 +142,7 @@ object DatabaseModule {
             SatvikXDatabase::class.java,
             SatvikXDatabase.DATABASE_NAME
         )
-        .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+        .addMigrations(MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
         .fallbackToDestructiveMigration()
         .build()
     }
@@ -170,5 +187,11 @@ object DatabaseModule {
     @Singleton
     fun provideLyricsDao(database: SatvikXDatabase): LyricsDao {
         return database.lyricsDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideArtistDao(database: SatvikXDatabase): ArtistDao {
+        return database.artistDao()
     }
 }

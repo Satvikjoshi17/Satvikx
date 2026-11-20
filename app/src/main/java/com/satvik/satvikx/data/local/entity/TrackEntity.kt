@@ -162,34 +162,38 @@ private val REGEX_WHITESPACE = Regex("""\s+""")
 
 fun isRecordLabelOrChannel(name: String): Boolean {
     val lower = name.trim().lowercase(java.util.Locale.ROOT)
-    return lower.isBlank() ||
-        lower == "unknown artist" ||
-        REGEX_RECORD_LABELS.containsMatchIn(lower) ||
-        lower.contains("vevo") ||
-        lower.contains("t-series") ||
-        lower.contains("tseries") ||
-        lower.contains("sony music") ||
-        lower.contains("zee music") ||
-        lower.contains("saregama") ||
-        lower.contains("speed records") ||
-        lower.contains("tips official") ||
-        lower.contains("tips music") ||
-        lower.contains("white hill") ||
-        lower.contains("geet mp3") ||
-        lower.contains("desi music factory") ||
-        lower.contains("yrf") ||
-        lower.contains("records") ||
-        lower.contains("entertainment") ||
-        lower.contains("channel") ||
-        lower.contains("studio") ||
-        lower.contains("lyrics") ||
-        lower.contains("status") ||
-        lower.contains("creation") ||
-        lower.contains("creations") ||
-        lower.contains("netflix") ||
-        lower.contains("prime video") ||
-        lower.contains("disney") ||
-        lower.contains("movieclips")
+    if (lower.isBlank() || lower == "unknown artist" || lower == "featured artist" || lower == "various artists") return true
+
+    // Check record labels regex
+    if (REGEX_RECORD_LABELS.containsMatchIn(lower)) return true
+
+    // Common corporate & label terms
+    val labelTerms = listOf(
+        "vevo", "t-series", "tseries", "sony music", "zee music", "saregama",
+        "speed records", "tips official", "tips music", "white hill", "geet mp3",
+        "desi music factory", "yrf", "records", "entertainment", "channel",
+        "studio", "studios", "lyrics", "status", "creation", "creations",
+        "netflix", "prime video", "disney", "movieclips", "films", "company",
+        "media", "production", "productions", "network", "series"
+    )
+    if (labelTerms.any { lower.contains(it) }) return true
+
+    // Devotional genre markers (these are NOT artists)
+    val devotionalTerms = listOf(
+        "bhajan", "bhakti", "aarti", "chalisa", "kirtan", "dhun", "mantra",
+        "stotram", "stuti", "satsang", "shree ram", "sita ram", "shri ram",
+        "devotional", "spiritual", "amritwani", "hanuman chalisa"
+    )
+    if (devotionalTerms.any { lower.contains(it) }) return true
+
+    // Generic upload channel / compilation markers
+    val genericChannelTerms = listOf(
+        "lofi", "lo-fi", "chill", "slowed", "reverb", "bass boosted",
+        "trap city", "trap nation", "mashup", "jukebox", "compilation",
+        "nonstop", "non stop", "collection", "top 10", "top 20", "top 50",
+        "best of", "greatest hits"
+    )
+    return genericChannelTerms.any { lower.contains(it) }
 }
 
 /**
@@ -198,12 +202,17 @@ fun isRecordLabelOrChannel(name: String): Boolean {
  */
 fun TrackEntity.getEffectiveArtists(): List<String> {
     val candidates = mutableListOf<String>()
+    val cleanTitle = extractPolishedTitle(title, artist).lowercase(java.util.Locale.ROOT).trim()
 
     // 1. Try splitting the direct artist field
     if (!isRecordLabelOrChannel(artist)) {
         val split = artist.split(",", "&", "feat.", "ft.", "/", ";", "•")
             .map { it.replace(" - Topic", "", ignoreCase = true).trim() }
-            .filter { it.length >= 2 && !isRecordLabelOrChannel(it) }
+            .filter {
+                val candidateLower = it.lowercase(java.util.Locale.ROOT)
+                it.length >= 2 && !isRecordLabelOrChannel(it) &&
+                candidateLower != cleanTitle && !cleanTitle.contains(candidateLower)
+            }
         candidates.addAll(split)
     }
 
@@ -215,8 +224,10 @@ fun TrackEntity.getEffectiveArtists(): List<String> {
 
         for (seg in titleSegments) {
             val s = seg.trim()
-            if (s.length in 3..25 && !isRecordLabelOrChannel(s)) {
-                val sLower = s.lowercase(java.util.Locale.ROOT)
+            val sLower = s.lowercase(java.util.Locale.ROOT)
+            if (s.length in 3..30 && !isRecordLabelOrChannel(s) &&
+                sLower != cleanTitle && !cleanTitle.contains(sLower)
+            ) {
                 if (!sLower.contains("video") && !sLower.contains("audio") &&
                     !sLower.contains("song") && !sLower.contains("official") &&
                     !sLower.contains("teaser") && !sLower.contains("trailer") &&
@@ -230,7 +241,7 @@ fun TrackEntity.getEffectiveArtists(): List<String> {
     }
 
     return candidates.distinct().ifEmpty {
-        if (!isRecordLabelOrChannel(artist)) listOf(artist) else emptyList()
+        if (!isRecordLabelOrChannel(artist) && artist.lowercase() != cleanTitle) listOf(artist) else emptyList()
     }
 }
 
@@ -288,9 +299,14 @@ fun extractPolishedTitle(rawTitle: String, rawArtist: String = ""): String {
  * Extracts true musical performers/artists for display, bypassing YouTube record label/distributor channels.
  */
 fun extractPolishedArtist(rawTitle: String, rawArtist: String): String {
+    val cleanTitle = extractPolishedTitle(rawTitle, rawArtist).lowercase(java.util.Locale.ROOT).trim()
+
     if (!isRecordLabelOrChannel(rawArtist)) {
         val cleanA = rawArtist.replace(" - Topic", "", ignoreCase = true).trim()
-        if (cleanA.isNotBlank()) return cleanA
+        val cleanALower = cleanA.lowercase(java.util.Locale.ROOT)
+        if (cleanA.isNotBlank() && cleanALower != cleanTitle && !cleanTitle.contains(cleanALower)) {
+            return cleanA
+        }
     }
 
     val titleSegments = rawTitle.split("|", " - ", "—", "–", "•", "/", "~")
@@ -300,8 +316,10 @@ fun extractPolishedArtist(rawTitle: String, rawArtist: String): String {
     val candidates = mutableListOf<String>()
     for (seg in titleSegments) {
         val s = seg.trim()
-        if (s.length in 3..30 && !isRecordLabelOrChannel(s)) {
-            val sLower = s.lowercase(java.util.Locale.ROOT)
+        val sLower = s.lowercase(java.util.Locale.ROOT)
+        if (s.length in 3..30 && !isRecordLabelOrChannel(s) &&
+            sLower != cleanTitle && !cleanTitle.contains(sLower)
+        ) {
             val isNoise = sLower.contains("video") || sLower.contains("audio") ||
                     sLower.contains("song") || sLower.contains("official") ||
                     sLower.contains("teaser") || sLower.contains("trailer") ||
@@ -311,7 +329,11 @@ fun extractPolishedArtist(rawTitle: String, rawArtist: String): String {
             if (!isNoise) {
                 val split = s.split(",", "&", "feat.", "ft.")
                     .map { it.trim() }
-                    .filter { it.length >= 3 && !isRecordLabelOrChannel(it) }
+                    .filter {
+                        val cLower = it.lowercase(java.util.Locale.ROOT)
+                        it.length >= 3 && !isRecordLabelOrChannel(it) &&
+                        cLower != cleanTitle && !cleanTitle.contains(cLower)
+                    }
                 candidates.addAll(split)
             }
         }
@@ -320,7 +342,7 @@ fun extractPolishedArtist(rawTitle: String, rawArtist: String): String {
     return if (candidates.isNotEmpty()) {
         candidates.distinct().take(3).joinToString(", ")
     } else {
-        if (rawArtist.isNotBlank() && rawArtist != "Unknown Artist") rawArtist else "Featured Artist"
+        if (rawArtist.isNotBlank() && !isRecordLabelOrChannel(rawArtist)) rawArtist else "Featured Artist"
     }
 }
 
