@@ -57,6 +57,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -220,9 +221,11 @@ fun StarkAuthDialog(
                         syncState = syncState,
                         onSyncNow = { authViewModel.syncNow() },
                         onUpdateProfile = { newName, newAvatar ->
-                            authViewModel.updateProfile(newName, newAvatar) { success, _ ->
+                            authViewModel.updateProfile(newName, newAvatar) { success, error ->
                                 if (success) {
                                     Toast.makeText(context, "Profile updated successfully!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    Toast.makeText(context, error ?: "Failed to update profile", Toast.LENGTH_LONG).show()
                                 }
                             }
                         },
@@ -668,8 +671,13 @@ private fun ActiveProfileView(
     onClose: () -> Unit
 ) {
     var isEditing by remember { mutableStateOf(false) }
-    var editName by remember { mutableStateOf(user.displayName) }
-    var editAvatar by remember { mutableStateOf(user.avatarUrl.ifBlank { "⚡" }) }
+    var editName by remember(user.displayName) { mutableStateOf(user.displayName) }
+    var editAvatar by remember(user.avatarUrl) { mutableStateOf(user.avatarUrl.ifBlank { "⚡" }) }
+
+    LaunchedEffect(user.displayName, user.avatarUrl) {
+        editName = user.displayName
+        editAvatar = user.avatarUrl.ifBlank { "⚡" }
+    }
 
     Column(modifier = Modifier.fillMaxWidth()) {
         // Operative Identity Card

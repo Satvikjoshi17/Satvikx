@@ -133,10 +133,14 @@ class AuthRepository @Inject constructor(
             val pendingName = prefs.getString("pending_signup_name", null)
             val isGuest = profile?.isGuest ?: (user.email.isNullOrBlank())
 
+            val localSavedName = prefs.getString("display_name", null)?.ifBlank { null }
+            val currentMemName = _currentUser.value?.displayName?.ifBlank { null }
+
             val resolvedName = profile?.displayName?.ifBlank { null }
-                ?: pendingName?.ifBlank { null }
                 ?: metaName?.ifBlank { null }
-                ?: _currentUser.value?.displayName?.ifBlank { null }
+                ?: currentMemName
+                ?: localSavedName
+                ?: pendingName?.ifBlank { null }
                 ?: user.email?.substringBefore("@")?.replace(".", " ")?.replace("_", " ")
                     ?.split(" ")?.joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
                 ?: "Stark Operative"
@@ -152,19 +156,21 @@ class AuthRepository @Inject constructor(
                 prefs.getLong("listening_seconds", 0L)
             )
 
+            // Clear any pending signup info now that profile is loaded
+            prefs.edit().remove("pending_signup_name").remove("pending_signup_email").apply()
+
             // Self-Healing Database Entry:
-            // If the row was missing in Supabase 'profiles' or had missing data, write it now with all details!
-            if (profile == null || profile.displayName.isBlank() || profile.listeningSeconds < resolvedListeningSeconds) {
+            // If the row was missing in Supabase 'profiles' or had missing/outdated data, write it now with core columns!
+            if (profile == null || profile.displayName.isBlank() || profile.displayName != resolvedName || profile.listeningSeconds < resolvedListeningSeconds) {
                 try {
-                    val profileToSave = ProfileDto(
-                        id = user.id,
-                        displayName = resolvedName,
-                        avatarUrl = resolvedAvatar,
-                        isGuest = isGuest,
-                        listeningSeconds = resolvedListeningSeconds
-                    )
+                    val profileToSave = buildJsonObject {
+                        put("id", user.id)
+                        put("display_name", resolvedName)
+                        put("avatar_url", resolvedAvatar)
+                        put("is_guest", isGuest)
+                        put("listening_seconds", resolvedListeningSeconds)
+                    }
                     supabaseClient.from("profiles").upsert(profileToSave)
-                    prefs.edit().remove("pending_signup_name").remove("pending_signup_email").apply()
                 } catch (e: Exception) {
                     android.util.Log.w("AuthRepository", "Profile self-healing upsert non-fatal: ${e.message}")
                 }
@@ -382,21 +388,14 @@ class AuthRepository @Inject constructor(
             try {
                 val user = supabaseClient.auth.currentUserOrNull()
                 if (user != null) {
-                    val analyticsRepo = supabaseAnalyticsRepositoryProvider.get()
-                    val nowIst = analyticsRepo.getIndiaTimestamp()
-                    val humanTime = analyticsRepo.formatListeningSecondsHuman(newSeconds)
-                    val device = analyticsRepo.getDeviceModelInfo()
-                    val dto = ProfileDto(
-                        id = user.id,
-                        displayName = updated.displayName,
-                        avatarUrl = updated.avatarUrl,
-                        isGuest = updated.isGuest,
-                        listeningSeconds = newSeconds,
-                        listeningTimeHuman = humanTime,
-                        lastActiveIst = nowIst,
-                        deviceModel = device
-                    )
-                    supabaseClient.from("profiles").upsert(dto)
+                    val coreDto = buildJsonObject {
+                        put("id", user.id)
+                        put("display_name", updated.displayName)
+                        put("avatar_url", updated.avatarUrl)
+                        put("is_guest", updated.isGuest)
+                        put("listening_seconds", newSeconds)
+                    }
+                    supabaseClient.from("profiles").upsert(coreDto)
                 }
             } catch (_: Exception) {}
         }
@@ -404,46 +403,75 @@ class AuthRepository @Inject constructor(
 
     suspend fun updateProfile(displayName: String, avatarUrl: String): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            val user = supabaseClient.auth.currentUserOrNull()
-                ?: return@withContext Result.failure(IllegalStateException("No active user session"))
-
             val cleanName = displayName.trim().ifBlank { "Stark Operative" }
             val cleanAvatar = avatarUrl.trim().ifBlank { "⚡" }
             val currentListening = _currentUser.value?.listeningSeconds ?: prefs.getLong("listening_seconds", 0L)
 
-            val analyticsRepo = supabaseAnalyticsRepositoryProvider.get()
-            val nowIst = analyticsRepo.getIndiaTimestamp()
-            val humanTime = analyticsRepo.formatListeningSecondsHuman(currentListening)
-            val device = analyticsRepo.getDeviceModelInfo()
+            val current = _currentUser.value
+            val isGuest = current?.isGuest ?: false
+            val authUser = try { supabaseClient.auth.currentUserOrNull() } catch (_: Exception) { null }
+            val targetId = authUser?.id ?: current?.id ?: prefs.getString("user_id", null) ?: "user_${System.currentTimeMillis()}"
 
-            val updated = ProfileDto(
-                id = user.id,
+            // 1. Clear any pending signup fields so they never overwrite the updated callsign later
+            prefs.edit()
+                .remove("pending_signup_name")
+                .remove("pending_signup_email")
+                .apply()
+
+            // 2. OPTIMISTIC UPDATE: Update in-memory state and local disk storage IMMEDIATELY
+            val newProfile = UserProfile(
+                id = targetId,
+                email = current?.email ?: authUser?.email,
                 displayName = cleanName,
                 avatarUrl = cleanAvatar,
-                isGuest = _currentUser.value?.isGuest ?: false,
-                listeningSeconds = currentListening,
-                listeningTimeHuman = humanTime,
-                lastActiveIst = nowIst,
-                deviceModel = device
-            )
-
-            supabaseClient.from("profiles").upsert(updated)
-
-            val newProfile = _currentUser.value?.copy(
-                displayName = cleanName,
-                avatarUrl = cleanAvatar,
+                isGuest = isGuest,
                 listeningSeconds = currentListening
             )
             _currentUser.value = newProfile
-            newProfile?.let { persistLocalProfile(it) }
+            persistLocalProfile(newProfile)
 
+            // 3. UPDATE SUPABASE AUTH USER METADATA (for cloud authenticated users)
+            if (authUser != null) {
+                try {
+                    supabaseClient.auth.updateUser {
+                        data {
+                            put("display_name", cleanName)
+                            put("avatar_url", cleanAvatar)
+                        }
+                    }
+                    android.util.Log.d("AuthRepository", "Supabase Auth user metadata updated to: $cleanName")
+                } catch (e: Exception) {
+                    android.util.Log.w("AuthRepository", "Non-fatal: Failed to update Supabase Auth user metadata: ${e.message}")
+                }
+            }
+
+            // 4. UPDATE SUPABASE 'profiles' TABLE WITH CORE COLUMNS
+            try {
+                val coreDto = buildJsonObject {
+                    put("id", targetId)
+                    put("display_name", cleanName)
+                    put("avatar_url", cleanAvatar)
+                    put("is_guest", isGuest)
+                    put("listening_seconds", currentListening)
+                }
+                supabaseClient.from("profiles").upsert(coreDto)
+                android.util.Log.d("AuthRepository", "Supabase profiles table updated to: $cleanName")
+            } catch (e: Exception) {
+                android.util.Log.w("AuthRepository", "Non-fatal: Failed to upsert to profiles table: ${e.message}")
+            }
+
+            // 5. UPDATE SUPABASE 'user_analytics' TABLE IN REAL TIME
             scope.launch {
                 try {
-                    analyticsRepo.syncUserFullAnalytics()
-                } catch (_: Exception) {}
+                    supabaseAnalyticsRepositoryProvider.get().syncUserFullAnalytics()
+                } catch (e: Exception) {
+                    android.util.Log.w("AuthRepository", "Non-fatal: Failed to sync analytics: ${e.message}")
+                }
             }
+
             Result.success(Unit)
         } catch (e: Exception) {
+            android.util.Log.e("AuthRepository", "Failed to update profile", e)
             Result.failure(e)
         }
     }

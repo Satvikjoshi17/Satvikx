@@ -19,6 +19,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -210,17 +212,14 @@ class SupabaseAnalyticsRepository @Inject constructor(
                 try {
                     val supabaseUser = supabaseClient.auth.currentUserOrNull()
                     if (supabaseUser != null) {
-                        val profileDto = ProfileDto(
-                            id = supabaseUser.id,
-                            displayName = user.displayName,
-                            avatarUrl = user.avatar,
-                            isGuest = user.isGuest,
-                            listeningSeconds = currentTotalSec,
-                            listeningTimeHuman = humanDuration,
-                            lastActiveIst = nowIst,
-                            deviceModel = getDeviceModelInfo()
-                        )
-                        supabaseClient.from("profiles").upsert(profileDto)
+                        val coreProfile = buildJsonObject {
+                            put("id", supabaseUser.id)
+                            put("display_name", user.displayName)
+                            put("avatar_url", user.avatar)
+                            put("is_guest", user.isGuest)
+                            put("listening_seconds", currentTotalSec)
+                        }
+                        supabaseClient.from("profiles").upsert(coreProfile)
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "profiles real-time start upsert non-fatal: ${e.message}")
@@ -334,17 +333,14 @@ class SupabaseAnalyticsRepository @Inject constructor(
                 try {
                     val supabaseUser = supabaseClient.auth.currentUserOrNull()
                     if (supabaseUser != null) {
-                        val profileDto = ProfileDto(
-                            id = supabaseUser.id,
-                            displayName = user.displayName,
-                            avatarUrl = user.avatar,
-                            isGuest = user.isGuest,
-                            listeningSeconds = currentTotalSec,
-                            listeningTimeHuman = humanDuration,
-                            lastActiveIst = nowIst,
-                            deviceModel = getDeviceModelInfo()
-                        )
-                        supabaseClient.from("profiles").upsert(profileDto)
+                        val coreProfile = buildJsonObject {
+                            put("id", supabaseUser.id)
+                            put("display_name", user.displayName)
+                            put("avatar_url", user.avatar)
+                            put("is_guest", user.isGuest)
+                            put("listening_seconds", currentTotalSec)
+                        }
+                        supabaseClient.from("profiles").upsert(coreProfile)
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Non-fatal: profiles table sync skipped: ${e.message}")
@@ -404,17 +400,14 @@ class SupabaseAnalyticsRepository @Inject constructor(
             try {
                 val supabaseUser = supabaseClient.auth.currentUserOrNull()
                 if (supabaseUser != null) {
-                    val profileDto = ProfileDto(
-                        id = supabaseUser.id,
-                        displayName = user.displayName,
-                        avatarUrl = user.avatar,
-                        isGuest = user.isGuest,
-                        listeningSeconds = totalSeconds,
-                        listeningTimeHuman = humanDuration,
-                        lastActiveIst = nowIst,
-                        deviceModel = getDeviceModelInfo()
-                    )
-                    supabaseClient.from("profiles").upsert(profileDto)
+                    val coreProfile = buildJsonObject {
+                        put("id", supabaseUser.id)
+                        put("display_name", user.displayName)
+                        put("avatar_url", user.avatar)
+                        put("is_guest", user.isGuest)
+                        put("listening_seconds", totalSeconds)
+                    }
+                    supabaseClient.from("profiles").upsert(coreProfile)
                 }
             } catch (_: Exception) {}
 
