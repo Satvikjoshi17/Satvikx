@@ -82,6 +82,7 @@ import coil3.compose.AsyncImage
 import com.satvik.satvikx.data.local.entity.BlendEntity
 import com.satvik.satvikx.data.local.entity.PlaylistWithTracks
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.isLikedPlaylistName
 import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.CreateBlendDialog
 import com.satvik.satvikx.ui.components.CuratedArtistBlendSheet
@@ -134,10 +135,10 @@ fun PlaylistsScreen(
 
     // Separate Liked Songs playlist from custom playlists
     val likedSongsPlaylist = remember(playlists) {
-        playlists.find { it.playlist.name.equals("Liked Songs", ignoreCase = true) }
+        playlists.find { isLikedPlaylistName(it.playlist.name) }
     }
     val customPlaylists = remember(playlists) {
-        playlists.filterNot { it.playlist.name.equals("Liked Songs", ignoreCase = true) }
+        playlists.filterNot { isLikedPlaylistName(it.playlist.name) || !it.playlist.isCustom }
     }
 
     val activePlaylist = playlists.find { it.playlist.playlistId == selectedPlaylistId }
@@ -160,7 +161,7 @@ fun PlaylistsScreen(
         // ==========================================
         // PURE SPOTIFY PLAYLIST DETAIL VIEW
         // ==========================================
-        val isLikedSongs = activePlaylist.playlist.name.equals("Liked Songs", ignoreCase = true)
+        val isLikedSongs = isLikedPlaylistName(activePlaylist.playlist.name)
         var showPlaylistHeaderMenu by remember { mutableStateOf(false) }
 
         val totalSeconds = remember(activePlaylist.tracks) {
@@ -651,7 +652,9 @@ fun PlaylistsScreen(
                                     if (likedSongsPlaylist != null) {
                                         selectedPlaylistId = likedSongsPlaylist.playlist.playlistId
                                     } else {
-                                        viewModel.createPlaylist("Liked Songs")
+                                        viewModel.ensureLikedSongsPlaylist { id ->
+                                            selectedPlaylistId = id
+                                        }
                                         Toast.makeText(context, "Liked Songs ready", Toast.LENGTH_SHORT).show()
                                     }
                                 }

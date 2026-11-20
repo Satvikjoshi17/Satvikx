@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.isLikedPlaylistName
 import com.satvik.satvikx.ui.theme.PrimaryNeon
 import com.satvik.satvikx.ui.theme.SurfaceDark
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
@@ -54,6 +55,9 @@ fun AddToPlaylistDialog(
 
     val context = LocalContext.current
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val customPlaylists = remember(playlists) {
+        playlists.filterNot { isLikedPlaylistName(it.playlist.name) || !it.playlist.isCustom }
+    }
     var isCreatingNew by remember { mutableStateOf(false) }
     var newPlaylistName by remember { mutableStateOf("") }
 
@@ -148,7 +152,7 @@ fun AddToPlaylistDialog(
                         modifier = Modifier.padding(vertical = 4.dp)
                     )
 
-                    if (playlists.isEmpty()) {
+                    if (customPlaylists.isEmpty()) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -167,7 +171,7 @@ fun AddToPlaylistDialog(
                                 .fillMaxWidth()
                                 .heightIn(max = 240.dp)
                         ) {
-                            items(playlists, key = { it.playlist.playlistId }) { p ->
+                            items(customPlaylists, key = { it.playlist.playlistId }) { p ->
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()

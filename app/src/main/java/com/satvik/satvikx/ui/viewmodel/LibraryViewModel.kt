@@ -10,6 +10,7 @@ import com.satvik.satvikx.data.local.entity.PlaylistEntity
 import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
 import com.satvik.satvikx.data.local.entity.PlaylistWithTracks
 import com.satvik.satvikx.data.local.entity.TrackEntity
+import com.satvik.satvikx.data.local.entity.isLikedPlaylistName
 import com.satvik.satvikx.data.local.storage.StorageManager
 import com.satvik.satvikx.playback.PlaybackConnectionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -73,6 +74,11 @@ class LibraryViewModel @Inject constructor(
 
     init {
         refreshStorageInfo()
+        viewModelScope.launch {
+            try {
+                cloudSyncRepository.ensureSingleLikedSongsPlaylist()
+            } catch (_: Exception) {}
+        }
     }
 
     fun refreshStorageInfo() {
@@ -184,11 +190,22 @@ class LibraryViewModel @Inject constructor(
     fun createPlaylist(name: String) {
         if (name.isBlank()) return
         val trimmed = name.trim()
+        if (isLikedPlaylistName(trimmed)) {
+            // Liked Songs already exists as a system playlist; do not duplicate
+            return
+        }
         viewModelScope.launch {
             playlistDao.insertPlaylist(
-                PlaylistEntity(name = trimmed)
+                PlaylistEntity(name = trimmed, isCustom = true)
             )
             cloudSyncRepository.onPlaylistCreated(trimmed)
+        }
+    }
+
+    fun ensureLikedSongsPlaylist(onReady: (Long) -> Unit) {
+        viewModelScope.launch {
+            val pl = cloudSyncRepository.ensureSingleLikedSongsPlaylist()
+            onReady(pl.playlistId)
         }
     }
 
@@ -206,6 +223,7 @@ class LibraryViewModel @Inject constructor(
     fun renamePlaylist(playlistId: Long, newName: String) {
         if (newName.isBlank()) return
         val trimmed = newName.trim()
+        if (isLikedPlaylistName(trimmed)) return
         viewModelScope.launch {
             val playlist = playlistDao.getPlaylistByIdSync(playlistId)
             playlistDao.updatePlaylistName(playlistId, trimmed)
@@ -236,7 +254,7 @@ class LibraryViewModel @Inject constructor(
             )
             val playlist = playlistDao.getPlaylistByIdSync(playlistId)
             if (playlist != null) {
-                if (playlist.name.equals("Liked Songs", ignoreCase = true)) {
+                if (isLikedPlaylistName(playlist.name)) {
                     playbackConnectionManager.onTrackLiked(track)
                     cloudSyncRepository.onFavoriteChanged(track, true)
                 } else {
@@ -256,7 +274,7 @@ class LibraryViewModel @Inject constructor(
 
             // 2. Persistently remove from remote cloud database (Supabase)
             if (playlist != null) {
-                if (playlist.name.equals("Liked Songs", ignoreCase = true)) {
+                if (isLikedPlaylistName(playlist.name)) {
                     val track = trackDao.getTrackByIdSync(trackId) ?: TrackEntity(id = trackId, title = "", artist = "")
                     playbackConnectionManager.updateTrackLikeStatusInTelemetry(trackId, false)
                     cloudSyncRepository.onFavoriteChanged(track, false)
@@ -270,11 +288,7 @@ class LibraryViewModel @Inject constructor(
     fun toggleFavorite(track: TrackEntity) {
         viewModelScope.launch {
             trackDao.insertTrack(track)
-            var favPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
-            if (favPlaylist == null) {
-                val newId = playlistDao.insertPlaylist(PlaylistEntity(name = "Liked Songs"))
-                favPlaylist = PlaylistEntity(playlistId = newId, name = "Liked Songs")
-            }
+            val favPlaylist = cloudSyncRepository.ensureSingleLikedSongsPlaylist()
             val isAlreadyLiked = playlistDao.isTrackLikedSync(track.id)
             if (isAlreadyLiked) {
                 playlistDao.deletePlaylistTrackCrossRef(favPlaylist.playlistId, track.id)

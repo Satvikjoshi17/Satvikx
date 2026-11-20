@@ -9,6 +9,8 @@ import com.satvik.satvikx.data.local.entity.PlaylistTrackCrossRef
 import com.satvik.satvikx.data.local.entity.TrackEntity
 import com.satvik.satvikx.data.local.entity.extractPolishedArtist
 import com.satvik.satvikx.data.local.entity.extractPolishedTitle
+import com.satvik.satvikx.data.local.entity.isLikedPlaylistName
+import com.satvik.satvikx.data.local.entity.LIKED_SONGS_PLAYLIST_NAME
 import com.satvik.satvikx.data.remote.supabase.dto.UserFavoriteDto
 import com.satvik.satvikx.data.remote.supabase.dto.UserPlaylistDto
 import com.satvik.satvikx.data.remote.supabase.dto.UserPlaylistTrackDto
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -48,8 +51,15 @@ class CloudSyncRepository @Inject constructor(
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     private val syncPrefs = context.getSharedPreferences("satvikx_cloud_sync_cache", Context.MODE_PRIVATE)
+    private val syncMutex = Mutex()
 
     init {
+        // Ensure local database has strictly one canonical Liked Songs playlist on startup
+        scope.launch {
+            try {
+                ensureSingleLikedSongsPlaylist()
+            } catch (_: Exception) {}
+        }
         // Auto-sync whenever user logs in or profile emits
         scope.launch {
             authRepository.currentUser.collect { user ->
@@ -58,6 +68,52 @@ class CloudSyncRepository @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * Guarantees strictly ONE canonical 'Liked Songs' playlist exists in the local database.
+     * Merges tracks from any duplicate or ghost liked playlists and deletes duplicates safely.
+     */
+    suspend fun ensureSingleLikedSongsPlaylist(): PlaylistEntity = withContext(Dispatchers.IO) {
+        val allLikedPlaylists = playlistDao.getAllLikedPlaylistsSync()
+
+        if (allLikedPlaylists.isEmpty()) {
+            val id = playlistDao.insertPlaylist(
+                PlaylistEntity(
+                    name = LIKED_SONGS_PLAYLIST_NAME,
+                    isCustom = false
+                )
+            )
+            return@withContext PlaylistEntity(playlistId = id, name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false)
+        }
+
+        // Pick the canonical playlist: the one with the most tracks, or the lowest playlistId
+        val canonical = allLikedPlaylists.maxByOrNull {
+            playlistDao.getPlaylistWithTracksSync(it.playlistId)?.tracks?.size ?: 0
+        } ?: allLikedPlaylists.first()
+
+        if (canonical.name != LIKED_SONGS_PLAYLIST_NAME || canonical.isCustom) {
+            playlistDao.updatePlaylist(canonical.copy(name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false))
+        }
+
+        // Merge any duplicates into the single canonical playlist and delete them
+        val duplicates = allLikedPlaylists.filter { it.playlistId != canonical.playlistId }
+        for (dup in duplicates) {
+            val dupTracks = playlistDao.getPlaylistWithTracksSync(dup.playlistId)?.tracks.orEmpty()
+            for (track in dupTracks) {
+                playlistDao.insertPlaylistTrackCrossRef(
+                    PlaylistTrackCrossRef(
+                        playlistId = canonical.playlistId,
+                        trackId = track.id
+                    )
+                )
+            }
+            playlistDao.clearPlaylistTracks(dup.playlistId)
+            playlistDao.deletePlaylistById(dup.playlistId)
+            Log.d("CloudSync", "Merged duplicate liked playlist id=${dup.playlistId} into canonical id=${canonical.playlistId}")
+        }
+
+        return@withContext canonical.copy(name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false)
     }
 
     // =========================================================================
@@ -141,18 +197,19 @@ class CloudSyncRepository @Inject constructor(
             IllegalStateException("No active Stark account to sync")
         )
 
+        if (!syncMutex.tryLock()) {
+            Log.d("CloudSync", "Sync operation already active; skipping duplicate trigger")
+            return@withContext Result.success(Unit)
+        }
+
         try {
             _syncState.value = SyncState.Syncing
 
             // 1. Flush any pending deletions to Supabase first so remote is cleaned
             flushPendingDeletions(user.id)
 
-            // 2. Ensure local 'Liked Songs' playlist exists
-            var likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
-            if (likedPlaylist == null) {
-                val newId = playlistDao.insertPlaylist(PlaylistEntity(name = "Liked Songs"))
-                likedPlaylist = PlaylistEntity(playlistId = newId, name = "Liked Songs")
-            }
+            // 2. Ensure strictly ONE local 'Liked Songs' playlist exists (deduplicated & self-healing)
+            val likedPlaylist = ensureSingleLikedSongsPlaylist()
 
             // 3. Fetch remote favorites from Supabase
             val remoteFavorites = try {
@@ -243,8 +300,26 @@ class CloudSyncRepository @Inject constructor(
                 emptyList()
             }
 
+            // Purge any accidental 'Liked Songs' entries from remote custom playlists table
+            val remoteLikedPlaylists = remotePlaylists.filter { isLikedPlaylistName(it.name) }
+            for (rlp in remoteLikedPlaylists) {
+                if (rlp.id != null) {
+                    try {
+                        supabaseClient.from("user_playlists").delete {
+                            filter {
+                                eq("id", rlp.id)
+                                eq("user_id", user.id)
+                            }
+                        }
+                        Log.d("CloudSync", "Purged redundant '${rlp.name}' from remote user_playlists (id=${rlp.id})")
+                    } catch (_: Exception) {}
+                }
+            }
+
             val currentPendingPlaylistDeletes = getPendingPlaylistDeletions()
-            val validRemotePlaylists = remotePlaylists.filterNot { it.name in currentPendingPlaylistDeletes }
+            val validRemotePlaylists = remotePlaylists
+                .filterNot { it.name in currentPendingPlaylistDeletes }
+                .filterNot { isLikedPlaylistName(it.name) }
             val currentPendingTrackDeletes = getPendingPlaylistTrackDeletions()
 
             // A. Reconcile remote playlists & tracks to local Room DB
@@ -304,7 +379,7 @@ class CloudSyncRepository @Inject constructor(
 
             // B. Upload local custom playlists & their tracks to Supabase
             val localCustomPlaylists = playlistDao.getAllPlaylistsWithTracksSync()
-                .filter { it.playlist.name != "Liked Songs" }
+                .filterNot { isLikedPlaylistName(it.playlist.name) || !it.playlist.isCustom }
 
             for (localCP in localCustomPlaylists) {
                 if (localCP.playlist.name in currentPendingPlaylistDeletes) continue
@@ -376,6 +451,8 @@ class CloudSyncRepository @Inject constructor(
         } catch (e: Exception) {
             _syncState.value = SyncState.Error(e.localizedMessage ?: "Sync error")
             Result.failure(e)
+        } finally {
+            syncMutex.unlock()
         }
     }
 
@@ -569,6 +646,7 @@ class CloudSyncRepository @Inject constructor(
     }
 
     fun onPlaylistCreated(playlistName: String) {
+        if (isLikedPlaylistName(playlistName)) return
         removePendingPlaylistDeletion(playlistName)
         val user = authRepository.currentUser.value ?: return
         scope.launch {

@@ -42,8 +42,11 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlists WHERE playlistId = :playlistId LIMIT 1")
     suspend fun getPlaylistByIdSync(playlistId: Long): PlaylistEntity?
 
-    @Query("SELECT * FROM playlists WHERE name = :name LIMIT 1")
+    @Query("SELECT * FROM playlists WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) LIMIT 1")
     suspend fun getPlaylistByNameSync(name: String): PlaylistEntity?
+
+    @Query("SELECT * FROM playlists WHERE LOWER(TRIM(name)) IN ('liked songs', 'liked', 'favorites', 'favorite songs')")
+    suspend fun getAllLikedPlaylistsSync(): List<PlaylistEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertPlaylistTrackCrossRef(crossRef: PlaylistTrackCrossRef)
@@ -77,7 +80,7 @@ interface PlaylistDao {
         SELECT cr.trackId 
         FROM playlist_track_cross_ref cr 
         INNER JOIN playlists p ON cr.playlistId = p.playlistId 
-        WHERE p.name = 'Liked Songs'
+        WHERE LOWER(TRIM(p.name)) = 'liked songs'
     """)
     fun getLikedTrackIds(): Flow<List<String>>
 
@@ -85,7 +88,7 @@ interface PlaylistDao {
         SELECT EXISTS(
             SELECT 1 FROM playlist_track_cross_ref cr 
             INNER JOIN playlists p ON cr.playlistId = p.playlistId 
-            WHERE p.name = 'Liked Songs' AND cr.trackId = :trackId
+            WHERE LOWER(TRIM(p.name)) = 'liked songs' AND cr.trackId = :trackId
         )
     """)
     fun isTrackLikedFlow(trackId: String): Flow<Boolean>
@@ -94,7 +97,7 @@ interface PlaylistDao {
         SELECT EXISTS(
             SELECT 1 FROM playlist_track_cross_ref cr 
             INNER JOIN playlists p ON cr.playlistId = p.playlistId 
-            WHERE p.name = 'Liked Songs' AND cr.trackId = :trackId
+            WHERE LOWER(TRIM(p.name)) = 'liked songs' AND cr.trackId = :trackId
         )
     """)
     suspend fun isTrackLikedSync(trackId: String): Boolean
