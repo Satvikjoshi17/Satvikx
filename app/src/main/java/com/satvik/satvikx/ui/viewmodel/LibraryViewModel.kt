@@ -98,8 +98,13 @@ class LibraryViewModel @Inject constructor(
         refreshStorageInfo()
     }
 
-    fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList()) {
-        playbackConnectionManager.playTrack(track, playlist, isUserPlaylist = playlist.isNotEmpty())
+    fun playTrack(track: TrackEntity, playlist: List<TrackEntity> = emptyList(), playlistId: Long? = null) {
+        playbackConnectionManager.playTrack(
+            track,
+            playlist,
+            isUserPlaylist = playlist.isNotEmpty(),
+            playlistId = playlistId
+        )
     }
 
     fun downloadTrack(track: TrackEntity, quality: DownloadQuality? = null) {
@@ -115,7 +120,8 @@ class LibraryViewModel @Inject constructor(
             playbackConnectionManager.playTrack(
                 playlistWithTracks.tracks.first(),
                 playlistWithTracks.tracks,
-                isUserPlaylist = true
+                isUserPlaylist = true,
+                playlistId = playlistWithTracks.playlist.playlistId
             )
         }
     }
@@ -126,7 +132,8 @@ class LibraryViewModel @Inject constructor(
             playbackConnectionManager.playTrack(
                 shuffled.first(),
                 shuffled,
-                isUserPlaylist = true
+                isUserPlaylist = true,
+                playlistId = playlistWithTracks.playlist.playlistId
             )
         }
     }
@@ -176,29 +183,45 @@ class LibraryViewModel @Inject constructor(
 
     fun createPlaylist(name: String) {
         if (name.isBlank()) return
+        val trimmed = name.trim()
         viewModelScope.launch {
             playlistDao.insertPlaylist(
-                PlaylistEntity(name = name.trim())
+                PlaylistEntity(name = trimmed)
             )
+            cloudSyncRepository.onPlaylistCreated(trimmed)
         }
     }
 
     fun deletePlaylist(playlistId: Long) {
         viewModelScope.launch {
+            val playlist = playlistDao.getPlaylistByIdSync(playlistId)
             playlistDao.deletePlaylistById(playlistId)
+            playbackConnectionManager.onPlaylistDeleted(playlistId)
+            if (playlist != null) {
+                cloudSyncRepository.onPlaylistDeleted(playlist.name)
+            }
         }
     }
 
     fun renamePlaylist(playlistId: Long, newName: String) {
         if (newName.isBlank()) return
+        val trimmed = newName.trim()
         viewModelScope.launch {
-            playlistDao.updatePlaylistName(playlistId, newName.trim())
+            val playlist = playlistDao.getPlaylistByIdSync(playlistId)
+            playlistDao.updatePlaylistName(playlistId, trimmed)
+            if (playlist != null) {
+                cloudSyncRepository.onPlaylistRenamed(playlist.name, trimmed)
+            }
         }
     }
 
     fun clearPlaylist(playlistId: Long) {
         viewModelScope.launch {
+            val playlist = playlistDao.getPlaylistByIdSync(playlistId)
             playlistDao.clearPlaylistTracks(playlistId)
+            if (playlist != null) {
+                cloudSyncRepository.onPlaylistCleared(playlist.name)
+            }
         }
     }
 
@@ -211,12 +234,36 @@ class LibraryViewModel @Inject constructor(
                     trackId = track.id
                 )
             )
+            val playlist = playlistDao.getPlaylistByIdSync(playlistId)
+            if (playlist != null) {
+                if (playlist.name.equals("Liked Songs", ignoreCase = true)) {
+                    playbackConnectionManager.onTrackLiked(track)
+                    cloudSyncRepository.onFavoriteChanged(track, true)
+                } else {
+                    cloudSyncRepository.onTrackAddedToPlaylist(playlist.name, track)
+                }
+            }
         }
     }
 
     fun removeTrackFromPlaylist(playlistId: Long, trackId: String) {
         viewModelScope.launch {
+            val playlist = playlistDao.getPlaylistByIdSync(playlistId)
             playlistDao.deletePlaylistTrackCrossRef(playlistId, trackId)
+
+            // 1. Instantly remove from active ExoPlayer playback queue
+            playbackConnectionManager.removeTrackFromActivePlayback(trackId)
+
+            // 2. Persistently remove from remote cloud database (Supabase)
+            if (playlist != null) {
+                if (playlist.name.equals("Liked Songs", ignoreCase = true)) {
+                    val track = trackDao.getTrackByIdSync(trackId) ?: TrackEntity(id = trackId, title = "", artist = "")
+                    playbackConnectionManager.updateTrackLikeStatusInTelemetry(trackId, false)
+                    cloudSyncRepository.onFavoriteChanged(track, false)
+                } else {
+                    cloudSyncRepository.onTrackRemovedFromPlaylist(playlist.name, trackId)
+                }
+            }
         }
     }
 

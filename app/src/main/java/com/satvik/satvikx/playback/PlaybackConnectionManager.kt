@@ -101,6 +101,7 @@ class PlaybackConnectionManager @Inject constructor(
 
     // Playlist playback lock: when true, prevents recommendations from mutating or appending to the queue
     private var isPlaylistPlayback = false
+    private var activePlaylistId: Long? = null
 
     // Background pre-warming state tracking: ensures candidate harvesting triggers once per track at 60% progress
     private var lastPrewarmedTrackId: String? = null
@@ -188,7 +189,8 @@ class PlaybackConnectionManager @Inject constructor(
     fun playTrack(
         track: TrackEntity,
         playlist: List<TrackEntity> = emptyList(),
-        isUserPlaylist: Boolean = false
+        isUserPlaylist: Boolean = false,
+        playlistId: Long? = null
     ) {
         val filteredPlaylist = if (playlist.isNotEmpty()) {
             val clean = playlist
@@ -200,6 +202,7 @@ class PlaybackConnectionManager @Inject constructor(
         }
         val isPlaylist = isUserPlaylist
         isPlaylistPlayback = isPlaylist
+        activePlaylistId = if (isPlaylist) playlistId else null
         val initialQueue = if (filteredPlaylist.isNotEmpty()) filteredPlaylist else listOf(track)
         val initialIndex = initialQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
 
@@ -293,7 +296,8 @@ class PlaybackConnectionManager @Inject constructor(
         track: TrackEntity,
         playlist: List<TrackEntity> = emptyList(),
         startPositionMs: Long = 0L,
-        isUserPlaylist: Boolean = false
+        isUserPlaylist: Boolean = false,
+        playlistId: Long? = null
     ) {
         ensureServiceStarted()
         val filteredPlaylist = if (playlist.isNotEmpty()) {
@@ -303,6 +307,7 @@ class PlaybackConnectionManager @Inject constructor(
         }
         val isPlaylist = isUserPlaylist
         isPlaylistPlayback = isPlaylist
+        activePlaylistId = if (isPlaylist) playlistId else null
         val initialQueue = if (filteredPlaylist.isNotEmpty()) filteredPlaylist else listOf(track)
         val initialIndex = initialQueue.indexOfFirst { it.id == track.id }.coerceAtLeast(0)
 
@@ -659,15 +664,138 @@ class PlaybackConnectionManager @Inject constructor(
     }
 
     fun removeFromQueue(index: Int) {
-        if (index in currentPlaylist.indices) {
+        if (index !in currentPlaylist.indices) return
+        scope.launch {
             val controller = mediaController
-            if (controller != null && index != controller.currentMediaItemIndex) {
-                currentPlaylist.removeAt(index)
-                controller.removeMediaItem(index)
+            val currentIndex = controller?.currentMediaItemIndex ?: _playbackState.value.currentQueueIndex
+
+            if (currentPlaylist.size <= 1) {
+                currentPlaylist.clear()
+                activePlaylistId = null
+                isPlaylistPlayback = false
+                controller?.stop()
+                controller?.clearMediaItems()
                 _playbackState.update {
                     it.copy(
-                        queue = currentPlaylist.toList(),
-                        currentQueueIndex = controller.currentMediaItemIndex
+                        currentTrack = null,
+                        isPlaying = false,
+                        isBuffering = false,
+                        queue = emptyList(),
+                        currentQueueIndex = -1,
+                        playbackPositionMs = 0L,
+                        durationMs = 0L,
+                        isPlaylistPlayback = false
+                    )
+                }
+                savePlaybackSession()
+                return@launch
+            }
+
+            currentPlaylist.removeAt(index)
+            controller?.removeMediaItem(index)
+
+            val updatedIdx = controller?.currentMediaItemIndex ?: currentIndex.coerceIn(-1, currentPlaylist.size - 1)
+            val activeTrack = currentPlaylist.getOrNull(updatedIdx)
+
+            _playbackState.update {
+                it.copy(
+                    currentTrack = activeTrack ?: it.currentTrack,
+                    queue = currentPlaylist.toList(),
+                    currentQueueIndex = updatedIdx
+                )
+            }
+            savePlaybackSession()
+        }
+    }
+
+    /**
+     * Removes all occurrences of a track from active playback queue and ExoPlayer timeline.
+     * If the track being removed is currently playing, advances smoothly to the next song,
+     * or stops playback cleanly if it was the only track left in the queue.
+     */
+    fun removeTrackFromActivePlayback(trackId: String) {
+        scope.launch {
+            if (currentPlaylist.none { it.id == trackId }) return@launch
+
+            val controller = mediaController
+            val currentIndex = controller?.currentMediaItemIndex ?: _playbackState.value.currentQueueIndex
+            val isCurrentTrackRemoved = currentIndex in currentPlaylist.indices && currentPlaylist[currentIndex].id == trackId
+
+            // If the queue only contains this track (or all remaining tracks are this track), stop playback completely
+            if (currentPlaylist.all { it.id == trackId }) {
+                currentPlaylist.clear()
+                activePlaylistId = null
+                isPlaylistPlayback = false
+                controller?.stop()
+                controller?.clearMediaItems()
+                _playbackState.update {
+                    it.copy(
+                        currentTrack = null,
+                        isPlaying = false,
+                        isBuffering = false,
+                        queue = emptyList(),
+                        currentQueueIndex = -1,
+                        playbackPositionMs = 0L,
+                        durationMs = 0L,
+                        isPlaylistPlayback = false
+                    )
+                }
+                savePlaybackSession()
+                return@launch
+            }
+
+            // Remove non-current occurrences from highest index to lowest so preceding indices do not shift
+            val nonCurrentIndices = currentPlaylist.indices
+                .filter { it != currentIndex && currentPlaylist[it].id == trackId }
+                .sortedDescending()
+
+            for (idx in nonCurrentIndices) {
+                currentPlaylist.removeAt(idx)
+                controller?.removeMediaItem(idx)
+            }
+
+            // If the currently playing track is being deleted, remove it as well
+            if (isCurrentTrackRemoved) {
+                val activeIdx = controller?.currentMediaItemIndex ?: currentIndex
+                if (activeIdx in currentPlaylist.indices) {
+                    currentPlaylist.removeAt(activeIdx)
+                    controller?.removeMediaItem(activeIdx)
+                }
+            }
+
+            val updatedIdx = controller?.currentMediaItemIndex ?: _playbackState.value.currentQueueIndex.coerceIn(-1, currentPlaylist.size - 1)
+            val activeTrack = currentPlaylist.getOrNull(updatedIdx)
+
+            _playbackState.update {
+                it.copy(
+                    currentTrack = activeTrack ?: it.currentTrack,
+                    queue = currentPlaylist.toList(),
+                    currentQueueIndex = updatedIdx
+                )
+            }
+            savePlaybackSession()
+        }
+    }
+
+    fun onPlaylistDeleted(playlistId: Long) {
+        if (activePlaylistId == playlistId) {
+            scope.launch {
+                val controller = mediaController
+                currentPlaylist.clear()
+                activePlaylistId = null
+                isPlaylistPlayback = false
+                controller?.stop()
+                controller?.clearMediaItems()
+                _playbackState.update {
+                    it.copy(
+                        currentTrack = null,
+                        isPlaying = false,
+                        isBuffering = false,
+                        queue = emptyList(),
+                        currentQueueIndex = -1,
+                        playbackPositionMs = 0L,
+                        durationMs = 0L,
+                        isPlaylistPlayback = false
                     )
                 }
                 savePlaybackSession()

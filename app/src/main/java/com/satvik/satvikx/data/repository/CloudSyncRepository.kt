@@ -1,5 +1,7 @@
 package com.satvik.satvikx.data.repository
 
+import android.content.Context
+import android.util.Log
 import com.satvik.satvikx.data.local.dao.PlaylistDao
 import com.satvik.satvikx.data.local.dao.TrackDao
 import com.satvik.satvikx.data.local.entity.PlaylistEntity
@@ -10,6 +12,7 @@ import com.satvik.satvikx.data.local.entity.extractPolishedTitle
 import com.satvik.satvikx.data.remote.supabase.dto.UserFavoriteDto
 import com.satvik.satvikx.data.remote.supabase.dto.UserPlaylistDto
 import com.satvik.satvikx.data.remote.supabase.dto.UserPlaylistTrackDto
+import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +36,7 @@ sealed interface SyncState {
 
 @Singleton
 class CloudSyncRepository @Inject constructor(
+    @ApplicationContext private val context: Context,
     private val supabaseClient: SupabaseClient,
     private val authRepository: AuthRepository,
     private val trackDao: TrackDao,
@@ -43,8 +47,10 @@ class CloudSyncRepository @Inject constructor(
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
+    private val syncPrefs = context.getSharedPreferences("satvikx_cloud_sync_cache", Context.MODE_PRIVATE)
+
     init {
-        // Auto-sync whenever user logs in
+        // Auto-sync whenever user logs in or profile emits
         scope.launch {
             authRepository.currentUser.collect { user ->
                 if (user != null) {
@@ -54,6 +60,82 @@ class CloudSyncRepository @Inject constructor(
         }
     }
 
+    // =========================================================================
+    // PERSISTENT OFFLINE PENDING ACTIONS (SURVIVES APP RESTARTS)
+    // =========================================================================
+
+    @Synchronized
+    private fun getPendingFavoriteDeletions(): Set<String> {
+        return syncPrefs.getStringSet("pending_fav_deletions", emptySet())?.toSet() ?: emptySet()
+    }
+
+    @Synchronized
+    private fun addPendingFavoriteDeletion(trackId: String) {
+        val set = getPendingFavoriteDeletions().toMutableSet()
+        set.add(trackId)
+        syncPrefs.edit().putStringSet("pending_fav_deletions", set).apply()
+    }
+
+    @Synchronized
+    private fun removePendingFavoriteDeletion(trackId: String) {
+        val set = getPendingFavoriteDeletions().toMutableSet()
+        if (set.remove(trackId)) {
+            syncPrefs.edit().putStringSet("pending_fav_deletions", set).apply()
+        }
+    }
+
+    @Synchronized
+    private fun getPendingPlaylistTrackDeletions(): Set<String> {
+        return syncPrefs.getStringSet("pending_playlist_track_deletions", emptySet())?.toSet() ?: emptySet()
+    }
+
+    @Synchronized
+    private fun addPendingPlaylistTrackDeletion(playlistName: String, trackId: String) {
+        val set = getPendingPlaylistTrackDeletions().toMutableSet()
+        set.add("$playlistName\t$trackId")
+        syncPrefs.edit().putStringSet("pending_playlist_track_deletions", set).apply()
+    }
+
+    @Synchronized
+    private fun removePendingPlaylistTrackDeletion(key: String) {
+        val set = getPendingPlaylistTrackDeletions().toMutableSet()
+        if (set.remove(key)) {
+            syncPrefs.edit().putStringSet("pending_playlist_track_deletions", set).apply()
+        }
+    }
+
+    @Synchronized
+    private fun getPendingPlaylistDeletions(): Set<String> {
+        return syncPrefs.getStringSet("pending_playlist_deletions", emptySet())?.toSet() ?: emptySet()
+    }
+
+    @Synchronized
+    private fun addPendingPlaylistDeletion(playlistName: String) {
+        val set = getPendingPlaylistDeletions().toMutableSet()
+        set.add(playlistName)
+        syncPrefs.edit().putStringSet("pending_playlist_deletions", set).apply()
+    }
+
+    @Synchronized
+    private fun removePendingPlaylistDeletion(playlistName: String) {
+        val set = getPendingPlaylistDeletions().toMutableSet()
+        if (set.remove(playlistName)) {
+            syncPrefs.edit().putStringSet("pending_playlist_deletions", set).apply()
+        }
+    }
+
+    private fun isInitialSyncCompleted(userId: String): Boolean {
+        return syncPrefs.getBoolean("initial_sync_done_$userId", false)
+    }
+
+    private fun setInitialSyncCompleted(userId: String, done: Boolean) {
+        syncPrefs.edit().putBoolean("initial_sync_done_$userId", done).apply()
+    }
+
+    // =========================================================================
+    // CORE FULL RECONCILIATION SYNC
+    // =========================================================================
+
     suspend fun syncAll(): Result<Unit> = withContext(Dispatchers.IO) {
         val user = authRepository.currentUser.value ?: return@withContext Result.failure(
             IllegalStateException("No active Stark account to sync")
@@ -62,14 +144,17 @@ class CloudSyncRepository @Inject constructor(
         try {
             _syncState.value = SyncState.Syncing
 
-            // 1. Ensure local 'Liked Songs' playlist exists
+            // 1. Flush any pending deletions to Supabase first so remote is cleaned
+            flushPendingDeletions(user.id)
+
+            // 2. Ensure local 'Liked Songs' playlist exists
             var likedPlaylist = playlistDao.getPlaylistByNameSync("Liked Songs")
             if (likedPlaylist == null) {
                 val newId = playlistDao.insertPlaylist(PlaylistEntity(name = "Liked Songs"))
                 likedPlaylist = PlaylistEntity(playlistId = newId, name = "Liked Songs")
             }
 
-            // 2. Fetch remote favorites from Supabase
+            // 3. Fetch remote favorites from Supabase
             val remoteFavorites = try {
                 supabaseClient.from("user_favorites")
                     .select {
@@ -79,12 +164,16 @@ class CloudSyncRepository @Inject constructor(
                     }
                     .decodeList<UserFavoriteDto>()
             } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to fetch remote favorites: ${e.message}")
                 emptyList()
             }
 
-            // Insert remote favorites into local Room DB
-            val remoteTrackIds = remoteFavorites.map { it.trackId }.toSet()
-            remoteFavorites.forEach { fav ->
+            val currentPendingFavDeletes = getPendingFavoriteDeletions()
+            val validRemoteFavorites = remoteFavorites.filterNot { it.trackId in currentPendingFavDeletes }
+            val remoteTrackIds = validRemoteFavorites.map { it.trackId }.toSet()
+
+            // Insert valid remote favorites into local Room DB
+            validRemoteFavorites.forEach { fav ->
                 trackDao.insertTrack(
                     TrackEntity(
                         id = fav.trackId,
@@ -102,31 +191,41 @@ class CloudSyncRepository @Inject constructor(
                 )
             }
 
-            // 3. Upload local favorites that are not yet on Supabase (with polished clean metadata)
             val localLikedTrackIds = playlistDao.getLikedTrackIds().firstOrNull() ?: emptyList()
-            val toUpload = localLikedTrackIds.filter { it !in remoteTrackIds }
+            val hasInitialSyncCompleted = isInitialSyncCompleted(user.id)
 
-            for (trackId in toUpload) {
-                val track = trackDao.getTrackByIdSync(trackId)
-                if (track != null) {
-                    val cleanT = extractPolishedTitle(track.title, track.artist)
-                    val cleanA = extractPolishedArtist(track.title, track.artist)
-                    val cleanThumb = if (track.thumbnailUrl.contains("hqdefault.jpg")) {
-                        track.thumbnailUrl.replace("hqdefault.jpg", "mqdefault.jpg")
-                    } else track.thumbnailUrl
+            if (!hasInitialSyncCompleted) {
+                // First-time sync for this user: upload local liked songs not in remote to Supabase
+                val toUpload = localLikedTrackIds.filter { it !in remoteTrackIds && it !in currentPendingFavDeletes }
+                for (trackId in toUpload) {
+                    val track = trackDao.getTrackByIdSync(trackId)
+                    if (track != null) {
+                        val cleanT = extractPolishedTitle(track.title, track.artist)
+                        val cleanA = extractPolishedArtist(track.title, track.artist)
+                        val cleanThumb = if (track.thumbnailUrl.contains("hqdefault.jpg")) {
+                            track.thumbnailUrl.replace("hqdefault.jpg", "mqdefault.jpg")
+                        } else track.thumbnailUrl
 
-                    try {
-                        supabaseClient.from("user_favorites").upsert(
-                            UserFavoriteDto(
-                                userId = user.id,
-                                trackId = track.id,
-                                title = cleanT,
-                                artist = cleanA,
-                                thumbnailUrl = cleanThumb,
-                                durationSeconds = track.durationSeconds.toInt()
+                        try {
+                            supabaseClient.from("user_favorites").upsert(
+                                UserFavoriteDto(
+                                    userId = user.id,
+                                    trackId = track.id,
+                                    title = cleanT,
+                                    artist = cleanA,
+                                    thumbnailUrl = cleanThumb,
+                                    durationSeconds = track.durationSeconds.toInt()
+                                )
                             )
-                        )
-                    } catch (_: Exception) {}
+                        } catch (_: Exception) {}
+                    }
+                }
+            } else {
+                // Subsequent sync: remote is authoritative. If a track is in local DB but missing from remote
+                // and NOT in pending additions, it was deleted in the cloud: delete locally from Room DB!
+                val toDeleteLocally = localLikedTrackIds.filter { it !in remoteTrackIds }
+                for (trackId in toDeleteLocally) {
+                    playlistDao.deletePlaylistTrackCrossRef(likedPlaylist.playlistId, trackId)
                 }
             }
 
@@ -140,11 +239,16 @@ class CloudSyncRepository @Inject constructor(
                     }
                     .decodeList<UserPlaylistDto>()
             } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to fetch remote playlists: ${e.message}")
                 emptyList()
             }
 
-            // A. Download missing remote playlists to local Room DB
-            for (remoteP in remotePlaylists) {
+            val currentPendingPlaylistDeletes = getPendingPlaylistDeletions()
+            val validRemotePlaylists = remotePlaylists.filterNot { it.name in currentPendingPlaylistDeletes }
+            val currentPendingTrackDeletes = getPendingPlaylistTrackDeletions()
+
+            // A. Reconcile remote playlists & tracks to local Room DB
+            for (remoteP in validRemotePlaylists) {
                 var localP = playlistDao.getPlaylistByNameSync(remoteP.name)
                 if (localP == null) {
                     val id = playlistDao.insertPlaylist(PlaylistEntity(name = remoteP.name))
@@ -164,7 +268,12 @@ class CloudSyncRepository @Inject constructor(
                         emptyList()
                     }
 
-                    remoteTracks.forEach { rTrack ->
+                    val validRemoteTracks = remoteTracks.filterNot {
+                        "${remoteP.name}\t${it.trackId}" in currentPendingTrackDeletes
+                    }
+                    val remoteTrackIdsForPlaylist = validRemoteTracks.map { it.trackId }.toSet()
+
+                    validRemoteTracks.forEach { rTrack ->
                         trackDao.insertTrack(
                             TrackEntity(
                                 id = rTrack.trackId,
@@ -181,6 +290,15 @@ class CloudSyncRepository @Inject constructor(
                             )
                         )
                     }
+
+                    // If subsequent sync, reconcile deletions: local tracks not in remote are deleted from Room
+                    if (hasInitialSyncCompleted) {
+                        val localTracksForP = playlistDao.getPlaylistWithTracksSync(localP.playlistId)?.tracks.orEmpty()
+                        val toDeleteFromLocal = localTracksForP.filter { it.id !in remoteTrackIdsForPlaylist }
+                        for (track in toDeleteFromLocal) {
+                            playlistDao.deletePlaylistTrackCrossRef(localP.playlistId, track.id)
+                        }
+                    }
                 }
             }
 
@@ -189,7 +307,9 @@ class CloudSyncRepository @Inject constructor(
                 .filter { it.playlist.name != "Liked Songs" }
 
             for (localCP in localCustomPlaylists) {
-                val matchingRemote = remotePlaylists.firstOrNull { it.name.equals(localCP.playlist.name, ignoreCase = true) }
+                if (localCP.playlist.name in currentPendingPlaylistDeletes) continue
+
+                val matchingRemote = validRemotePlaylists.firstOrNull { it.name.equals(localCP.playlist.name, ignoreCase = true) }
                 val targetPlaylistId = matchingRemote?.id ?: run {
                     try {
                         val newDto = UserPlaylistDto(
@@ -222,6 +342,9 @@ class CloudSyncRepository @Inject constructor(
                     val existingRemoteTrackIds = remoteTracksForPlaylist.map { it.trackId }.toSet()
 
                     for (track in localCP.tracks) {
+                        val trackKey = "${localCP.playlist.name}\t${track.id}"
+                        if (trackKey in currentPendingTrackDeletes) continue
+
                         if (!existingRemoteTrackIds.contains(track.id)) {
                             val cleanT = extractPolishedTitle(track.title, track.artist)
                             val cleanA = extractPolishedArtist(track.title, track.artist)
@@ -247,6 +370,7 @@ class CloudSyncRepository @Inject constructor(
                 }
             }
 
+            setInitialSyncCompleted(user.id, true)
             _syncState.value = SyncState.Success("Cloud sequence synchronized")
             Result.success(Unit)
         } catch (e: Exception) {
@@ -255,7 +379,95 @@ class CloudSyncRepository @Inject constructor(
         }
     }
 
+    private suspend fun flushPendingDeletions(userId: String) {
+        // 1. Flush pending favorite deletions
+        val favDeletes = getPendingFavoriteDeletions()
+        for (trackId in favDeletes) {
+            try {
+                supabaseClient.from("user_favorites").delete {
+                    filter {
+                        eq("user_id", userId)
+                        eq("track_id", trackId)
+                    }
+                }
+                removePendingFavoriteDeletion(trackId)
+            } catch (_: Exception) {}
+        }
+
+        // 2. Flush pending playlist deletions
+        val playlistDeletes = getPendingPlaylistDeletions()
+        for (playlistName in playlistDeletes) {
+            try {
+                val remotePlaylists = supabaseClient.from("user_playlists")
+                    .select {
+                        filter {
+                            eq("user_id", userId)
+                        }
+                    }
+                    .decodeList<UserPlaylistDto>()
+                val matching = remotePlaylists.filter { it.name.equals(playlistName, ignoreCase = true) }
+                for (p in matching) {
+                    if (p.id != null) {
+                        supabaseClient.from("user_playlist_tracks").delete {
+                            filter {
+                                eq("playlist_id", p.id)
+                            }
+                        }
+                        supabaseClient.from("user_playlists").delete {
+                            filter {
+                                eq("id", p.id)
+                                eq("user_id", userId)
+                            }
+                        }
+                    }
+                }
+                removePendingPlaylistDeletion(playlistName)
+            } catch (_: Exception) {}
+        }
+
+        // 3. Flush pending playlist track deletions
+        val trackDeletes = getPendingPlaylistTrackDeletions()
+        for (key in trackDeletes) {
+            val parts = key.split("\t")
+            if (parts.size == 2) {
+                val pName = parts[0]
+                val tId = parts[1]
+                try {
+                    val remotePlaylists = supabaseClient.from("user_playlists")
+                        .select {
+                            filter {
+                                eq("user_id", userId)
+                            }
+                        }
+                        .decodeList<UserPlaylistDto>()
+                    val matching = remotePlaylists.filter { it.name.equals(pName, ignoreCase = true) }
+                    for (p in matching) {
+                        if (p.id != null) {
+                            supabaseClient.from("user_playlist_tracks").delete {
+                                filter {
+                                    eq("playlist_id", p.id)
+                                    eq("track_id", tId)
+                                }
+                            }
+                        }
+                    }
+                    removePendingPlaylistTrackDeletion(key)
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    // =========================================================================
+    // REAL-TIME EVENT HANDLERS (INVOKED IMMEDIATELY FROM UI / VIEWMODELS)
+    // =========================================================================
+
     fun onFavoriteChanged(track: TrackEntity, isLiked: Boolean) {
+        if (!isLiked) {
+            addPendingFavoriteDeletion(track.id)
+        } else {
+            removePendingFavoriteDeletion(track.id)
+        }
+
         val user = authRepository.currentUser.value ?: return
         scope.launch {
             try {
@@ -283,8 +495,210 @@ class CloudSyncRepository @Inject constructor(
                             eq("track_id", track.id)
                         }
                     }
+                    removePendingFavoriteDeletion(track.id)
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to sync favorite change: ${e.message}")
+            }
+        }
+    }
+
+    fun onTrackRemovedFromPlaylist(playlistName: String, trackId: String) {
+        addPendingPlaylistTrackDeletion(playlistName, trackId)
+        val user = authRepository.currentUser.value ?: return
+        scope.launch {
+            try {
+                val remotePlaylists = supabaseClient.from("user_playlists")
+                    .select {
+                        filter {
+                            eq("user_id", user.id)
+                        }
+                    }
+                    .decodeList<UserPlaylistDto>()
+                val matching = remotePlaylists.filter { it.name.equals(playlistName, ignoreCase = true) }
+                for (p in matching) {
+                    if (p.id != null) {
+                        supabaseClient.from("user_playlist_tracks").delete {
+                            filter {
+                                eq("playlist_id", p.id)
+                                eq("track_id", trackId)
+                            }
+                        }
+                    }
+                }
+                removePendingPlaylistTrackDeletion("$playlistName\t$trackId")
+            } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to remove track from remote playlist: ${e.message}")
+            }
+        }
+    }
+
+    fun onPlaylistDeleted(playlistName: String) {
+        addPendingPlaylistDeletion(playlistName)
+        val user = authRepository.currentUser.value ?: return
+        scope.launch {
+            try {
+                val remotePlaylists = supabaseClient.from("user_playlists")
+                    .select {
+                        filter {
+                            eq("user_id", user.id)
+                        }
+                    }
+                    .decodeList<UserPlaylistDto>()
+                val matching = remotePlaylists.filter { it.name.equals(playlistName, ignoreCase = true) }
+                for (p in matching) {
+                    if (p.id != null) {
+                        supabaseClient.from("user_playlist_tracks").delete {
+                            filter {
+                                eq("playlist_id", p.id)
+                            }
+                        }
+                        supabaseClient.from("user_playlists").delete {
+                            filter {
+                                eq("id", p.id)
+                                eq("user_id", user.id)
+                            }
+                        }
+                    }
+                }
+                removePendingPlaylistDeletion(playlistName)
+            } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to delete remote playlist: ${e.message}")
+            }
+        }
+    }
+
+    fun onPlaylistCreated(playlistName: String) {
+        removePendingPlaylistDeletion(playlistName)
+        val user = authRepository.currentUser.value ?: return
+        scope.launch {
+            try {
+                val remotePlaylists = supabaseClient.from("user_playlists")
+                    .select {
+                        filter {
+                            eq("user_id", user.id)
+                        }
+                    }
+                    .decodeList<UserPlaylistDto>()
+                val existing = remotePlaylists.firstOrNull { it.name.equals(playlistName, ignoreCase = true) }
+                if (existing == null) {
+                    supabaseClient.from("user_playlists").insert(
+                        UserPlaylistDto(userId = user.id, name = playlistName)
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to create remote playlist: ${e.message}")
+            }
+        }
+    }
+
+    fun onPlaylistRenamed(oldName: String, newName: String) {
+        removePendingPlaylistDeletion(oldName)
+        removePendingPlaylistDeletion(newName)
+        val user = authRepository.currentUser.value ?: return
+        scope.launch {
+            try {
+                val remotePlaylists = supabaseClient.from("user_playlists")
+                    .select {
+                        filter {
+                            eq("user_id", user.id)
+                        }
+                    }
+                    .decodeList<UserPlaylistDto>()
+                val matching = remotePlaylists.filter { it.name.equals(oldName, ignoreCase = true) }
+                for (p in matching) {
+                    if (p.id != null) {
+                        supabaseClient.from("user_playlists").update({
+                            set("name", newName)
+                        }) {
+                            filter {
+                                eq("id", p.id)
+                                eq("user_id", user.id)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to rename remote playlist: ${e.message}")
+            }
+        }
+    }
+
+    fun onPlaylistCleared(playlistName: String) {
+        val user = authRepository.currentUser.value ?: return
+        scope.launch {
+            try {
+                val remotePlaylists = supabaseClient.from("user_playlists")
+                    .select {
+                        filter {
+                            eq("user_id", user.id)
+                        }
+                    }
+                    .decodeList<UserPlaylistDto>()
+                val matching = remotePlaylists.filter { it.name.equals(playlistName, ignoreCase = true) }
+                for (p in matching) {
+                    if (p.id != null) {
+                        supabaseClient.from("user_playlist_tracks").delete {
+                            filter {
+                                eq("playlist_id", p.id)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to clear remote playlist: ${e.message}")
+            }
+        }
+    }
+
+    fun onTrackAddedToPlaylist(playlistName: String, track: TrackEntity) {
+        removePendingPlaylistTrackDeletion("$playlistName\t${track.id}")
+        val user = authRepository.currentUser.value ?: return
+        scope.launch {
+            try {
+                val remotePlaylists = supabaseClient.from("user_playlists")
+                    .select {
+                        filter {
+                            eq("user_id", user.id)
+                        }
+                    }
+                    .decodeList<UserPlaylistDto>()
+                val matching = remotePlaylists.firstOrNull { it.name.equals(playlistName, ignoreCase = true) }
+                val targetPlaylistId = matching?.id ?: run {
+                    val newDto = UserPlaylistDto(
+                        userId = user.id,
+                        name = playlistName
+                    )
+                    val inserted = supabaseClient.from("user_playlists")
+                        .insert(newDto) {
+                            select()
+                        }
+                        .decodeSingleOrNull<UserPlaylistDto>()
+                    inserted?.id
+                }
+
+                if (targetPlaylistId != null) {
+                    val cleanT = extractPolishedTitle(track.title, track.artist)
+                    val cleanA = extractPolishedArtist(track.title, track.artist)
+                    val cleanThumb = if (track.thumbnailUrl.contains("hqdefault.jpg")) {
+                        track.thumbnailUrl.replace("hqdefault.jpg", "mqdefault.jpg")
+                    } else track.thumbnailUrl
+
+                    supabaseClient.from("user_playlist_tracks").upsert(
+                        UserPlaylistTrackDto(
+                            playlistId = targetPlaylistId,
+                            userId = user.id,
+                            trackId = track.id,
+                            title = cleanT,
+                            artist = cleanA,
+                            thumbnailUrl = cleanThumb,
+                            durationSeconds = track.durationSeconds.toInt()
+                        )
+                    )
+                }
+            } catch (e: Exception) {
+                Log.w("CloudSync", "Failed to add track to remote playlist: ${e.message}")
+            }
         }
     }
 }

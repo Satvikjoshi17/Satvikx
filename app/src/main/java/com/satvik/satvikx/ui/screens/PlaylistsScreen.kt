@@ -496,7 +496,7 @@ fun PlaylistsScreen(
                     ) { track ->
                         TrackItem(
                             track = track,
-                            onClick = { viewModel.playTrack(track, activePlaylist.tracks) },
+                            onClick = { viewModel.playTrack(track, activePlaylist.tracks, activePlaylist.playlist.playlistId) },
                             onOptionClick = { selectedTrackForOptions = track },
                             onDownloadClick = {
                                 viewModel.downloadTrack(track)
@@ -956,7 +956,7 @@ fun PlaylistsScreen(
             track = track,
             sheetState = trackSheetState,
             onDismiss = { selectedTrackForOptions = null },
-            onPlayNow = { viewModel.playTrack(it, activePlaylist?.tracks.orEmpty()) },
+            onPlayNow = { viewModel.playTrack(it, activePlaylist?.tracks.orEmpty(), activePlaylist?.playlist?.playlistId) },
             onPlayNext = {
                 viewModel.playNext(it)
                 Toast.makeText(context, "Playing next: ${it.title}", Toast.LENGTH_SHORT).show()
