@@ -307,18 +307,6 @@ fun HomeScreen(
                         // Actions: Refresh Feed & Update Check
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             IconButton(
-                                onClick = { showWhatsNewDialog = true },
-                                modifier = Modifier.size(34.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AutoAwesome,
-                                    contentDescription = "What's New in v${BuildConfig.VERSION_NAME}",
-                                    tint = ArcCyanBright,
-                                    modifier = Modifier.size(19.dp)
-                                )
-                            }
-
-                            IconButton(
                                 onClick = { homeViewModel.loadHomeData(forceRefresh = true) },
                                 enabled = !uiState.isRefreshing,
                                 modifier = Modifier.size(34.dp)
@@ -901,8 +889,8 @@ fun HomeScreen(
         )
     }
 
-    // Premium "What's New in v1.0.19" Update Showcase Dialog
-    if (showWhatsNewDialog) {
+    // Premium "What's New in v1.0.19" Update Showcase Dialog (Shown once on first launch after update)
+    if (showWhatsNewDialog && !shouldShowAuthDialog) {
         WhatsNewDialog(
             onDismiss = {
                 whatsNewPrefs.edit().putInt("last_seen_version_code", BuildConfig.VERSION_CODE).apply()
