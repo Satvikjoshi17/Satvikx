@@ -60,6 +60,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="satvikx.app" android:pathPrefix="/playlist" />
                 <data android:scheme="https" android:host="satvikx.app" android:pathPrefix="/blend" />
+                <data android:scheme="https" android:host="satvikjoshi17.github.io" android:pathPrefix="/Satvikx" />
             </intent-filter>
             <!-- Supabase Authentication and Email Confirmation Callback -->
             <intent-filter>

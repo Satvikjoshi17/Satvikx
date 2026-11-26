@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SatvikX Music - Shared Link</title>
+  <link rel="icon" href="https://raw.githubusercontent.com/Satvikjoshi17/Satvikx/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png">
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body {
+      background-color: #121212;
+      color: #FFFFFF;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .card {
+      background: #181818;
+      border: 1px solid #282828;
+      border-radius: 20px;
+      padding: 32px 24px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.7);
+    }
+    .logo-container {
+      margin-bottom: 20px;
+    }
+    .logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 20px;
+      box-shadow: 0 8px 24px rgba(29, 185, 84, 0.3);
+      background: #000;
+    }
+    h1 {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.5px;
+    }
+    p.subtitle {
+      color: #A7A7A7;
+      font-size: 14px;
+      line-height: 1.5;
+      margin-bottom: 24px;
+    }
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 14px;
+      border-radius: 30px;
+      font-size: 14px;
+      font-weight: 700;
+      text-decoration: none;
+      margin-bottom: 12px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      border: none;
+    }
+    .btn-primary {
+      background-color: #1DB954;
+      color: #000000;
+    }
+    .btn-primary:hover {
+      background-color: #1ed760;
+      transform: scale(1.02);
+    }
+    .btn-secondary {
+      background-color: #282828;
+      color: #FFFFFF;
+    }
+    .btn-secondary:hover {
+      background-color: #383838;
+    }
+    .code-box {
+      background: #0D0D0D;
+      border: 1px solid #333;
+      border-radius: 10px;
+      padding: 10px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #00E5FF;
+      word-break: break-all;
+      margin-bottom: 16px;
+      max-height: 80px;
+      overflow-y: auto;
+      text-align: left;
+    }
+    .toast {
+      color: #1DB954;
+      font-size: 13px;
+      font-weight: 600;
+      min-height: 20px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="card">
+    <div class="logo-container">
+      <img class="logo" src="https://raw.githubusercontent.com/Satvikjoshi17/Satvikx/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher_round.png" alt="SatvikX" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'80\' height=\'80\' viewBox=\'0 0 80 80\'><rect width=\'80\' height=\'80\' rx=\'20\' fill=\'%231DB954\'/><path d=\'M25 55V25l35 15-35 15z\' fill=\'%23000\'/></svg>'">
+    </div>
+
+    <h1 id="title">Opening in SatvikX...</h1>
+    <p class="subtitle" id="subtitle">If the app did not open automatically, tap the button below or copy the code.</p>
+
+    <div class="code-box" id="code-box" style="display: none;"></div>
+
+    <a id="open-btn" href="#" class="btn btn-primary">
+      OPEN IN SATVIKX
+    </a>
+
+    <button id="copy-btn" class="btn btn-secondary" style="display: none;" onclick="copyCode()">
+      COPY CODE TO CLIPBOARD
+    </button>
+
+    <a href="https://github.com/Satvikjoshi17/Satvikx/releases/latest" class="btn btn-secondary">
+      DOWNLOAD SATVIKX APK
+    </a>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const playlistData = params.get("data") || params.get("playlist");
+    const blendToken = params.get("token") || params.get("blend") || params.get("code");
+
+    let appDeepLink = "satvikx://playlist";
+    let tokenValue = "";
+
+    if (playlistData) {
+      tokenValue = playlistData;
+      appDeepLink = "satvikx://playlist?data=" + encodeURIComponent(playlistData);
+      document.getElementById("title").textContent = "Shared Playlist";
+      document.getElementById("subtitle").textContent = "Opening shared playlist in SatvikX...";
+    } else if (blendToken) {
+      tokenValue = blendToken;
+      appDeepLink = "satvikx://blend?token=" + encodeURIComponent(blendToken);
+      document.getElementById("title").textContent = "Stark Blend Invite";
+      document.getElementById("subtitle").textContent = "Opening music taste blend in SatvikX...";
+    }
+
+    const openBtn = document.getElementById("open-btn");
+    openBtn.href = appDeepLink;
+
+    if (tokenValue) {
+      const codeBox = document.getElementById("code-box");
+      const copyBtn = document.getElementById("copy-btn");
+      codeBox.textContent = tokenValue;
+      codeBox.style.display = "block";
+      copyBtn.style.display = "flex";
+    }
+
+    function copyCode() {
+      if (!tokenValue) return;
+      navigator.clipboard.writeText(tokenValue).then(() => {
+        const toast = document.getElementById("toast");
+        toast.textContent = "Code copied to clipboard! Open SatvikX to import.";
+        setTimeout(() => { toast.textContent = ""; }, 3500);
+      }).catch(() => {
+        const toast = document.getElementById("toast");
+        toast.textContent = "Select and copy code manually.";
+      });
+    }
+
+    // Automatically trigger app launch via custom scheme immediately
+    if (playlistData || blendToken) {
+      window.location.href = appDeepLink;
+    }
+  </script>
+</body>
+</html>

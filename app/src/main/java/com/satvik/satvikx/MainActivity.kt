@@ -86,9 +86,12 @@ class MainActivity : ComponentActivity() {
     private fun handlePlaylistIntent(intent: android.content.Intent?) {
         val uri = intent?.data ?: return
         val isSatvikxPlaylist = uri.scheme == "satvikx" && uri.host == "playlist"
-        val isWebPlaylist = uri.scheme == "https" && uri.host == "satvikx.app" && uri.path?.startsWith("/playlist") == true
+        val isWebPlaylist = uri.scheme == "https" && (
+            (uri.host == "satvikx.app" && uri.path?.startsWith("/playlist") == true) ||
+            (uri.host.equals("satvikjoshi17.github.io", ignoreCase = true) && uri.path?.contains("/Satvikx", ignoreCase = true) == true)
+        )
         if (isSatvikxPlaylist || isWebPlaylist) {
-            val token = uri.getQueryParameter("data") ?: uri.getQueryParameter("token") ?: uri.getQueryParameter("code")
+            val token = uri.getQueryParameter("data") ?: uri.getQueryParameter("playlist") ?: uri.getQueryParameter("token") ?: uri.getQueryParameter("code")
             if (!token.isNullOrBlank()) {
                 val handled = playlistShareManagerProvider.get().handleDeepLink(token)
                 if (handled) {
@@ -101,9 +104,12 @@ class MainActivity : ComponentActivity() {
     private fun handleBlendIntent(intent: android.content.Intent?) {
         val uri = intent?.data ?: return
         val isSatvikxBlend = uri.scheme == "satvikx" && uri.host == "blend"
-        val isWebBlend = uri.scheme == "https" && uri.host == "satvikx.app" && uri.path?.startsWith("/blend") == true
+        val isWebBlend = uri.scheme == "https" && (
+            (uri.host == "satvikx.app" && uri.path?.startsWith("/blend") == true) ||
+            (uri.host.equals("satvikjoshi17.github.io", ignoreCase = true) && uri.path?.contains("/Satvikx", ignoreCase = true) == true)
+        )
         if (isSatvikxBlend || isWebBlend) {
-            val token = uri.getQueryParameter("data") ?: uri.getQueryParameter("token") ?: uri.getQueryParameter("code")
+            val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("blend") ?: uri.getQueryParameter("data") ?: uri.getQueryParameter("code")
             if (!token.isNullOrBlank()) {
                 val calibrator = blendTasteCalibratorProvider.get()
                 calibrator.handleDeepLink(token)

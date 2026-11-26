@@ -63,7 +63,7 @@ class PlaylistShareManager @Inject constructor(
         const val TOKEN_PREFIX = "STKPL:"
         const val SCHEME_SATVIKX = "satvikx"
         const val HOST_PLAYLIST = "playlist"
-        const val WEB_BASE_URL = "https://satvikx.app/playlist"
+        const val WEB_BASE_URL = "https://satvikjoshi17.github.io/Satvikx"
     }
 
     private val _pendingPlaylist = MutableStateFlow<SharedPlaylistPayload?>(null)

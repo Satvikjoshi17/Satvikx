@@ -102,7 +102,7 @@ class PlaylistShareManagerTest {
         )
 
         val webLink = shareManager.createWebShareLink(payload)
-        assertTrue(webLink.startsWith("https://satvikx.app/playlist?data="))
+        assertTrue(webLink.startsWith("https://satvikjoshi17.github.io/Satvikx?data="))
 
         val restored = shareManager.decodePayload(webLink)
         assertNotNull(restored)
@@ -163,7 +163,7 @@ class PlaylistShareManagerTest {
             tracks = listOf(SharedTrackDto("lofi1", "Rain Sounds", "Lofi Girl", 180L, ""))
         )
         val msg = shareManager.buildShareMessage(payload)
-        assertTrue(msg.contains("https://satvikx.app/playlist?data="))
+        assertTrue(msg.contains("https://satvikjoshi17.github.io/Satvikx?data="))
         assertTrue(msg.contains("STKPL:"))
 
         val extracted = shareManager.extractToken(msg)

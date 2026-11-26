@@ -268,7 +268,7 @@ class BlendTasteCalibrator @Inject constructor() {
     fun createBlendWebLink(code: String): String {
         val clean = extractCleanCode(code)
         val encoded = try { URLEncoder.encode(clean, "UTF-8") } catch (_: Exception) { clean }
-        return "https://satvikx.app/blend?token=$encoded"
+        return "https://satvikjoshi17.github.io/Satvikx?token=$encoded"
     }
 
     fun buildBlendShareMessage(userName: String, code: String): String {
