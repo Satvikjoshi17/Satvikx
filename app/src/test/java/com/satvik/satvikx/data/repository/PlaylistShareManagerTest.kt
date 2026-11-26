@@ -154,4 +154,21 @@ class PlaylistShareManagerTest {
         shareManager.clearPendingPlaylist()
         assertNull(shareManager.pendingPlaylist.value)
     }
+
+    @Test
+    fun buildShareMessage_containsWebLinkAndCleanToken() {
+        val payload = SharedPlaylistPayload(
+            title = "Chill Lofi",
+            creatorName = "Sarah",
+            tracks = listOf(SharedTrackDto("lofi1", "Rain Sounds", "Lofi Girl", 180L, ""))
+        )
+        val msg = shareManager.buildShareMessage(payload)
+        assertTrue(msg.contains("https://satvikx.app/playlist?data="))
+        assertTrue(msg.contains("STKPL:"))
+
+        val extracted = shareManager.extractToken(msg)
+        val decoded = shareManager.decodePayload(extracted)
+        assertNotNull(decoded)
+        assertEquals("Chill Lofi", decoded!!.title)
+    }
 }

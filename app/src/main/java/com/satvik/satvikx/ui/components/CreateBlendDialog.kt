@@ -147,7 +147,7 @@ fun CreateBlendDialog(
     }
 
     fun copyLink(code: String) {
-        val link = viewModel.createBlendShareLink(code)
+        val link = viewModel.createBlendWebLink(code)
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText("Stark Blend Link", link)
         clipboard.setPrimaryClip(clip)

@@ -217,7 +217,8 @@ class PlaylistShareManager @Inject constructor(
      * Prepares a high-converting, friendly share message for WhatsApp, Telegram, Instagram, etc.
      */
     fun buildShareMessage(payload: SharedPlaylistPayload): String {
-        val appLink = createShareLink(payload)
+        val webLink = createWebShareLink(payload)
+        val token = encodePayload(payload)
         val trackCount = payload.tracks.size
         val countText = if (trackCount == 1) "1 song" else "$trackCount songs"
 
@@ -226,7 +227,10 @@ class PlaylistShareManager @Inject constructor(
             appendLine("Curated by ${payload.creatorName} ($countText)")
             appendLine()
             appendLine("Tap to open & import:")
-            appendLine(appLink)
+            appendLine(webLink)
+            appendLine()
+            appendLine("Or import with code in SatvikX:")
+            appendLine(token)
         }
     }
 }

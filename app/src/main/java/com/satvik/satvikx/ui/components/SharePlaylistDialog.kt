@@ -80,6 +80,7 @@ fun SharePlaylistDialog(
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     var isLinkCopied by remember { mutableStateOf(false) }
+    var isCodeCopied by remember { mutableStateOf(false) }
 
     val payload = remember(playlistWithTracks) {
         SharedPlaylistPayload(
@@ -89,14 +90,19 @@ fun SharePlaylistDialog(
         )
     }
 
-    val shareLink = remember(payload) { shareManager.createShareLink(payload) }
+    val shareLink = remember(payload) { shareManager.createWebShareLink(payload) }
+    val shareCode = remember(payload) { shareManager.encodePayload(payload) }
     val shareMessage = remember(payload) { shareManager.buildShareMessage(payload) }
 
-    fun copyToClipboard(text: String, label: String, toastMsg: String) {
+    fun copyToClipboard(text: String, label: String, toastMsg: String, isCode: Boolean = false) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         val clip = ClipData.newPlainText(label, text)
         clipboard.setPrimaryClip(clip)
-        isLinkCopied = true
+        if (isCode) {
+            isCodeCopied = true
+        } else {
+            isLinkCopied = true
+        }
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         Toast.makeText(context, toastMsg, Toast.LENGTH_SHORT).show()
     }
@@ -289,6 +295,36 @@ fun SharePlaylistDialog(
                             }
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Copy Raw STKPL Code Option
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { copyToClipboard(shareCode, "SatvikX Playlist Code", "Playlist code copied to clipboard", isCode = true) }
+                        .padding(horizontal = 4.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        imageVector = if (isCodeCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                        contentDescription = null,
+                        tint = if (isCodeCopied) SpotifyGreen else TextTertiary,
+                        modifier = Modifier.size(13.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (isCodeCopied) "STKPL CODE COPIED" else "Or copy code directly ($shareCode)",
+                        style = MaterialTheme.typography.bodySmall.copy(
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = if (isCodeCopied) SpotifyGreen else TextTertiary
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
             }
         },

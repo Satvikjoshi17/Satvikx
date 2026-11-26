@@ -272,13 +272,17 @@ class BlendTasteCalibrator @Inject constructor() {
     }
 
     fun buildBlendShareMessage(userName: String, code: String): String {
-        val appLink = createBlendShareLink(code)
+        val webLink = createBlendWebLink(code)
+        val cleanCode = extractCleanCode(code)
         return buildString {
             appendLine("⚡ Blend your music taste with $userName on SatvikX!")
             appendLine("Calculate compatibility score and fuse a 35-track shared playlist.")
             appendLine()
             appendLine("Tap to fuse directly:")
-            appendLine(appLink)
+            appendLine(webLink)
+            appendLine()
+            appendLine("Or enter code in SatvikX:")
+            appendLine(cleanCode)
         }
     }
 

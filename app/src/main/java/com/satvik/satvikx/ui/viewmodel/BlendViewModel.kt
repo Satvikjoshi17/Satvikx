@@ -136,6 +136,7 @@ class BlendViewModel @Inject constructor(
     }
 
     fun createBlendShareLink(code: String): String = blendRepository.createBlendShareLink(code)
+    fun createBlendWebLink(code: String): String = blendRepository.createBlendWebLink(code)
     fun buildBlendShareMessage(userName: String, code: String): String = blendRepository.buildBlendShareMessage(userName, code)
     val pendingBlendToken: StateFlow<String?> = blendRepository.pendingBlendToken
     fun clearPendingBlendToken() = blendRepository.clearPendingBlendToken()

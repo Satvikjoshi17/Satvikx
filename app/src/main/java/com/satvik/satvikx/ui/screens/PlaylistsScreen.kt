@@ -96,6 +96,7 @@ import com.satvik.satvikx.ui.components.SharePlaylistDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
 import com.satvik.satvikx.ui.components.isolateHorizontalScroll
+import com.satvik.satvikx.ui.theme.ArcCyanBright
 import com.satvik.satvikx.ui.theme.SpotifyGreen
 import com.satvik.satvikx.ui.viewmodel.AuthViewModel
 import com.satvik.satvikx.ui.viewmodel.BlendViewModel
@@ -760,6 +761,53 @@ fun PlaylistsScreen(
                             }
                         }
                     }
+
+                    // "Import Shared Playlist" Action Tile
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showImportDialog = true }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(64.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(Color(0xFF282828)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Download,
+                                    contentDescription = "Import Shared Playlist",
+                                    tint = ArcCyanBright,
+                                    modifier = Modifier.size(28.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(14.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Import Shared Playlist",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.5.sp
+                                    ),
+                                    color = Color.White,
+                                    maxLines = 1
+                                )
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = "Add playlist via direct link or STKPL code",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+                                    color = Color(0xFFA7A7A7),
+                                    maxLines = 1
+                                )
+                            }
+                        }
+                    }
                 }
 
                 // 2. SPOTIFY BLENDS HUB SECTION
@@ -1066,21 +1114,46 @@ fun PlaylistsScreen(
                 )
             },
             text = {
-                OutlinedTextField(
-                    value = newPlaylistName,
-                    onValueChange = { newPlaylistName = it },
-                    placeholder = { Text("My playlist #1", color = Color(0xFFA7A7A7)) },
-                    singleLine = true,
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = SpotifyGreen,
-                        unfocusedBorderColor = Color(0xFF3E3E3E),
-                        focusedContainerColor = Color(0xFF1E1E1E),
-                        unfocusedContainerColor = Color(0xFF1E1E1E),
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = newPlaylistName,
+                        onValueChange = { newPlaylistName = it },
+                        placeholder = { Text("My playlist #1", color = Color(0xFFA7A7A7)) },
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = SpotifyGreen,
+                            unfocusedBorderColor = Color(0xFF3E3E3E),
+                            focusedContainerColor = Color(0xFF1E1E1E),
+                            unfocusedContainerColor = Color(0xFF1E1E1E),
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    TextButton(
+                        onClick = {
+                            showCreateDialog = false
+                            showImportDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = null,
+                            tint = ArcCyanBright,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Have a link or code? Import Playlist",
+                            color = ArcCyanBright,
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                    }
+                }
             },
             confirmButton = {
                 Button(

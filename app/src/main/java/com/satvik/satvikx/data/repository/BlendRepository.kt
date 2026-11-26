@@ -437,6 +437,7 @@ class BlendRepository @Inject constructor(
     }
 
     fun createBlendShareLink(code: String): String = blendTasteCalibrator.createBlendShareLink(code)
+    fun createBlendWebLink(code: String): String = blendTasteCalibrator.createBlendWebLink(code)
     fun buildBlendShareMessage(userName: String, code: String): String = blendTasteCalibrator.buildBlendShareMessage(userName, code)
     val pendingBlendToken: kotlinx.coroutines.flow.StateFlow<String?> get() = blendTasteCalibrator.pendingBlendToken
     fun clearPendingBlendToken() = blendTasteCalibrator.clearPendingBlendToken()
