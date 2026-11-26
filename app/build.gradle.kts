@@ -28,8 +28,8 @@ android {
         applicationId = "com.satvik.satvikx"
         minSdk = 26
         targetSdk = 35
-        versionCode = 19
-        versionName = "1.0.19"
+        versionCode = 20
+        versionName = "1.0.20"
 
         buildConfigField("String", "SUPABASE_URL", "\"${supabaseUrl}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${supabaseAnonKey}\"")

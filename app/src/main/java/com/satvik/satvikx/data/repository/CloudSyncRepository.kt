@@ -26,6 +26,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -52,6 +53,7 @@ class CloudSyncRepository @Inject constructor(
 
     private val syncPrefs = context.getSharedPreferences("satvikx_cloud_sync_cache", Context.MODE_PRIVATE)
     private val syncMutex = Mutex()
+    private val likedPlaylistMutex = Mutex()
 
     init {
         // Ensure local database has strictly one canonical Liked Songs playlist on startup
@@ -74,46 +76,48 @@ class CloudSyncRepository @Inject constructor(
      * Guarantees strictly ONE canonical 'Liked Songs' playlist exists in the local database.
      * Merges tracks from any duplicate or ghost liked playlists and deletes duplicates safely.
      */
-    suspend fun ensureSingleLikedSongsPlaylist(): PlaylistEntity = withContext(Dispatchers.IO) {
-        val allLikedPlaylists = playlistDao.getAllLikedPlaylistsSync()
+    suspend fun ensureSingleLikedSongsPlaylist(): PlaylistEntity = likedPlaylistMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val allLikedPlaylists = playlistDao.getAllLikedPlaylistsSync()
 
-        if (allLikedPlaylists.isEmpty()) {
-            val id = playlistDao.insertPlaylist(
-                PlaylistEntity(
-                    name = LIKED_SONGS_PLAYLIST_NAME,
-                    isCustom = false
-                )
-            )
-            return@withContext PlaylistEntity(playlistId = id, name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false)
-        }
-
-        // Pick the canonical playlist: the one with the most tracks, or the lowest playlistId
-        val canonical = allLikedPlaylists.maxByOrNull {
-            playlistDao.getPlaylistWithTracksSync(it.playlistId)?.tracks?.size ?: 0
-        } ?: allLikedPlaylists.first()
-
-        if (canonical.name != LIKED_SONGS_PLAYLIST_NAME || canonical.isCustom) {
-            playlistDao.updatePlaylist(canonical.copy(name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false))
-        }
-
-        // Merge any duplicates into the single canonical playlist and delete them
-        val duplicates = allLikedPlaylists.filter { it.playlistId != canonical.playlistId }
-        for (dup in duplicates) {
-            val dupTracks = playlistDao.getPlaylistWithTracksSync(dup.playlistId)?.tracks.orEmpty()
-            for (track in dupTracks) {
-                playlistDao.insertPlaylistTrackCrossRef(
-                    PlaylistTrackCrossRef(
-                        playlistId = canonical.playlistId,
-                        trackId = track.id
+            if (allLikedPlaylists.isEmpty()) {
+                val id = playlistDao.insertPlaylist(
+                    PlaylistEntity(
+                        name = LIKED_SONGS_PLAYLIST_NAME,
+                        isCustom = false
                     )
                 )
+                return@withContext PlaylistEntity(playlistId = id, name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false)
             }
-            playlistDao.clearPlaylistTracks(dup.playlistId)
-            playlistDao.deletePlaylistById(dup.playlistId)
-            Log.d("CloudSync", "Merged duplicate liked playlist id=${dup.playlistId} into canonical id=${canonical.playlistId}")
-        }
 
-        return@withContext canonical.copy(name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false)
+            // Pick the canonical playlist: the one with the most tracks, or the lowest playlistId
+            val canonical = allLikedPlaylists.maxByOrNull {
+                playlistDao.getPlaylistWithTracksSync(it.playlistId)?.tracks?.size ?: 0
+            } ?: allLikedPlaylists.first()
+
+            if (canonical.name != LIKED_SONGS_PLAYLIST_NAME || canonical.isCustom) {
+                playlistDao.updatePlaylist(canonical.copy(name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false))
+            }
+
+            // Merge any duplicates into the single canonical playlist and delete them
+            val duplicates = allLikedPlaylists.filter { it.playlistId != canonical.playlistId }
+            for (dup in duplicates) {
+                val dupTracks = playlistDao.getPlaylistWithTracksSync(dup.playlistId)?.tracks.orEmpty()
+                for (track in dupTracks) {
+                    playlistDao.insertPlaylistTrackCrossRef(
+                        PlaylistTrackCrossRef(
+                            playlistId = canonical.playlistId,
+                            trackId = track.id
+                        )
+                    )
+                }
+                playlistDao.clearPlaylistTracks(dup.playlistId)
+                playlistDao.deletePlaylistById(dup.playlistId)
+                Log.d("CloudSync", "Merged duplicate liked playlist id=${dup.playlistId} into canonical id=${canonical.playlistId}")
+            }
+
+            return@withContext canonical.copy(name = LIKED_SONGS_PLAYLIST_NAME, isCustom = false)
+        }
     }
 
     // =========================================================================
@@ -222,37 +226,36 @@ class CloudSyncRepository @Inject constructor(
                     .decodeList<UserFavoriteDto>()
             } catch (e: Exception) {
                 Log.w("CloudSync", "Failed to fetch remote favorites: ${e.message}")
-                emptyList()
+                null
             }
 
             val currentPendingFavDeletes = getPendingFavoriteDeletions()
-            val validRemoteFavorites = remoteFavorites.filterNot { it.trackId in currentPendingFavDeletes }
-            val remoteTrackIds = validRemoteFavorites.map { it.trackId }.toSet()
 
-            // Insert valid remote favorites into local Room DB
-            validRemoteFavorites.forEach { fav ->
-                trackDao.insertTrack(
-                    TrackEntity(
-                        id = fav.trackId,
-                        title = fav.title,
-                        artist = fav.artist,
-                        durationSeconds = fav.durationSeconds.toLong(),
-                        thumbnailUrl = fav.thumbnailUrl
+            if (remoteFavorites != null) {
+                val validRemoteFavorites = remoteFavorites.filterNot { it.trackId in currentPendingFavDeletes }
+                val remoteTrackIds = validRemoteFavorites.map { it.trackId }.toSet()
+
+                // Insert valid remote favorites into local Room DB
+                validRemoteFavorites.forEach { fav ->
+                    trackDao.insertTrack(
+                        TrackEntity(
+                            id = fav.trackId,
+                            title = fav.title,
+                            artist = fav.artist,
+                            durationSeconds = fav.durationSeconds.toLong(),
+                            thumbnailUrl = fav.thumbnailUrl
+                        )
                     )
-                )
-                playlistDao.insertPlaylistTrackCrossRef(
-                    PlaylistTrackCrossRef(
-                        playlistId = likedPlaylist.playlistId,
-                        trackId = fav.trackId
+                    playlistDao.insertPlaylistTrackCrossRef(
+                        PlaylistTrackCrossRef(
+                            playlistId = likedPlaylist.playlistId,
+                            trackId = fav.trackId
+                        )
                     )
-                )
-            }
+                }
 
-            val localLikedTrackIds = playlistDao.getLikedTrackIds().firstOrNull() ?: emptyList()
-            val hasInitialSyncCompleted = isInitialSyncCompleted(user.id)
-
-            if (!hasInitialSyncCompleted) {
-                // First-time sync for this user: upload local liked songs not in remote to Supabase
+                // Two-way sync: Upload any local liked tracks not yet in remote (never delete local songs on sync)
+                val localLikedTrackIds = playlistDao.getLikedTrackIds().firstOrNull() ?: emptyList()
                 val toUpload = localLikedTrackIds.filter { it !in remoteTrackIds && it !in currentPendingFavDeletes }
                 for (trackId in toUpload) {
                     val track = trackDao.getTrackByIdSync(trackId)
@@ -277,13 +280,6 @@ class CloudSyncRepository @Inject constructor(
                         } catch (_: Exception) {}
                     }
                 }
-            } else {
-                // Subsequent sync: remote is authoritative. If a track is in local DB but missing from remote
-                // and NOT in pending additions, it was deleted in the cloud: delete locally from Room DB!
-                val toDeleteLocally = localLikedTrackIds.filter { it !in remoteTrackIds }
-                for (trackId in toDeleteLocally) {
-                    playlistDao.deletePlaylistTrackCrossRef(likedPlaylist.playlistId, trackId)
-                }
             }
 
             // 4. Bidirectional Custom Playlist & Track Synchronization
@@ -297,11 +293,18 @@ class CloudSyncRepository @Inject constructor(
                     .decodeList<UserPlaylistDto>()
             } catch (e: Exception) {
                 Log.w("CloudSync", "Failed to fetch remote playlists: ${e.message}")
-                emptyList()
+                null
             }
 
+            val currentPendingPlaylistDeletes = getPendingPlaylistDeletions()
+            val currentPendingTrackDeletes = getPendingPlaylistTrackDeletions()
+            val validRemotePlaylists = remotePlaylists
+                ?.filterNot { it.name in currentPendingPlaylistDeletes }
+                ?.filterNot { isLikedPlaylistName(it.name) }
+                .orEmpty()
+
             // Purge any accidental 'Liked Songs' entries from remote custom playlists table
-            val remoteLikedPlaylists = remotePlaylists.filter { isLikedPlaylistName(it.name) }
+            val remoteLikedPlaylists = remotePlaylists?.filter { isLikedPlaylistName(it.name) }.orEmpty()
             for (rlp in remoteLikedPlaylists) {
                 if (rlp.id != null) {
                     try {
@@ -316,18 +319,12 @@ class CloudSyncRepository @Inject constructor(
                 }
             }
 
-            val currentPendingPlaylistDeletes = getPendingPlaylistDeletions()
-            val validRemotePlaylists = remotePlaylists
-                .filterNot { it.name in currentPendingPlaylistDeletes }
-                .filterNot { isLikedPlaylistName(it.name) }
-            val currentPendingTrackDeletes = getPendingPlaylistTrackDeletions()
-
             // A. Reconcile remote playlists & tracks to local Room DB
             for (remoteP in validRemotePlaylists) {
                 var localP = playlistDao.getPlaylistByNameSync(remoteP.name)
                 if (localP == null) {
-                    val id = playlistDao.insertPlaylist(PlaylistEntity(name = remoteP.name))
-                    localP = PlaylistEntity(playlistId = id, name = remoteP.name)
+                    val id = playlistDao.insertPlaylist(PlaylistEntity(name = remoteP.name, isCustom = true))
+                    localP = PlaylistEntity(playlistId = id, name = remoteP.name, isCustom = true)
                 }
 
                 if (remoteP.id != null) {
@@ -340,38 +337,30 @@ class CloudSyncRepository @Inject constructor(
                             }
                             .decodeList<UserPlaylistTrackDto>()
                     } catch (e: Exception) {
-                        emptyList()
+                        null
                     }
 
-                    val validRemoteTracks = remoteTracks.filterNot {
-                        "${remoteP.name}\t${it.trackId}" in currentPendingTrackDeletes
-                    }
-                    val remoteTrackIdsForPlaylist = validRemoteTracks.map { it.trackId }.toSet()
+                    if (remoteTracks != null) {
+                        val validRemoteTracks = remoteTracks.filterNot {
+                            "${remoteP.name}\t${it.trackId}" in currentPendingTrackDeletes
+                        }
 
-                    validRemoteTracks.forEach { rTrack ->
-                        trackDao.insertTrack(
-                            TrackEntity(
-                                id = rTrack.trackId,
-                                title = rTrack.title,
-                                artist = rTrack.artist,
-                                durationSeconds = rTrack.durationSeconds.toLong(),
-                                thumbnailUrl = rTrack.thumbnailUrl
+                        validRemoteTracks.forEach { rTrack ->
+                            trackDao.insertTrack(
+                                TrackEntity(
+                                    id = rTrack.trackId,
+                                    title = rTrack.title,
+                                    artist = rTrack.artist,
+                                    durationSeconds = rTrack.durationSeconds.toLong(),
+                                    thumbnailUrl = rTrack.thumbnailUrl
+                                )
                             )
-                        )
-                        playlistDao.insertPlaylistTrackCrossRef(
-                            PlaylistTrackCrossRef(
-                                playlistId = localP.playlistId,
-                                trackId = rTrack.trackId
+                            playlistDao.insertPlaylistTrackCrossRef(
+                                PlaylistTrackCrossRef(
+                                    playlistId = localP.playlistId,
+                                    trackId = rTrack.trackId
+                                )
                             )
-                        )
-                    }
-
-                    // If subsequent sync, reconcile deletions: local tracks not in remote are deleted from Room
-                    if (hasInitialSyncCompleted) {
-                        val localTracksForP = playlistDao.getPlaylistWithTracksSync(localP.playlistId)?.tracks.orEmpty()
-                        val toDeleteFromLocal = localTracksForP.filter { it.id !in remoteTrackIdsForPlaylist }
-                        for (track in toDeleteFromLocal) {
-                            playlistDao.deletePlaylistTrackCrossRef(localP.playlistId, track.id)
                         }
                     }
                 }

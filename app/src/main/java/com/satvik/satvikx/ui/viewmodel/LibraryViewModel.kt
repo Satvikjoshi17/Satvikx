@@ -63,11 +63,11 @@ class LibraryViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val playlists: StateFlow<List<PlaylistWithTracks>> = playlistDao.getAllPlaylistsWithTracks()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val likedTrackIds: StateFlow<Set<String>> = playlistDao.getLikedTrackIds()
         .map { it.toSet() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     val downloadQuality: StateFlow<DownloadQuality> = downloadQualityManager.currentQuality
     val downloadLocation: StateFlow<DownloadLocation> = downloadLocationManager.currentLocation
