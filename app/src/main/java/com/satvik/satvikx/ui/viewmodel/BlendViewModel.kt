@@ -135,6 +135,11 @@ class BlendViewModel @Inject constructor(
         getInviteCode()
     }
 
+    fun createBlendShareLink(code: String): String = blendRepository.createBlendShareLink(code)
+    fun buildBlendShareMessage(userName: String, code: String): String = blendRepository.buildBlendShareMessage(userName, code)
+    val pendingBlendToken: StateFlow<String?> = blendRepository.pendingBlendToken
+    fun clearPendingBlendToken() = blendRepository.clearPendingBlendToken()
+
     fun extractCleanCode(rawToken: String): String {
         return blendRepository.extractCleanCode(rawToken)
     }

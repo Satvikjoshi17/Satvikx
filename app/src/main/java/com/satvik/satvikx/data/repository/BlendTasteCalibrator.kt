@@ -5,6 +5,10 @@ import com.squareup.moshi.Moshi
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.net.URLDecoder
+import java.net.URLEncoder
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import java.util.zip.GZIPOutputStream
@@ -233,6 +237,49 @@ class BlendTasteCalibrator @Inject constructor() {
 
         val cleanCandidate = candidate.replace("\\s+".toRegex(), "").trim('"', '\'', '`', '<', '>', '(', ')')
         return if (cleanCandidate.startsWith("STKBLD:")) cleanCandidate else cleanCandidate
+    }
+
+    private val _pendingBlendToken = MutableStateFlow<String?>(null)
+    val pendingBlendToken: StateFlow<String?> = _pendingBlendToken.asStateFlow()
+
+    fun setPendingBlendToken(token: String?) {
+        _pendingBlendToken.value = token
+    }
+
+    fun clearPendingBlendToken() {
+        _pendingBlendToken.value = null
+    }
+
+    fun handleDeepLink(rawInput: String): Boolean {
+        val clean = extractCleanCode(rawInput)
+        if (clean.isNotBlank()) {
+            _pendingBlendToken.value = clean
+            return true
+        }
+        return false
+    }
+
+    fun createBlendShareLink(code: String): String {
+        val clean = extractCleanCode(code)
+        val encoded = try { URLEncoder.encode(clean, "UTF-8") } catch (_: Exception) { clean }
+        return "satvikx://blend?token=$encoded"
+    }
+
+    fun createBlendWebLink(code: String): String {
+        val clean = extractCleanCode(code)
+        val encoded = try { URLEncoder.encode(clean, "UTF-8") } catch (_: Exception) { clean }
+        return "https://satvikx.app/blend?token=$encoded"
+    }
+
+    fun buildBlendShareMessage(userName: String, code: String): String {
+        val appLink = createBlendShareLink(code)
+        return buildString {
+            appendLine("⚡ Blend your music taste with $userName on SatvikX!")
+            appendLine("Calculate compatibility score and fuse a 35-track shared playlist.")
+            appendLine()
+            appendLine("Tap to fuse directly:")
+            appendLine(appLink)
+        }
     }
 
     /**

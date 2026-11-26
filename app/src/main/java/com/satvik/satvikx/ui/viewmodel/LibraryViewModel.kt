@@ -50,8 +50,11 @@ class LibraryViewModel @Inject constructor(
     private val playbackConnectionManager: PlaybackConnectionManager,
     private val downloadQualityManager: DownloadQualityManager,
     private val downloadLocationManager: DownloadLocationManager,
-    private val cloudSyncRepository: com.satvik.satvikx.data.repository.CloudSyncRepository
+    private val cloudSyncRepository: com.satvik.satvikx.data.repository.CloudSyncRepository,
+    private val playlistShareManager: com.satvik.satvikx.data.repository.PlaylistShareManager
 ) : ViewModel() {
+
+    val shareManager: com.satvik.satvikx.data.repository.PlaylistShareManager get() = playlistShareManager
 
     val downloadedTracks: StateFlow<List<TrackEntity>> = trackDao.getDownloadedTracks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -199,6 +202,58 @@ class LibraryViewModel @Inject constructor(
                 PlaylistEntity(name = trimmed, isCustom = true)
             )
             cloudSyncRepository.onPlaylistCreated(trimmed)
+        }
+    }
+
+    fun importSharedPlaylist(
+        playlistName: String,
+        tracks: List<com.satvik.satvikx.data.repository.SharedTrackDto>,
+        onSuccess: (Long) -> Unit = {}
+    ) {
+        val trimmed = playlistName.trim()
+        if (trimmed.isBlank() || tracks.isEmpty()) return
+        if (isLikedPlaylistName(trimmed)) return
+
+        viewModelScope.launch {
+            // 1. Cache all track entities locally
+            val trackEntities = tracks.map { it.toTrackEntity() }
+            trackDao.insertTracks(trackEntities)
+
+            // 2. Resolve non-conflicting title
+            var targetName = trimmed
+            var suffix = 1
+            while (playlistDao.getPlaylistByNameSync(targetName) != null) {
+                targetName = "$trimmed ($suffix)"
+                suffix++
+            }
+
+            // 3. Create playlist
+            val newPlaylistId = playlistDao.insertPlaylist(
+                PlaylistEntity(
+                    name = targetName,
+                    createdAtTimestamp = System.currentTimeMillis(),
+                    isCustom = true
+                )
+            )
+
+            // 4. Link tracks in order
+            val crossRefs = trackEntities.mapIndexed { index, track ->
+                PlaylistTrackCrossRef(
+                    playlistId = newPlaylistId,
+                    trackId = track.id,
+                    position = index,
+                    addedAtTimestamp = System.currentTimeMillis() + index
+                )
+            }
+            playlistDao.insertPlaylistTrackCrossRefs(crossRefs)
+
+            // 5. Cloud synchronization with Supabase
+            cloudSyncRepository.onPlaylistCreated(targetName)
+            trackEntities.forEach { track ->
+                cloudSyncRepository.onTrackAddedToPlaylist(targetName, track)
+            }
+
+            onSuccess(newPlaylistId)
         }
     }
 

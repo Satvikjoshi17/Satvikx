@@ -2,6 +2,7 @@ package com.satvik.satvikx.playback
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.annotation.OptIn
 import androidx.media3.common.AudioAttributes
@@ -54,6 +55,12 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         const val NOTIFICATION_CHANNEL_ID = "satvikx_playback_channel"
+        const val ACTION_PLAY_TRACK = "com.satvik.satvikx.action.PLAY_TRACK"
+        const val ACTION_PAUSE = "com.satvik.satvikx.action.PAUSE"
+        const val ACTION_RESUME = "com.satvik.satvikx.action.RESUME"
+        const val ACTION_STOP = "com.satvik.satvikx.action.STOP"
+        const val ACTION_NEXT = "com.satvik.satvikx.action.NEXT"
+        const val ACTION_PREVIOUS = "com.satvik.satvikx.action.PREVIOUS"
     }
 
     private var player: ExoPlayer? = null
@@ -237,6 +244,63 @@ class PlaybackService : MediaSessionService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        when (intent?.action) {
+            ACTION_PLAY_TRACK -> {
+                val streamUrl = intent.getStringExtra("stream_url")
+                val title = intent.getStringExtra("title") ?: "Unknown Song"
+                val artist = intent.getStringExtra("artist") ?: "Unknown Artist"
+                val mediaId = intent.getStringExtra("media_id") ?: "track_${System.currentTimeMillis()}"
+                val thumb = intent.getStringExtra("thumbnail_url")
+                val duration = intent.getLongExtra("duration_seconds", 240L)
+                if (!streamUrl.isNullOrBlank()) {
+                    val mediaItem = MediaItem.Builder()
+                        .setMediaId(mediaId)
+                        .setUri(Uri.parse(streamUrl))
+                        .setRequestMetadata(
+                            MediaItem.RequestMetadata.Builder()
+                                .setMediaUri(Uri.parse(streamUrl))
+                                .build()
+                        )
+                        .setMediaMetadata(
+                            MediaMetadata.Builder()
+                                .setTitle(title)
+                                .setArtist(artist)
+                                .setAlbumTitle("SatvikX")
+                                .setArtworkUri(if (!thumb.isNullOrBlank()) Uri.parse(thumb) else null)
+                                .setExtras(Bundle().apply {
+                                    putLong("duration_seconds", duration)
+                                })
+                                .build()
+                        )
+                        .build()
+                    player?.let { p ->
+                        p.setMediaItem(mediaItem)
+                        p.prepare()
+                        p.play()
+                    }
+                }
+            }
+            ACTION_PAUSE -> {
+                player?.pause()
+            }
+            ACTION_RESUME -> {
+                player?.play()
+            }
+            ACTION_STOP -> {
+                player?.stop()
+            }
+            ACTION_NEXT -> {
+                player?.let { p ->
+                    if (p.hasNextMediaItem()) p.seekToNextMediaItem()
+                }
+            }
+            ACTION_PREVIOUS -> {
+                player?.let { p ->
+                    if (p.hasPreviousMediaItem()) p.seekToPreviousMediaItem()
+                    else p.seekTo(0L)
+                }
+            }
+        }
         return START_STICKY
     }
 
@@ -339,7 +403,7 @@ class PlaybackService : MediaSessionService() {
             val connectionResult = super.onConnect(session, controller)
             val sessionCommands = connectionResult.availableSessionCommands.buildUpon()
 
-            // Expose player commands so Android 13/14 SystemUI renders full scrubber, previous/next, play/pause
+            // Expose player commands so Android 13/14 SystemUI and external controllers (JARVIS) render full controls
             val availablePlayerCommands = connectionResult.availablePlayerCommands.buildUpon()
                 .add(Player.COMMAND_PLAY_PAUSE)
                 .add(Player.COMMAND_PREPARE)
@@ -352,11 +416,51 @@ class PlaybackService : MediaSessionService() {
                 .add(Player.COMMAND_SEEK_TO_PREVIOUS)
                 .add(Player.COMMAND_SET_SHUFFLE_MODE)
                 .add(Player.COMMAND_SET_REPEAT_MODE)
+                .add(Player.COMMAND_SET_MEDIA_ITEM)
+                .add(Player.COMMAND_CHANGE_MEDIA_ITEMS)
+                .add(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)
+                .add(Player.COMMAND_GET_TIMELINE)
                 .build()
 
             return MediaSession.ConnectionResult.accept(
                 sessionCommands.build(),
                 availablePlayerCommands
+            )
+        }
+
+        override fun onAddMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>
+        ): ListenableFuture<MutableList<MediaItem>> {
+            val resolvedItems = mediaItems.map { item ->
+                val uri = item.requestMetadata.mediaUri ?: item.localConfiguration?.uri
+                if (uri != null) {
+                    item.buildUpon().setUri(uri).build()
+                } else {
+                    item
+                }
+            }.toMutableList()
+            return Futures.immediateFuture(resolvedItems)
+        }
+
+        override fun onSetMediaItems(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            mediaItems: MutableList<MediaItem>,
+            startIndex: Int,
+            startPositionMs: Long
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val resolvedItems = mediaItems.map { item ->
+                val uri = item.requestMetadata.mediaUri ?: item.localConfiguration?.uri
+                if (uri != null) {
+                    item.buildUpon().setUri(uri).build()
+                } else {
+                    item
+                }
+            }.toMutableList()
+            return Futures.immediateFuture(
+                MediaSession.MediaItemsWithStartPosition(resolvedItems, startIndex, startPositionMs)
             )
         }
 

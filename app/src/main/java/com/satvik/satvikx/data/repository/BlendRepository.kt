@@ -436,6 +436,11 @@ class BlendRepository @Inject constructor(
         )
     }
 
+    fun createBlendShareLink(code: String): String = blendTasteCalibrator.createBlendShareLink(code)
+    fun buildBlendShareMessage(userName: String, code: String): String = blendTasteCalibrator.buildBlendShareMessage(userName, code)
+    val pendingBlendToken: kotlinx.coroutines.flow.StateFlow<String?> get() = blendTasteCalibrator.pendingBlendToken
+    fun clearPendingBlendToken() = blendTasteCalibrator.clearPendingBlendToken()
+
     /**
      * Extracts strictly the clean Blend code (e.g. "STKBLD:...") from any input string.
      */

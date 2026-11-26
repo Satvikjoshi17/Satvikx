@@ -51,6 +51,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="satvikx" android:host="blend" />
+                <data android:scheme="satvikx" android:host="playlist" />
+            </intent-filter>
+            <!-- Web and Universal Deep Links -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="satvikx.app" android:pathPrefix="/playlist" />
+                <data android:scheme="https" android:host="satvikx.app" android:pathPrefix="/blend" />
             </intent-filter>
             <!-- Supabase Authentication and Email Confirmation Callback -->
             <intent-filter>

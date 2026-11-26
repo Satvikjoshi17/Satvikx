@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ElectricBolt
 import androidx.compose.material.icons.filled.GroupAdd
+import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.AlertDialog
@@ -143,6 +144,16 @@ fun CreateBlendDialog(
         tastePayload = info.payload
         isLoading = false
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+
+    fun copyLink(code: String) {
+        val link = viewModel.createBlendShareLink(code)
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val clip = ClipData.newPlainText("Stark Blend Link", link)
+        clipboard.setPrimaryClip(clip)
+        isCopied = true
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        Toast.makeText(context, "Blend link copied to clipboard", Toast.LENGTH_SHORT).show()
     }
 
     fun copyOnlyCode(code: String) {
@@ -368,11 +379,11 @@ fun CreateBlendDialog(
             }
         },
         confirmButton = {
-            // Main Button: Strictly copies only the code to clipboard
+            // Main Button: Copies direct blend link to clipboard
             Button(
                 onClick = {
                     inviteCode?.let { code ->
-                        copyOnlyCode(code)
+                        copyLink(code)
                     }
                 },
                 enabled = !isLoading && inviteCode != null,
@@ -383,29 +394,30 @@ fun CreateBlendDialog(
                 shape = RoundedCornerShape(10.dp)
             ) {
                 Icon(
-                    imageVector = if (isCopied) Icons.Default.Check else Icons.Default.ContentCopy,
+                    imageVector = if (isCopied) Icons.Default.Check else Icons.Default.Link,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (isCopied) "COPIED CODE" else "COPY CODE",
+                    text = if (isCopied) "COPIED LINK" else "COPY LINK",
                     fontWeight = FontWeight.Bold
                 )
             }
         },
         dismissButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                // Share Code directly
+                // Share Link directly
                 OutlinedButton(
                     onClick = {
                         inviteCode?.let { code ->
+                            val shareMessage = viewModel.buildBlendShareMessage(userName, code)
                             val sendIntent = Intent().apply {
                                 action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, code)
+                                putExtra(Intent.EXTRA_TEXT, shareMessage)
                                 type = "text/plain"
                             }
-                            val shareIntent = Intent.createChooser(sendIntent, "Share Blend Code")
+                            val shareIntent = Intent.createChooser(sendIntent, "Share Blend Link")
                             context.startActivity(shareIntent)
                         }
                     },
@@ -420,7 +432,7 @@ fun CreateBlendDialog(
                         tint = TextSecondary
                     )
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("SHARE", color = TextSecondary)
+                    Text("SHARE LINK", color = TextSecondary)
                 }
 
                 TextButton(onClick = onDismiss) {

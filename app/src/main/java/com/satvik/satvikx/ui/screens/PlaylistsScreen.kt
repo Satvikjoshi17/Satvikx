@@ -41,6 +41,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Stars
 import androidx.compose.material3.AlertDialog
@@ -60,6 +61,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -87,12 +89,15 @@ import com.satvik.satvikx.ui.components.AddToPlaylistDialog
 import com.satvik.satvikx.ui.components.CreateBlendDialog
 import com.satvik.satvikx.ui.components.CuratedArtistBlendSheet
 import com.satvik.satvikx.ui.components.DownloadQualityDialog
+import com.satvik.satvikx.ui.components.ImportPlaylistDialog
 import com.satvik.satvikx.ui.components.JoinBlendDialog
 import com.satvik.satvikx.ui.components.OpticallyCenteredPlayIcon
+import com.satvik.satvikx.ui.components.SharePlaylistDialog
 import com.satvik.satvikx.ui.components.TrackActionBottomSheet
 import com.satvik.satvikx.ui.components.TrackItem
 import com.satvik.satvikx.ui.components.isolateHorizontalScroll
 import com.satvik.satvikx.ui.theme.SpotifyGreen
+import com.satvik.satvikx.ui.viewmodel.AuthViewModel
 import com.satvik.satvikx.ui.viewmodel.BlendViewModel
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 
@@ -106,6 +111,10 @@ fun PlaylistsScreen(
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val blends by blendViewModel.blends.collectAsStateWithLifecycle()
     val blendUiState by blendViewModel.uiState.collectAsStateWithLifecycle()
+    val authViewModel: AuthViewModel = hiltViewModel()
+    val currentUser by authViewModel.currentUser.collectAsStateWithLifecycle()
+    val pendingSharedPlaylist by viewModel.shareManager.pendingPlaylist.collectAsStateWithLifecycle()
+    val pendingBlendToken by blendViewModel.pendingBlendToken.collectAsStateWithLifecycle()
 
     var selectedPlaylistId by remember { mutableStateOf<Long?>(null) }
     var selectedBlendId by remember { mutableStateOf<String?>(null) }
@@ -123,10 +132,18 @@ fun PlaylistsScreen(
 
     // Dialog & Sheet States
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
+    var playlistToShare by remember { mutableStateOf<PlaylistWithTracks?>(null) }
     var playlistToRename by remember { mutableStateOf<PlaylistWithTracks?>(null) }
     var playlistToDownload by remember { mutableStateOf<PlaylistWithTracks?>(null) }
     var renameInput by remember { mutableStateOf("") }
     var newPlaylistName by remember { mutableStateOf("") }
+
+    LaunchedEffect(pendingBlendToken) {
+        if (!pendingBlendToken.isNullOrBlank()) {
+            showJoinBlendDialog = true
+        }
+    }
 
     // Track Action Sheet State
     var selectedTrackForOptions by remember { mutableStateOf<TrackEntity?>(null) }
@@ -206,14 +223,25 @@ fun PlaylistsScreen(
                     )
                 }
 
-                Box {
-                    IconButton(onClick = { showPlaylistHeaderMenu = true }) {
-                        Icon(
-                            imageVector = Icons.Default.MoreVert,
-                            contentDescription = "Options",
-                            tint = Color.White
-                        )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!isLikedSongs && activePlaylist.tracks.isNotEmpty()) {
+                        IconButton(onClick = { playlistToShare = activePlaylist }) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Share Playlist",
+                                tint = Color.White
+                            )
+                        }
                     }
+
+                    Box {
+                        IconButton(onClick = { showPlaylistHeaderMenu = true }) {
+                            Icon(
+                                imageVector = Icons.Default.MoreVert,
+                                contentDescription = "Options",
+                                tint = Color.White
+                            )
+                        }
 
                     DropdownMenu(
                         expanded = showPlaylistHeaderMenu,
@@ -248,6 +276,16 @@ fun PlaylistsScreen(
                             )
                         }
                         if (!isLikedSongs) {
+                            if (activePlaylist.tracks.isNotEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("Share Playlist") },
+                                    leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = SpotifyGreen) },
+                                    onClick = {
+                                        showPlaylistHeaderMenu = false
+                                        playlistToShare = activePlaylist
+                                    }
+                                )
+                            }
                             DropdownMenuItem(
                                 text = { Text("Rename Playlist") },
                                 leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = Color.White) },
@@ -271,6 +309,7 @@ fun PlaylistsScreen(
                     }
                 }
             }
+        }
 
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
@@ -558,6 +597,15 @@ fun PlaylistsScreen(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = { showImportDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Download,
+                            contentDescription = "Import Shared Playlist",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+
                     IconButton(onClick = { showCreateDialog = true }) {
                         Icon(
                             imageVector = Icons.Default.Add,
@@ -807,6 +855,10 @@ fun PlaylistsScreen(
                                 showRowMenu = false
                                 viewModel.deletePlaylist(playlistWithTracks.playlist.playlistId)
                                 Toast.makeText(context, "Deleted ${playlistWithTracks.playlist.name}", Toast.LENGTH_SHORT).show()
+                            },
+                            onShare = {
+                                showRowMenu = false
+                                playlistToShare = playlistWithTracks
                             }
                         )
                     }
@@ -1139,6 +1191,40 @@ fun PlaylistsScreen(
         )
     }
 
+    // Playlist Share & Import Dialogs
+    if (playlistToShare != null) {
+        SharePlaylistDialog(
+            playlistWithTracks = playlistToShare!!,
+            creatorName = currentUser?.displayName ?: "SatvikX User",
+            shareManager = viewModel.shareManager,
+            onDismiss = { playlistToShare = null }
+        )
+    }
+
+    if (showImportDialog || pendingSharedPlaylist != null) {
+        ImportPlaylistDialog(
+            initialPayload = pendingSharedPlaylist,
+            shareManager = viewModel.shareManager,
+            onImport = { playlistName, tracks ->
+                viewModel.importSharedPlaylist(playlistName, tracks) { newId ->
+                    Toast.makeText(context, "Playlist \"$playlistName\" saved to your library!", Toast.LENGTH_SHORT).show()
+                    selectedPlaylistId = newId
+                }
+                viewModel.shareManager.clearPendingPlaylist()
+                showImportDialog = false
+            },
+            onPlayPreview = { tracks ->
+                if (tracks.isNotEmpty()) {
+                    viewModel.playTrack(tracks.first(), tracks)
+                }
+            },
+            onDismiss = {
+                viewModel.shareManager.clearPendingPlaylist()
+                showImportDialog = false
+            }
+        )
+    }
+
     // Blend Dialogs
     if (showCreateBlendDialog) {
         CreateBlendDialog(
@@ -1151,11 +1237,16 @@ fun PlaylistsScreen(
     if (showJoinBlendDialog) {
         JoinBlendDialog(
             viewModel = blendViewModel,
+            initialCode = pendingBlendToken ?: "",
             onBlendCreated = { newBlendId ->
                 selectedBlendId = newBlendId
+                blendViewModel.clearPendingBlendToken()
                 showJoinBlendDialog = false
             },
-            onDismiss = { showJoinBlendDialog = false }
+            onDismiss = {
+                blendViewModel.clearPendingBlendToken()
+                showJoinBlendDialog = false
+            }
         )
     }
 
@@ -1186,7 +1277,8 @@ private fun SpotifyPlaylistRow(
     onShufflePlay: () -> Unit,
     onDownload: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onShare: () -> Unit = {}
 ) {
     val thumbs = remember(playlistWithTracks.tracks) {
         playlistWithTracks.tracks
@@ -1321,6 +1413,14 @@ private fun SpotifyPlaylistRow(
                         onClick = {
                             onDismissMenu()
                             onDownload()
+                        }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Share") },
+                        leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = SpotifyGreen) },
+                        onClick = {
+                            onDismissMenu()
+                            onShare()
                         }
                     )
                 }

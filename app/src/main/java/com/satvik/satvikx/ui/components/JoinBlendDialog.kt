@@ -77,6 +77,7 @@ import com.satvik.satvikx.ui.viewmodel.BlendViewModel
 @Composable
 fun JoinBlendDialog(
     viewModel: BlendViewModel,
+    initialCode: String = "",
     onBlendCreated: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -88,7 +89,7 @@ fun JoinBlendDialog(
 
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    var tokenInput by remember { mutableStateOf("") }
+    var tokenInput by remember { mutableStateOf(initialCode) }
     var detectedClipboardCode by remember { mutableStateOf<String?>(null) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
