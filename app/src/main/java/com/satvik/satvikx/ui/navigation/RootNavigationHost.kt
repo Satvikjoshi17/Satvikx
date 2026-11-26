@@ -27,6 +27,7 @@ import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -59,6 +60,7 @@ import com.satvik.satvikx.ui.screens.RecentsScreen
 import com.satvik.satvikx.ui.screens.SearchScreen
 import com.satvik.satvikx.ui.theme.BackgroundDark
 import com.satvik.satvikx.ui.theme.SurfaceDark
+import com.satvik.satvikx.ui.viewmodel.BlendViewModel
 import com.satvik.satvikx.ui.viewmodel.HomeViewModel
 import com.satvik.satvikx.ui.viewmodel.LibraryViewModel
 import com.satvik.satvikx.ui.viewmodel.PlayerViewModel
@@ -70,7 +72,8 @@ fun RootNavigationHost(
     playerViewModel: PlayerViewModel = hiltViewModel(),
     libraryViewModel: LibraryViewModel = hiltViewModel(),
     searchViewModel: SearchViewModel = hiltViewModel(),
-    homeViewModel: HomeViewModel = hiltViewModel()
+    homeViewModel: HomeViewModel = hiltViewModel(),
+    blendViewModel: BlendViewModel = hiltViewModel()
 ) {
     val coroutineScope = rememberCoroutineScope()
     val pagerState = rememberPagerState(initialPage = 0, pageCount = { Screen.bottomNavItems.size })
@@ -79,6 +82,27 @@ fun RootNavigationHost(
     val updateState by playerViewModel.updateState.collectAsStateWithLifecycle()
     val likedTrackIds by libraryViewModel.likedTrackIds.collectAsStateWithLifecycle()
     val lyricsState by playerViewModel.lyricsState.collectAsStateWithLifecycle()
+    val pendingPlaylist by libraryViewModel.shareManager.pendingPlaylist.collectAsStateWithLifecycle()
+    val pendingBlendToken by blendViewModel.pendingBlendToken.collectAsStateWithLifecycle()
+
+    // Automatically navigate to Playlists tab when a shared playlist or Blend link is opened
+    LaunchedEffect(pendingPlaylist) {
+        if (pendingPlaylist != null) {
+            val playlistIndex = Screen.bottomNavItems.indexOf(Screen.Playlists)
+            if (playlistIndex >= 0) {
+                pagerState.scrollToPage(playlistIndex)
+            }
+        }
+    }
+
+    LaunchedEffect(pendingBlendToken) {
+        if (!pendingBlendToken.isNullOrBlank()) {
+            val playlistIndex = Screen.bottomNavItems.indexOf(Screen.Playlists)
+            if (playlistIndex >= 0) {
+                pagerState.scrollToPage(playlistIndex)
+            }
+        }
+    }
 
     var isFullPlayerExpanded by remember { mutableStateOf(false) }
     var isQueueOpen by remember { mutableStateOf(false) }
