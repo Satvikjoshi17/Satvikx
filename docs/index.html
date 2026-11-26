@@ -136,14 +136,16 @@
   <script>
     const params = new URLSearchParams(window.location.search);
     const playlistData = params.get("data") || params.get("playlist");
-    const blendToken = params.get("token") || params.get("blend") || params.get("code");
+    const rawBlend = params.get("blend") || params.get("token") || params.get("code");
+    const isPlaylistToken = (playlistData && playlistData.length > 0) || (rawBlend && rawBlend.includes("STKPL:"));
+    const blendToken = (!isPlaylistToken && rawBlend && (rawBlend.includes("STKBLD:") || (!playlistData && !rawBlend.includes("STKPL:")))) ? rawBlend : null;
 
     let appDeepLink = "satvikx://playlist";
     let tokenValue = "";
 
-    if (playlistData) {
-      tokenValue = playlistData;
-      appDeepLink = "satvikx://playlist?data=" + encodeURIComponent(playlistData);
+    if (isPlaylistToken) {
+      tokenValue = playlistData || rawBlend;
+      appDeepLink = "satvikx://playlist?data=" + encodeURIComponent(tokenValue);
       document.getElementById("title").textContent = "Shared Playlist";
       document.getElementById("subtitle").textContent = "Opening shared playlist in SatvikX...";
     } else if (blendToken) {

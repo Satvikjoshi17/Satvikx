@@ -212,9 +212,10 @@ class BlendTasteCalibrator @Inject constructor() {
         val trimmed = rawInput.trim()
 
         val fromQuery = when {
-            trimmed.contains("data=") -> trimmed.substringAfter("data=").substringBefore("&").substringBefore(" ").substringBefore("\n")
+            trimmed.contains("blend=") -> trimmed.substringAfter("blend=").substringBefore("&").substringBefore(" ").substringBefore("\n")
             trimmed.contains("token=") -> trimmed.substringAfter("token=").substringBefore("&").substringBefore(" ").substringBefore("\n")
             trimmed.contains("code=") -> trimmed.substringAfter("code=").substringBefore("&").substringBefore(" ").substringBefore("\n")
+            trimmed.contains("data=") && !trimmed.contains("STKPL:") -> trimmed.substringAfter("data=").substringBefore("&").substringBefore(" ").substringBefore("\n")
             else -> null
         }
 
@@ -235,6 +236,11 @@ class BlendTasteCalibrator @Inject constructor() {
             return "STKBLD:$cleanToken"
         }
 
+        // If it starts with STKPL: it is definitely NOT a Blend code
+        if (candidate.contains("STKPL:")) {
+            return ""
+        }
+
         val cleanCandidate = candidate.replace("\\s+".toRegex(), "").trim('"', '\'', '`', '<', '>', '(', ')')
         return if (cleanCandidate.startsWith("STKBLD:")) cleanCandidate else cleanCandidate
     }
@@ -251,8 +257,11 @@ class BlendTasteCalibrator @Inject constructor() {
     }
 
     fun handleDeepLink(rawInput: String): Boolean {
+        if (rawInput.contains("STKPL:") || rawInput.contains("satvikx://playlist")) {
+            return false
+        }
         val clean = extractCleanCode(rawInput)
-        if (clean.isNotBlank()) {
+        if (clean.startsWith("STKBLD:") && clean.length > 7) {
             _pendingBlendToken.value = clean
             return true
         }

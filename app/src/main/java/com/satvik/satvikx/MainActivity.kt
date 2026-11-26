@@ -45,9 +45,7 @@ class MainActivity : ComponentActivity() {
 
         checkAndRequestNotificationPermission()
         checkAndRequestBatteryOptimization()
-        handlePlaylistIntent(intent)
-        handleBlendIntent(intent)
-        handleAuthIntent(intent)
+        handleIncomingIntent(intent)
 
         // Real-time Supabase analytics synchronization on app startup
         lifecycleScope.launch(Dispatchers.IO) {
@@ -78,46 +76,67 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handlePlaylistIntent(intent)
-        handleBlendIntent(intent)
-        handleAuthIntent(intent)
+        handleIncomingIntent(intent)
     }
 
-    private fun handlePlaylistIntent(intent: android.content.Intent?) {
+    private fun handleIncomingIntent(intent: android.content.Intent?) {
         val uri = intent?.data ?: return
-        val isSatvikxPlaylist = uri.scheme == "satvikx" && uri.host == "playlist"
-        val isWebPlaylist = uri.scheme == "https" && (
-            (uri.host == "satvikx.app" && uri.path?.startsWith("/playlist") == true) ||
+
+        // 1. Supabase Authentication Callbacks
+        if (uri.scheme == "satvikx" && (uri.host == "auth-callback" || uri.host == "login-callback" || uri.host == "auth")) {
+            handleAuthIntent(intent)
+            return
+        }
+
+        // 2. Identify scheme and authority
+        val isSatvikxScheme = uri.scheme == "satvikx"
+        val isWebScheme = uri.scheme == "https" && (
+            uri.host == "satvikx.app" ||
             (uri.host.equals("satvikjoshi17.github.io", ignoreCase = true) && uri.path?.contains("/Satvikx", ignoreCase = true) == true)
         )
-        if (isSatvikxPlaylist || isWebPlaylist) {
-            val token = uri.getQueryParameter("data") ?: uri.getQueryParameter("playlist") ?: uri.getQueryParameter("token") ?: uri.getQueryParameter("code")
+        if (!isSatvikxScheme && !isWebScheme) return
+
+        // Query parameters
+        val playlistParam = uri.getQueryParameter("data") ?: uri.getQueryParameter("playlist")
+        val blendParam = uri.getQueryParameter("blend") ?: uri.getQueryParameter("token")
+        val genericCodeParam = uri.getQueryParameter("code")
+
+        val rawUriString = uri.toString()
+        val isExplicitPlaylist = (isSatvikxScheme && uri.host == "playlist") ||
+                (isWebScheme && uri.path?.contains("/playlist") == true) ||
+                !playlistParam.isNullOrBlank() ||
+                rawUriString.contains("STKPL:")
+
+        val isExplicitBlend = (isSatvikxScheme && uri.host == "blend") ||
+                (isWebScheme && uri.path?.contains("/blend") == true) ||
+                rawUriString.contains("STKBLD:")
+
+        if (isExplicitPlaylist && !rawUriString.contains("STKBLD:")) {
+            // Strictly dispatch as Playlist
+            val token = playlistParam ?: genericCodeParam ?: blendParam
             if (!token.isNullOrBlank()) {
+                blendTasteCalibratorProvider.get().clearPendingBlendToken()
                 val handled = playlistShareManagerProvider.get().handleDeepLink(token)
                 if (handled) {
                     android.widget.Toast.makeText(this, "Shared playlist link received!", android.widget.Toast.LENGTH_SHORT).show()
                 }
             }
-        }
-    }
-
-    private fun handleBlendIntent(intent: android.content.Intent?) {
-        val uri = intent?.data ?: return
-        val isSatvikxBlend = uri.scheme == "satvikx" && uri.host == "blend"
-        val isWebBlend = uri.scheme == "https" && (
-            (uri.host == "satvikx.app" && uri.path?.startsWith("/blend") == true) ||
-            (uri.host.equals("satvikjoshi17.github.io", ignoreCase = true) && uri.path?.contains("/Satvikx", ignoreCase = true) == true)
-        )
-        if (isSatvikxBlend || isWebBlend) {
-            val token = uri.getQueryParameter("token") ?: uri.getQueryParameter("blend") ?: uri.getQueryParameter("data") ?: uri.getQueryParameter("code")
+        } else if (isExplicitBlend) {
+            // Strictly dispatch as Blend
+            val token = blendParam ?: genericCodeParam ?: playlistParam
             if (!token.isNullOrBlank()) {
+                playlistShareManagerProvider.get().clearPendingPlaylist()
                 val calibrator = blendTasteCalibratorProvider.get()
-                calibrator.handleDeepLink(token)
-                val cleanCode = calibrator.extractCleanCode(token)
-                val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                val clip = android.content.ClipData.newPlainText("Stark Blend Code", cleanCode)
-                clipboard.setPrimaryClip(clip)
-                android.widget.Toast.makeText(this, "Stark Blend invite link received! Opening Blend...", android.widget.Toast.LENGTH_SHORT).show()
+                val handled = calibrator.handleDeepLink(token)
+                if (handled) {
+                    val cleanCode = calibrator.extractCleanCode(token)
+                    if (cleanCode.startsWith("STKBLD:")) {
+                        val clipboard = getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("Stark Blend Code", cleanCode)
+                        clipboard.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(this, "Stark Blend invite link received! Opening Blend...", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
             }
         }
     }

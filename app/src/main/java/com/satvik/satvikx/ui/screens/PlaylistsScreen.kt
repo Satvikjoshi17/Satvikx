@@ -140,8 +140,8 @@ fun PlaylistsScreen(
     var renameInput by remember { mutableStateOf("") }
     var newPlaylistName by remember { mutableStateOf("") }
 
-    LaunchedEffect(pendingBlendToken) {
-        if (!pendingBlendToken.isNullOrBlank()) {
+    LaunchedEffect(pendingBlendToken, pendingSharedPlaylist) {
+        if (!pendingBlendToken.isNullOrBlank() && pendingBlendToken?.startsWith("STKBLD:") == true && pendingSharedPlaylist == null) {
             showJoinBlendDialog = true
         }
     }
@@ -1275,6 +1275,7 @@ fun PlaylistsScreen(
     }
 
     if (showImportDialog || pendingSharedPlaylist != null) {
+        showJoinBlendDialog = false
         ImportPlaylistDialog(
             initialPayload = pendingSharedPlaylist,
             shareManager = viewModel.shareManager,
@@ -1307,7 +1308,7 @@ fun PlaylistsScreen(
         )
     }
 
-    if (showJoinBlendDialog) {
+    if (showJoinBlendDialog && pendingSharedPlaylist == null && !showImportDialog) {
         JoinBlendDialog(
             viewModel = blendViewModel,
             initialCode = pendingBlendToken ?: "",
